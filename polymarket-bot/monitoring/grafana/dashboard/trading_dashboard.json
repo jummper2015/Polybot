@@ -1,0 +1,236 @@
+{
+  "title": "Polymarket Bot Dashboard",
+  "uid": "polymarket-bot-v1",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "💰 Balance Virtual (Paper)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "polymarket_paper_balance_usdc",
+        "legendFormat": "Balance USDC"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area",
+        "unit": "currencyUSD"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "value": 0,    "color": "red"    },
+              { "value": 500,  "color": "yellow" },
+              { "value": 1000, "color": "green"  }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 2,
+      "title": "📈 PnL Total",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "polymarket_pnl_usdc{mode='paper'}",
+        "legendFormat": "PnL Paper"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "unit": "currencyUSD",
+        "colorMode": "value"
+      }
+    },
+
+    {
+      "id": 3,
+      "title": "🌐 WebSocket Connections",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(polymarket_ws_connected)",
+        "legendFormat": "Conexiones activas"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red"   },
+              { "value": 1, "color": "yellow" },
+              { "value": 4, "color": "green"  }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 4,
+      "title": "⚠️ Drawdown Diario",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "polymarket_risk_drawdown_pct{mode='paper'} * 100",
+        "legendFormat": "Drawdown %"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "minVizValue": 0,
+        "maxVizValue": 15
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "value": 0,  "color": "green"  },
+              { "value": 5,  "color": "yellow" },
+              { "value": 8,  "color": "orange" },
+              { "value": 10, "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 5,
+      "title": "📊 Señales Generadas por Tipo",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(polymarket_signals_total[5m])",
+          "legendFormat": "{{type}} - {{asset}}"
+        }
+      ],
+      "options": { "legend": { "displayMode": "list" } },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2 } }
+      }
+    },
+
+    {
+      "id": 6,
+      "title": "🛡️ Risk Engine — Decisiones",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(polymarket_risk_decisions_total{result='allow'}[5m])",
+          "legendFormat": "ALLOW"
+        },
+        {
+          "expr": "rate(polymarket_risk_decisions_total{result='deny'}[5m])",
+          "legendFormat": "DENY - {{rule}}"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "ALLOW" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": "DENY.*" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 7,
+      "title": "⏱️ Latencia de Ciclos (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(polymarket_cycle_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50 {{asset}}/{{window}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(polymarket_cycle_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95 {{asset}}/{{window}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(polymarket_cycle_duration_seconds_bucket[5m]))",
+          "legendFormat": "p99 {{asset}}/{{window}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "id": 8,
+      "title": "🔄 Ticks Recibidos por Mercado",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "rate(polymarket_ws_ticks_total[1m])",
+        "legendFormat": "{{market_id}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 9,
+      "title": "📉 PnL por Trade (Histograma)",
+      "type": "histogram",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "polymarket_pnl_per_trade_usdc_bucket{mode='paper'}",
+        "legendFormat": "{{exit_reason}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+
+    {
+      "id": 10,
+      "title": "🔢 Ticks Consecutivos (BAT)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "bat_consecutive_ticks",
+        "legendFormat": "{{asset}} - {{market_id}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "blue"  },
+              { "value": 3, "color": "green" }
+            ]
+          }
+        }
+      }
+    }
+
+  ],
+
+  "templating": {
+    "list": [
+      {
+        "name": "mode",
+        "type": "custom",
+        "options": [
+          { "value": "paper", "selected": true },
+          { "value": "real",  "selected": false }
+        ]
+      }
+    ]
+  }
+}

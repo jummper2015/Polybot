@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polymarket Bot — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <h1>🤖 Polymarket Bot</h1>
+      <span id="mode-badge" class="badge badge-paper">PAPER</span>
+      <span id="bot-status" class="badge badge-stopped">DETENIDO</span>
+    </div>
+    <div class="header-right">
+      <span class="update-info">Actualiza cada 10s</span>
+      <span id="last-update">—</span>
+    </div>
+  </header>
+
+  <!-- ── Panel Superior: KPIs ────────────────────────────────── -->
+  <section class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">💰 Balance</div>
+      <div class="kpi-value" id="kpi-balance">—</div>
+      <div class="kpi-sub" id="kpi-balance-change">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">📈 PnL Total</div>
+      <div class="kpi-value" id="kpi-pnl">—</div>
+      <div class="kpi-sub" id="kpi-pnl-pct">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">🎯 Win Rate</div>
+      <div class="kpi-value" id="kpi-winrate">—</div>
+      <div class="kpi-sub" id="kpi-trades">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">⚡ Profit Factor</div>
+      <div class="kpi-value" id="kpi-pf">—</div>
+      <div class="kpi-sub">ratio ganancias/pérdidas</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">📉 Max Drawdown</div>
+      <div class="kpi-value" id="kpi-maxdd">—</div>
+      <div class="kpi-sub" id="kpi-drawdown-now">actual: —</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">🌐 Mercados</div>
+      <div class="kpi-value" id="kpi-markets">—</div>
+      <div class="kpi-sub" id="kpi-positions">— posiciones abiertas</div>
+    </div>
+  </section>
+
+  <!-- ── Equity Curve ─────────────────────────────────────────── -->
+  <section class="chart-section">
+    <div class="section-header">
+      <h2>📊 Curva de Equity</h2>
+      <div class="chart-controls">
+        <button class="btn-filter active" onclick="setEquityMode(null, this)">Todos</button>
+        <button class="btn-filter" onclick="setEquityMode('paper', this)">Paper</button>
+        <button class="btn-filter" onclick="setEquityMode('real', this)">Real</button>
+      </div>
+    </div>
+    <div class="chart-container">
+      <canvas id="equityChart"></canvas>
+    </div>
+  </section>
+
+  <!-- ── Mercados Activos + Trades Recientes ─────────────────── -->
+  <section class="bottom-grid">
+
+    <!-- Mercados activos -->
+    <div class="table-card">
+      <div class="section-header">
+        <h2>🌐 Mercados Activos</h2>
+        <span id="markets-count" class="count-badge">0</span>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Asset</th>
+            <th>Ventana</th>
+            <th>YES Price</th>
+            <th>Spread</th>
+            <th>Volumen 24h</th>
+            <th>WS</th>
+            <th>Ticks</th>
+          </tr>
+        </thead>
+        <tbody id="markets-table-body">
+          <tr><td colspan="7" class="empty-row">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Trades recientes -->
+    <div class="table-card">
+      <div class="section-header">
+        <h2>💼 Trades Recientes</h2>
+        <div class="trade-filters">
+          <label>
+            <input type="checkbox" id="open-only-toggle" onchange="toggleOpenOnly()">
+            Solo abiertas
+          </label>
+        </div>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Asset</th>
+            <th>Lado</th>
+            <th>Monto</th>
+            <th>Entrada</th>
+            <th>Salida</th>
+            <th>PnL</th>
+            <th>Razón</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="trades-table-body">
+          <tr><td colspan="8" class="empty-row">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

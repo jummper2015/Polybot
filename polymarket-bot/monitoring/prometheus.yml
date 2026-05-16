@@ -1,0 +1,31 @@
+# monitoring/prometheus.yml
+
+global:
+  scrape_interval:     15s   # Frecuencia de scraping de métricas
+  evaluation_interval: 15s   # Frecuencia de evaluación de reglas de alerta
+  scrape_timeout:      10s
+
+  # Labels globales añadidos a todas las métricas
+  external_labels:
+    app:         "polymarket_bot"
+    environment: "production"
+
+# ── Reglas de alerta ──────────────────────────────────────────────────
+rule_files:
+  - "alerts.yml"
+
+# ── Targets de scraping ───────────────────────────────────────────────
+scrape_configs:
+
+  # Bot de trading — métricas principales
+  - job_name: "polymarket_bot"
+    static_configs:
+      - targets: ["app:8000"]
+    metrics_path: "/api/v1/metrics"
+    scrape_interval: 15s
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+    scrape_interval: 30s

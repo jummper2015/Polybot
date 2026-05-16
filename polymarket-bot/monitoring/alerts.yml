@@ -1,0 +1,111 @@
+# monitoring/alerts.yml
+
+groups:
+  - name: polymarket_critical
+    interval: 30s
+    rules:
+
+      # ── Alerta 1: Bot caído ──────────────────────────────────────
+      - alert: BotDown
+        expr: up{job="polymarket_bot"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Bot de trading caído"
+          description: >
+            El bot de trading no responde al scraping de Prometheus.
+            Verificar logs del contenedor.
+
+      # ── Alerta 2: Drawdown diario crítico ────────────────────────
+      - alert: DailyDrawdownCritical
+        expr: polymarket_risk_drawdown_pct > 0.08
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Drawdown diario supera el 8%"
+          description: >
+            El drawdown diario es {{ $value | humanizePercentage }}.
+            El bot pausará automáticamente al llegar al 10%.
+
+      # ── Alerta 3: Sin conexiones WebSocket ───────────────────────
+      - alert: NoWebSocketConnections
+        expr: sum(polymarket_ws_connected) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Sin conexiones WebSocket activas"
+          description: >
+            No hay conexiones WS activas. El bot no recibe datos
+            de mercado en tiempo real. Verificar conectividad.
+
+      # ── Alerta 4: Errores de ciclo elevados ──────────────────────
+      - alert: HighCycleErrorRate
+        expr: >
+          rate(polymarket_cycle_errors_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tasa de errores en ciclos elevada"
+          description: >
+            Más de 0.1 errores/segundo en ciclos de trading
+            en los últimos 5 minutos.
+
+  - name: polymarket_warnings
+    interval: 60s
+    rules:
+
+      # ── Alerta 5: Reconexiones WS frecuentes ─────────────────────
+      - alert: FrequentWSReconnections
+        expr: >
+          rate(polymarket_ws_reconnects_total[10m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Reconexiones WebSocket frecuentes"
+          description: >
+            El WebSocket de {{ $labels.market_id }} se está reconectando
+            frecuentemente. Posible problema de red o con la API de Polymarket.
+
+      # ── Alerta 6: Rate limit de órdenes reales cerca del límite ──
+      - alert: RateLimitNearLimit
+        expr: >
+          (10 - polymarket_security_rate_limit_blocked_total) < 2
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rate limit de órdenes reales casi agotado"
+          description: >
+            Quedan menos de 2 órdenes reales disponibles en la ventana de 1 hora.
+
+      # ── Alerta 7: Drawdown diario en zona de advertencia ─────────
+      - alert: DailyDrawdownWarning
+        expr: polymarket_risk_drawdown_pct > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Drawdown diario supera el 5%"
+          description: >
+            Drawdown actual: {{ $value | humanizePercentage }}.
+            Monitorear de cerca.
+
+      # ── Alerta 8: Latencia de ciclos alta ────────────────────────
+      - alert: HighCycleLatency
+        expr: >
+          histogram_quantile(0.95,
+            rate(polymarket_cycle_duration_seconds_bucket[5m])
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latencia de ciclos de trading alta (p95 > 10s)"
+          description: >
+            El percentil 95 de duración de ciclos supera 10 segundos
+            para {{ $labels.asset }}/{{ $labels.window }}.
