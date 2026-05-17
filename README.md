@@ -1,2 +1,0 @@
-# Polybot
-Polymarket Bot 
