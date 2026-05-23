@@ -468,3 +468,20 @@ P4.6 — Chaos testing con Chaos Toolkit ................................... ✅
   ✅ Code review fixes: equity filter buttons funcionales (All/Paper/Real),
      summary state lifted up (evita double-fetching), late import corregido.
   PRÓXIMO: D20 (Auditoría técnica final), tasks/plan.md + tasks/todo.md.
+
+[2026-05-23 19:15] ✅ D20 COMPLETADO — Auditoría técnica final.
+  ✅ Creado AUDIT_REPORT.md — informe exhaustivo con 7 secciones:
+     1. Seguridad (SAST, SCA, secrets, controls)
+     2. Cobertura de tests (60% global, 20 archivos con 0%, 5 con <50%)
+     3. Deuda técnica (2 TODOs en Telegram, type ignores justificados)
+     4. Documentación (SPEC.md vs reality ✅, pendientes: tasks/)
+     5. Infraestructura (CI/CD, K8s, observability)
+     6. Hallazgos críticos y plan de remediación (9 findings: A-01 a A-09)
+     7. Veredicto: production-ready con cautela (81/100)
+  ✅ Fix A-01: orjson 3.10.0 → 3.11.6 (CVE-2025-67221 DoS recursion resuelto)
+  ✅ Fix A-02: bind address ahora configurable vía API_HOST/API_PORT env vars
+  ✅ Fix: py-clob-client-v2>=1.0.0 añadido a pyproject.toml (faltaba)
+  ✅ Security scan post-fix: 0 HIGH/CRITICAL, bandit 0 MEDIUM
+  ✅ 298 tests unitarios pasando (sin regresiones)
+  PRÓXIMO: tasks/plan.md + tasks/todo.md, verificación de definiciones de éxito,
+  ejecutar tests de chaos en entorno real.

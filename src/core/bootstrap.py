@@ -55,8 +55,8 @@ async def run_fastapi(container: Container) -> None:
 
     config = uvicorn.Config(
         app=app,
-        host="0.0.0.0",
-        port=8000,
+        host=os.environ.get("API_HOST", "0.0.0.0"),  # nosec: bind all in container/K8s is expected
+        port=int(os.environ.get("API_PORT", "8000")),
         log_level="warning",   # structlog maneja el logging — uvicorn solo errores
         access_log=False,       # structlog ya loguea los requests via middleware
     )
