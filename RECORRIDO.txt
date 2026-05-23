@@ -442,7 +442,29 @@ P4.6 — Chaos testing con Chaos Toolkit ................................... ✅
 [2026-05-21 23:30] 🔄 CIERRE DE SESIÓN — Análisis y consolidación.
   ✅ CLAUDE.md actualizado: 95% completitud, 403 tests, estado real reflejado.
   ✅ RECORRIDO.txt actualizado con nota de cierre.
-  ✅ Todos los cambios commiteados a git.
+  ✅ Commit de documentación (CLAUDE.md + RECORRIDO.txt).
+  ✅ Commit de código PLAN_MEJORAS (160 archivos, 15,953 inserciones).
   PRÓXIMO: D19 (Dashboard web React), D20 (Auditoría técnica final),
   tasks/plan.md + tasks/todo.md, verificación de definiciones de éxito
   (100 ciclos paper, Sharpe > 1.0, profit factor > 1.3).
+
+[2026-05-22 01:00] ✅ D19 COMPLETADO — Dashboard web React.
+  ✅ Creado dashboard/ — proyecto React 18 + Vite + TypeScript.
+  ✅ 11 archivos fuente: App.tsx, main.tsx, App.css, types.ts,
+     useApi.ts, Common.tsx, Health.tsx, EquityChart.tsx,
+     MarketsTable.tsx, TradesTable.tsx, vite-env.d.ts.
+  ✅ 3 páginas: Dashboard (KPIs + health + equity + markets + trades),
+     Positions (open/closed con PnL), Orders (historial completo).
+  ✅ Sidebar navigation con react-router-dom v6.
+  ✅ Charts con Recharts (equity curve interactiva con tooltip).
+  ✅ Dark theme financiero completo (App.css, 450+ líneas).
+  ✅ Polling cada 10s con hooks useApi/usePolling.
+  ✅ Responsive: sidebar colapsa en móvil, KPI grid 6→3→2 columnas.
+  ✅ app.py actualizado: catch-all SPA fallback, dashboard router,
+     StaticFiles mount para /assets, JSONResponse import top-level.
+  ✅ Vite build → src/interfaces/api/static/ (3 archivos: HTML + CSS + JS).
+  ✅ TypeScript 0 errores, Vite build exitoso.
+  ✅ 298 tests Python pasando (sin regresiones).
+  ✅ Code review fixes: equity filter buttons funcionales (All/Paper/Real),
+     summary state lifted up (evita double-fetching), late import corregido.
+  PRÓXIMO: D20 (Auditoría técnica final), tasks/plan.md + tasks/todo.md.

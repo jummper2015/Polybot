@@ -4,11 +4,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.responses import FileResponse, JSONResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.core.lifecycle import lifespan
-from src.interfaces.api.routers import health, markets, metrics, orders, positions
+from src.interfaces.api.routers import health, markets, metrics, orders, positions, dashboard
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -36,19 +36,31 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Sirve archivos estáticos (CSS, JS)
+    # Sirve archivos estáticos (CSS, JS, assets del build React)
     app.mount(
-        "/static",
-        StaticFiles(directory=str(STATIC_DIR)),
-        name="static",
+        "/assets",
+        StaticFiles(directory=str(STATIC_DIR / "assets")),
+        name="assets",
     )
 
     _register_routers(app)
 
-    # Ruta raíz → dashboard
+    # Ruta raíz → dashboard React
     @app.get("/", include_in_schema=False)
     async def root():
         return FileResponse(str(STATIC_DIR / "index.html"))
+
+    # Catch-all para React SPA: todas las rutas no-API sirven index.html
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str):
+        """Sirve el index.html de React para client-side routing."""
+        # Excluir rutas de API, docs y assets
+        if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "assets/")):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        index_path = STATIC_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
 
     return app
 
@@ -60,3 +72,4 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(markets.router,   prefix=prefix, tags=["Markets"])
     app.include_router(positions.router, prefix=prefix, tags=["Positions"])
     app.include_router(orders.router,    prefix=prefix, tags=["Orders"])
+    app.include_router(dashboard.router, prefix=prefix, tags=["Dashboard"])
