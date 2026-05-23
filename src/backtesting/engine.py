@@ -417,6 +417,12 @@ class BacktestEngine:
     @staticmethod
     def _make_synthetic_market(dataset: HistoricalDataset) -> Market:
         """Crea un Market sintético para usar en el backtest."""
+        # Usamos una fecha de expiración lejana (2099) para que
+        # minutes_to_expiry() nunca devuelva 0 durante el backtest.
+        # En producción se usa datetime.utcnow(), pero en backtesting
+        # los ticks son históricos y el expiry debe ser futuro.
+        far_future = datetime(2099, 12, 31, 23, 59, 59)
+
         return Market(
             id           = dataset.market_id,
             asset        = Asset(dataset.asset),
@@ -428,5 +434,5 @@ class BacktestEngine:
             yes_price    = dataset.ticks[0].yes_price,
             no_price     = dataset.ticks[0].no_price,
             volume_24h   = dataset.ticks[0].volume_24h,
-            expiry       = dataset.end_at,
+            expiry       = far_future,
         )

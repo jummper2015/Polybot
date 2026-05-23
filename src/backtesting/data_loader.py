@@ -171,18 +171,25 @@ class DataLoader:
 
     @staticmethod
     def generate_synthetic(
-        asset:          str,
-        window:         str,
-        n_ticks:        int   = 2000,
-        start_price:    float = 0.70,
-        volatility:     float = 0.02,
-        trend:          float = 0.0001,
-        start_datetime: datetime | None = None,
-        interval_secs:  int   = 30,
+        asset:              str,
+        window:             str,
+        n_ticks:            int   = 2000,
+        start_price:        float = 0.70,
+        volatility:         float = 0.02,
+        trend:              float = 0.0001,
+        reversion_strength: float = 0.002,  # Antes hardcodeado a 0.01 — ahora configurable
+        reversion_center:   float = 0.75,   # Centro de atracción de la reversión
+        start_datetime:     datetime | None = None,
+        interval_secs:      int   = 30,
     ) -> HistoricalDataset:
         """
         Genera datos sintéticos para testing cuando no hay datos reales.
-        Usa un random walk con tendencia configurable.
+        Usa un random walk con tendencia y reversión a la media configurable.
+
+        Parámetros de realismo:
+        - reversion_strength: 0.002 = reversión suave (realista)
+          0.01 = reversión fuerte (original, poco realista)
+        - reversion_center: centro de atracción (default 0.75)
         """
         import random
         from datetime import timedelta
@@ -193,9 +200,9 @@ class DataLoader:
         yes_price  = start_price
 
         for i in range(n_ticks):
-            # Random walk con tendencia y reversión a la media
+            # Random walk con tendencia y reversión a la media configurable
             shock     = random.gauss(0, volatility)
-            reversion = (0.75 - yes_price) * 0.01  # Atracción hacia 0.75
+            reversion = (reversion_center - yes_price) * reversion_strength
             yes_price = max(0.01, min(0.99,
                 yes_price + trend + shock + reversion
             ))
