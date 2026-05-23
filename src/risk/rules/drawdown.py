@@ -1,7 +1,7 @@
 # src/risk/rules/drawdown.py
 
-from src.domain.value_objects.signal import Signal
 from src.domain.value_objects.risk_decision import RiskDecision
+from src.domain.value_objects.signal import Signal
 from src.risk.base import IRule
 from src.risk.context import RiskContext
 

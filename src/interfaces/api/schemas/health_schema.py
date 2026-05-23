@@ -1,7 +1,8 @@
 # src/interfaces/api/schemas/health_schema.py
 
-from pydantic import BaseModel
 from enum import Enum
+
+from pydantic import BaseModel
 
 
 class ServiceStatusEnum(str, Enum):

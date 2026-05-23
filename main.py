@@ -4,6 +4,13 @@ import asyncio
 import sys
 import os
 
+# ── uvloop: reemplazo de alto rendimiento para el event loop asyncio ─
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    print("[main] uvloop not available, using standard asyncio event loop")
+
 # Añade src al path para imports absolutos
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 

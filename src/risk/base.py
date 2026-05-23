@@ -1,8 +1,9 @@
 # src/risk/base.py
 
 from abc import ABC, abstractmethod
-from src.domain.value_objects.signal import Signal
+
 from src.domain.value_objects.risk_decision import RiskDecision
+from src.domain.value_objects.signal import Signal
 from src.risk.context import RiskContext
 
 
@@ -24,7 +25,8 @@ class IRule(ABC):
     def priority(self) -> int:
         """
         Prioridad de evaluación (menor número = mayor prioridad).
-        MinBalance=1, Drawdown=2, MaxExposure=3, MaxPositions=4, Hedge=5
+        MinBalance=1, Drawdown=2, KellySizing=3, MaxExposure=3,
+        MaxPositions=4, Hedge=5
         """
         ...
 

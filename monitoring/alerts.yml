@@ -1,6 +1,9 @@
 # monitoring/alerts.yml
 
 groups:
+  # ═════════════════════════════════════════════════════════════════
+  # CRITICAL — Requieren respuesta inmediata (→ Telegram + PagerDuty)
+  # ═════════════════════════════════════════════════════════════════
   - name: polymarket_critical
     interval: 30s
     rules:
@@ -17,7 +20,7 @@ groups:
             El bot de trading no responde al scraping de Prometheus.
             Verificar logs del contenedor.
 
-      # ── Alerta 2: Drawdown diario crítico ────────────────────────
+      # ── Alerta 2: Drawdown diario crítico (>8%) ──────────────────
       - alert: DailyDrawdownCritical
         expr: polymarket_risk_drawdown_pct > 0.08
         for: 5m
@@ -29,19 +32,34 @@ groups:
             El drawdown diario es {{ $value | humanizePercentage }}.
             El bot pausará automáticamente al llegar al 10%.
 
-      # ── Alerta 3: Sin conexiones WebSocket ───────────────────────
+      # ── Alerta 3: Drawdown severo (>15%) ─────────────────────────
+      - alert: DailyDrawdownSevere
+        expr: polymarket_risk_drawdown_pct > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          channel: pagerduty
+        annotations:
+          summary: "🔥 Drawdown diario CRÍTICO: {{ $value | humanizePercentage }}"
+          description: >
+            Drawdown ha superado el 15%. Se requiere intervención manual
+            inmediata. Verificar: ¿estrategia funcionando? ¿mercado anómalo?
+            ¿flash crash en Polymarket?
+
+      # ── Alerta 4: Sin conexiones WebSocket ───────────────────────
       - alert: NoWebSocketConnections
         expr: sum(polymarket_ws_connected) == 0
-        for: 2m
+        for: 1m
         labels:
           severity: critical
         annotations:
           summary: "Sin conexiones WebSocket activas"
           description: >
             No hay conexiones WS activas. El bot no recibe datos
-            de mercado en tiempo real. Verificar conectividad.
+            de mercado en tiempo real. Verificar conectividad con
+            Polymarket CLOB API v2.
 
-      # ── Alerta 4: Errores de ciclo elevados ──────────────────────
+      # ── Alerta 5: Errores de ciclo elevados ──────────────────────
       - alert: HighCycleErrorRate
         expr: >
           rate(polymarket_cycle_errors_total[5m]) > 0.1
@@ -54,11 +72,42 @@ groups:
             Más de 0.1 errores/segundo en ciclos de trading
             en los últimos 5 minutos.
 
+      # ── Alerta 6: Errores de órdenes reales ──────────────────────
+      - alert: RealOrderErrors
+        expr: >
+          increase(polymarket_real_order_errors_total[5m]) > 3
+        for: 2m
+        labels:
+          severity: critical
+          channel: pagerduty
+        annotations:
+          summary: "🔥 Más de 3 errores de órdenes reales en 5 minutos"
+          description: >
+            {{ $value }} errores en órdenes reales en los últimos 5 minutos.
+            Verificar: ¿API de Polymarket caída? ¿Circuit breaker abierto?
+            ¿Problema de fondos en wallet L2?
+
+      # ── Alerta 7: Circuit breaker abierto ────────────────────────
+      - alert: CircuitBreakerOpen
+        expr: polymarket_circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker ABIERTO — órdenes al CLOB bloqueadas"
+          description: >
+            El circuit breaker está abierto. Todas las órdenes al CLOB
+            están siendo rechazadas. Recovery automático en 60s.
+            Fallos acumulados indican problema con Polymarket API.
+
+  # ═════════════════════════════════════════════════════════════════
+  # WARNING — Requieren atención pero no son críticos (→ Telegram)
+  # ═════════════════════════════════════════════════════════════════
   - name: polymarket_warnings
     interval: 60s
     rules:
 
-      # ── Alerta 5: Reconexiones WS frecuentes ─────────────────────
+      # ── Alerta 8: Reconexiones WS frecuentes ─────────────────────
       - alert: FrequentWSReconnections
         expr: >
           rate(polymarket_ws_reconnects_total[10m]) > 0.05
@@ -71,7 +120,7 @@ groups:
             El WebSocket de {{ $labels.market_id }} se está reconectando
             frecuentemente. Posible problema de red o con la API de Polymarket.
 
-      # ── Alerta 6: Rate limit de órdenes reales cerca del límite ──
+      # ── Alerta 9: Rate limit de órdenes reales cerca del límite ──
       - alert: RateLimitNearLimit
         expr: >
           (10 - polymarket_security_rate_limit_blocked_total) < 2
@@ -83,7 +132,7 @@ groups:
           description: >
             Quedan menos de 2 órdenes reales disponibles en la ventana de 1 hora.
 
-      # ── Alerta 7: Drawdown diario en zona de advertencia ─────────
+      # ── Alerta 10: Drawdown diario en zona de advertencia ────────
       - alert: DailyDrawdownWarning
         expr: polymarket_risk_drawdown_pct > 0.05
         for: 5m
@@ -95,7 +144,7 @@ groups:
             Drawdown actual: {{ $value | humanizePercentage }}.
             Monitorear de cerca.
 
-      # ── Alerta 8: Latencia de ciclos alta ────────────────────────
+      # ── Alerta 11: Latencia de ciclos alta ───────────────────────
       - alert: HighCycleLatency
         expr: >
           histogram_quantile(0.95,
@@ -109,3 +158,60 @@ groups:
           description: >
             El percentil 95 de duración de ciclos supera 10 segundos
             para {{ $labels.asset }}/{{ $labels.window }}.
+
+      # ── Alerta 12: Balance acercándose al mínimo ─────────────────
+      - alert: BalanceApproachingMinimum
+        expr: >
+          (polymarket_paper_balance_usdc - polymarket_risk_exposure_pct * polymarket_paper_balance_usdc) < 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "⚠️ Balance acercándose al mínimo operativo"
+          description: >
+            Balance disponible (después de exposición) es {{ $value }} USDC.
+            El mínimo operativo configurado es $100. Si baja más,
+            el RiskEngine bloqueará nuevas entradas por MinBalanceRule.
+
+      # ── Alerta 13: API 5xx rate elevado ──────────────────────────
+      - alert: HighAPI5xxRate
+        expr: >
+          sum(rate(polymarket_api_requests_total{status=~"5.."}[5m]))
+          / clamp_min(sum(rate(polymarket_api_requests_total[5m])), 0.001)
+          > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "⚠️ Tasa de errores 5xx en API > 5%"
+          description: >
+            {{ $value | humanizePercentage }} de las requests a la API
+            están devolviendo errores 5xx. Verificar logs del servidor
+            y conectividad con dependencias externas.
+
+      # ── Alerta 14: WS degradado a REST fallback ──────────────────
+      - alert: WSDegradedToREST
+        expr: avg(polymarket_market_data_source) < 1.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "⚠️ Modo REST fallback activado (WS degradado)"
+          description: >
+            Al menos un mercado está usando REST polling en lugar de
+            WebSocket. Los datos pueden tener hasta 15s de retraso.
+            Recovery automático cuando WS se restablezca.
+
+      # ── Alerta 15: Security guardrail disparado ──────────────────
+      - alert: SecurityGuardrailTriggered
+        expr: >
+          increase(polymarket_security_guardrail_triggered_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "⚠️ Security guardrail activado: {{ $labels.check }}"
+          description: >
+            El guardrail de seguridad '{{ $labels.check }}' se ha disparado.
+            Esto puede indicar un intento de operación fuera de los
+            parámetros permitidos. Revisar audit log.

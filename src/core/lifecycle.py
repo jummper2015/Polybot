@@ -1,8 +1,8 @@
 # src/core/lifecycle.py
 
-import asyncio
-import structlog
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI
 
 logger = structlog.get_logger(__name__)

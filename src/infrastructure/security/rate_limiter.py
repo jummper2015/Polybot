@@ -1,6 +1,7 @@
 # src/infrastructure/security/rate_limiter.py
 
 import time
+
 import structlog
 from redis.asyncio import Redis
 

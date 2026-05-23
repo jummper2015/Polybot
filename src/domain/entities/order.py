@@ -2,24 +2,10 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 
-
-class OrderSide(str, Enum):
-    YES = "YES"
-    NO  = "NO"
-
-
-class OrderStatus(str, Enum):
-    PENDING   = "pending"
-    FILLED    = "filled"
-    CANCELLED = "cancelled"
-    FAILED    = "failed"
-
-
-class TradingMode(str, Enum):
-    PAPER = "paper"
-    REAL  = "real"
+from src.domain.enums.order_side import OrderSide
+from src.domain.enums.order_status import OrderStatus
+from src.domain.enums.trading_mode import TradingMode
 
 
 @dataclass
@@ -39,6 +25,7 @@ class Order:
     mode:          TradingMode
     strategy:      str            # Nombre de la estrategia que generó la orden
     reason:        str            # Motivo de la orden (para auditoría)
+    idempotency_key: str | None = None  # SHA256 determinista para desduplicación (P1.4)
     created_at:    datetime = field(default_factory=datetime.utcnow)
     filled_at:     datetime | None = None
     error:         str | None = None

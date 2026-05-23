@@ -1,30 +1,338 @@
 {
-  "title": "Polymarket Bot Dashboard",
+  "title": "Polymarket Bot — Trading Dashboard",
   "uid": "polymarket-bot-v1",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "15s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"],
+    "time_options": ["5m", "15m", "1h", "3h", "6h", "12h", "24h"]
+  },
+  "tags": ["polymarket", "trading", "crypto"],
+  "templating": {
+    "list": [
+      {
+        "name": "mode",
+        "type": "custom",
+        "label": "Trading Mode",
+        "options": [
+          { "value": "paper", "selected": true, "text": "Paper Trading" },
+          { "value": "real",  "selected": false, "text": "Real Trading" }
+        ]
+      },
+      {
+        "name": "asset",
+        "type": "custom",
+        "label": "Asset",
+        "options": [
+          { "value": ".+", "selected": true, "text": "All" },
+          { "value": "BTC", "selected": false, "text": "BTC" },
+          { "value": "ETH", "selected": false, "text": "ETH" }
+        ]
+      },
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Data Source"
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Deployments",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "expr": "changes(polymarket_bot_uptime_seconds[1m]) > 0",
+        "step": "60s",
+        "tagKeys": "event",
+        "titleFormat": "Bot Restarted",
+        "iconColor": "purple",
+        "enable": true
+      }
+    ]
+  },
+
   "panels": [
 
     {
-      "id": 1,
-      "title": "💰 Balance Virtual (Paper)",
+      "id": 100,
+      "title": "🟢 SYSTEM HEALTH",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 101,
+      "title": "⏱️ Bot Uptime",
       "type": "stat",
-      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "gridPos": { "x": 0, "y": 1, "w": 4, "h": 4 },
       "targets": [{
-        "expr": "polymarket_paper_balance_usdc",
-        "legendFormat": "Balance USDC"
+        "expr": "polymarket_bot_uptime_seconds",
+        "legendFormat": "Uptime"
       }],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
         "colorMode": "value",
         "graphMode": "area",
-        "unit": "currencyUSD"
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,    "color": "red"    },
+              { "value": 60,   "color": "yellow" },
+              { "value": 300,  "color": "green"  }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 102,
+      "title": "🌐 WebSocket Connections",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 1, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(polymarket_ws_connected)",
+        "legendFormat": "WS Active"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "red"    },
+              { "value": 1, "color": "yellow" },
+              { "value": 4, "color": "green"  }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 103,
+      "title": "📡 Market Data Source",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 1, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "avg(polymarket_market_data_source)",
+        "legendFormat": "Source"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            { "type": "value", "value": "2", "text": "WebSocket" },
+            { "type": "value", "value": "1", "text": "REST Fallback" },
+            { "type": "value", "value": "0", "text": "Unknown" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "red"    },
+              { "value": 0.9,"color": "orange"  },
+              { "value": 1.9,"color": "green"  }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 104,
+      "title": "⚡ Circuit Breaker",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 1, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "polymarket_circuit_breaker_state",
+        "legendFormat": "State"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "value": "0", "text": "CLOSED ✅" },
+            { "type": "value", "value": "1", "text": "OPEN 🔴" },
+            { "type": "value", "value": "2", "text": "HALF-OPEN ⚠️" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "green"  },
+              { "value": 1,  "color": "red"    },
+              { "value": 2,  "color": "orange" }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 105,
+      "title": "🔌 API Health",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 1, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "up{job=\"polymarket_bot\"}",
+        "legendFormat": "API"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "red"   },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 106,
+      "title": "📊 DB & Redis Latency (p95)",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 1, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(polymarket_db_query_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "DB ms"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(polymarket_redis_operation_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "Redis ms"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": true },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,   "color": "green"  },
+              { "value": 10,  "color": "yellow" },
+              { "value": 50,  "color": "orange" },
+              { "value": 100, "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 107,
+      "title": "🔄 WS Ticks/sec & Reconnections",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "rate(polymarket_ws_ticks_total[1m])",
+          "legendFormat": "Ticks/s — {{market_id}}"
+        },
+        {
+          "expr": "rate(polymarket_ws_reconnects_total[5m])",
+          "legendFormat": "Reconnects — {{market_id}}"
+        }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      }
+    },
+
+    {
+      "id": 108,
+      "title": "🔍 API Requests by Status",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(polymarket_api_requests_total{status=~\"2..\"}[1m])) by (endpoint)",
+          "legendFormat": "2xx — {{endpoint}}"
+        },
+        {
+          "expr": "sum(rate(polymarket_api_requests_total{status=~\"4..\"}[1m])) by (endpoint)",
+          "legendFormat": "4xx — {{endpoint}}"
+        },
+        {
+          "expr": "sum(rate(polymarket_api_requests_total{status=~\"5..\"}[1m])) by (endpoint)",
+          "legendFormat": "5xx — {{endpoint}}"
+        }
+      ],
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "2xx.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "green" } }] },
+          { "matcher": { "id": "byRegexp", "options": "4xx.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byRegexp", "options": "5xx.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
+        ]
+      }
+    },
+
+    {
+      "id": 200,
+      "title": "💰 TRADING PERFORMANCE",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 11, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 201,
+      "title": "💵 Balance",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 12, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "polymarket_paper_balance_usdc",
+        "legendFormat": "Balance"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
             "steps": [
               { "value": 0,    "color": "red"    },
               { "value": 500,  "color": "yellow" },
@@ -36,41 +344,29 @@
     },
 
     {
-      "id": 2,
+      "id": 202,
       "title": "📈 PnL Total",
       "type": "stat",
-      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "gridPos": { "x": 4, "y": 12, "w": 4, "h": 4 },
       "targets": [{
-        "expr": "polymarket_pnl_usdc{mode='paper'}",
-        "legendFormat": "PnL Paper"
+        "expr": "polymarket_pnl_usdc{mode=~\"$mode\"}",
+        "legendFormat": "PnL"
       }],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "unit": "currencyUSD",
-        "colorMode": "value"
-      }
-    },
-
-    {
-      "id": 3,
-      "title": "🌐 WebSocket Connections",
-      "type": "stat",
-      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
-      "targets": [{
-        "expr": "sum(polymarket_ws_connected)",
-        "legendFormat": "Conexiones activas"
-      }],
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background"
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "currencyUSD",
           "thresholds": {
+            "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "red"   },
-              { "value": 1, "color": "yellow" },
-              { "value": 4, "color": "green"  }
+              { "value": -999, "color": "red"    },
+              { "value": 0,    "color": "yellow" },
+              { "value": 10,   "color": "green"  }
             ]
           }
         }
@@ -78,28 +374,89 @@
     },
 
     {
-      "id": 4,
-      "title": "⚠️ Drawdown Diario",
-      "type": "gauge",
-      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "id": 203,
+      "title": "🎯 Open Positions",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 12, "w": 4, "h": 4 },
       "targets": [{
-        "expr": "polymarket_risk_drawdown_pct{mode='paper'} * 100",
-        "legendFormat": "Drawdown %"
+        "expr": "polymarket_paper_positions_open",
+        "legendFormat": "Positions"
       }],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "minVizValue": 0,
-        "maxVizValue": 15
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "blue"   },
+              { "value": 1,  "color": "green"  },
+              { "value": 4,  "color": "yellow" },
+              { "value": 8,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 204,
+      "title": "📊 Orders Executed",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 12, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(rate(polymarket_orders_total{mode=~\"$mode\"}[5m])) * 300",
+        "legendFormat": "Orders/5min"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "blue"   },
+              { "value": 1,  "color": "green"  },
+              { "value": 10, "color": "yellow" }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 205,
+      "title": "🏆 Win Rate (approx)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 12, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "(\n  sum(rate(polymarket_pnl_per_trade_usdc_bucket{le=\"+Inf\",mode=~\"$mode\"}[1h])) -\n  sum(rate(polymarket_pnl_per_trade_usdc_bucket{le=\"0.0\",mode=~\"$mode\"}[1h]))\n) / (\n  sum(rate(polymarket_pnl_per_trade_usdc_count{mode=~\"$mode\"}[1h])) or vector(0)\n) * 100",
+        "legendFormat": "Win Rate"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
+          "decimals": 1,
           "thresholds": {
+            "mode": "absolute",
             "steps": [
-              { "value": 0,  "color": "green"  },
-              { "value": 5,  "color": "yellow" },
-              { "value": 8,  "color": "orange" },
-              { "value": 10, "color": "red"    }
+              { "value": 0,  "color": "red"    },
+              { "value": 40, "color": "yellow" },
+              { "value": 55, "color": "green"  }
             ]
           }
         }
@@ -107,130 +464,862 @@
     },
 
     {
-      "id": 5,
-      "title": "📊 Señales Generadas por Tipo",
-      "type": "timeseries",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
-      "targets": [
-        {
-          "expr": "rate(polymarket_signals_total[5m])",
-          "legendFormat": "{{type}} - {{asset}}"
-        }
-      ],
-      "options": { "legend": { "displayMode": "list" } },
+      "id": 206,
+      "title": "📈 Total Positions ({{mode}})",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 12, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(polymarket_paper_positions_open)",
+        "legendFormat": "Total Open"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
       "fieldConfig": {
-        "defaults": { "unit": "ops", "custom": { "lineWidth": 2 } }
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "green"  },
+              { "value": 1,  "color": "yellow" },
+              { "value": 4,  "color": "red"    }
+            ]
+          }
+        }
       }
     },
 
     {
-      "id": 6,
-      "title": "🛡️ Risk Engine — Decisiones",
+      "id": 207,
+      "title": "💹 PnL Acumulado (Time Series)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "polymarket_pnl_usdc{mode=~\"$mode\"}",
+        "legendFormat": "PnL {{mode}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "lineWidth": 3, "fillOpacity": 15, "showPoints": "never" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": -999, "color": "red" },
+              { "value": 0,    "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 208,
+      "title": "📊 PnL Distribution by Exit Reason",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "rate(polymarket_risk_decisions_total{result='allow'}[5m])",
-          "legendFormat": "ALLOW"
-        },
-        {
-          "expr": "rate(polymarket_risk_decisions_total{result='deny'}[5m])",
-          "legendFormat": "DENY - {{rule}}"
+          "expr": "sum(increase(polymarket_pnl_per_trade_usdc_bucket{mode=~\"$mode\"}[$__range])) by (le, exit_reason)",
+          "legendFormat": "{{exit_reason}} ≤ {{le}}"
         }
       ],
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 100
+      },
       "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": { "mode": "palette-classic" },
+          "custom": {}
+        }
+      }
+    },
+
+    {
+      "id": 209,
+      "title": "📋 Orders by Side ({{mode}})",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "rate(polymarket_orders_total{mode=~\"$mode\",side=\"YES\"}[5m])",
+          "legendFormat": "BUY YES"
+        },
+        {
+          "expr": "rate(polymarket_orders_total{mode=~\"$mode\",side=\"NO\"}[5m])",
+          "legendFormat": "BUY NO"
+        }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 20 } },
         "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "ALLOW" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green" } }]
-          },
-          {
-            "matcher": { "id": "byRegexp", "options": "DENY.*" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "red" } }]
-          }
+          { "matcher": { "id": "byName", "options": "BUY YES" }, "properties": [{ "id": "color", "value": { "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "BUY NO" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
         ]
       }
     },
 
     {
-      "id": 7,
-      "title": "⏱️ Latencia de Ciclos (p50/p95/p99)",
+      "id": 210,
+      "title": "📉 Slippage Distribution",
       "type": "timeseries",
-      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(polymarket_slippage_observed_bucket{mode=~\"$mode\"}[5m])) * 100",
+          "legendFormat": "p50 {{mode}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(polymarket_slippage_observed_bucket{mode=~\"$mode\"}[5m])) * 100",
+          "legendFormat": "p95 {{mode}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(polymarket_slippage_observed_bucket{mode=~\"$mode\"}[5m])) * 100",
+          "legendFormat": "p99 {{mode}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "p50.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "green" } }] },
+          { "matcher": { "id": "byRegexp", "options": "p95.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byRegexp", "options": "p99.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
+        ]
+      }
+    },
+
+    {
+      "id": 300,
+      "title": "🛡️ RISK METRICS",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 30, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 301,
+      "title": "⚠️ Daily Drawdown",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 31, "w": 6, "h": 5 },
+      "targets": [{
+        "expr": "polymarket_risk_drawdown_pct{mode=~\"$mode\"} * 100",
+        "legendFormat": "Drawdown"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "minVizValue": 0,
+        "maxVizValue": 20,
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,   "color": "green"  },
+              { "value": 5,   "color": "yellow" },
+              { "value": 10,  "color": "orange" },
+              { "value": 15,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 302,
+      "title": "📊 Portfolio Exposure",
+      "type": "gauge",
+      "gridPos": { "x": 6, "y": 31, "w": 6, "h": 5 },
+      "targets": [{
+        "expr": "polymarket_risk_exposure_pct{mode=~\"$mode\"} * 100",
+        "legendFormat": "Exposure"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "minVizValue": 0,
+        "maxVizValue": 100,
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "green"  },
+              { "value": 30, "color": "yellow" },
+              { "value": 60, "color": "orange" },
+              { "value": 80, "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 303,
+      "title": "📈 Drawdown + Exposure Trend",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 31, "w": 12, "h": 5 },
+      "targets": [
+        {
+          "expr": "polymarket_risk_drawdown_pct{mode=~\"$mode\"} * 100",
+          "legendFormat": "Drawdown %"
+        },
+        {
+          "expr": "polymarket_risk_exposure_pct{mode=~\"$mode\"} * 100",
+          "legendFormat": "Exposure %"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 2, "fillOpacity": 15 }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Drawdown %" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "Exposure %" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue" } }] }
+        ]
+      }
+    },
+
+    {
+      "id": 304,
+      "title": "✅ Risk Decisions (Allow vs Deny)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 36, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "rate(polymarket_risk_decisions_total{result=\"allow\",mode=~\"$mode\"}[5m])",
+          "legendFormat": "ALLOW"
+        },
+        {
+          "expr": "rate(polymarket_risk_decisions_total{result=\"deny\",mode=~\"$mode\"}[5m])",
+          "legendFormat": "DENY — {{rule}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ALLOW" }, "properties": [{ "id": "color", "value": { "fixedColor": "green" } }] },
+          { "matcher": { "id": "byRegexp", "options": "DENY.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
+        ]
+      }
+    },
+
+    {
+      "id": 305,
+      "title": "🚫 Risk Rule Triggers (Deny Breakdown)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 36, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "rate(polymarket_risk_rule_triggered_total[5m])",
+        "legendFormat": "{{rule}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } },
+          "color": { "mode": "continuous-RdYlGr" }
+        }
+      }
+    },
+
+    {
+      "id": 400,
+      "title": "🎯 STRATEGY SIGNALS",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 44, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 401,
+      "title": "📡 Signals Generated by Type",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 45, "w": 12, "h": 7 },
+      "targets": [{
+        "expr": "rate(polymarket_signals_total{asset=~\"$asset\"}[5m])",
+        "legendFormat": "{{type}} — {{asset}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 15 } }
+      }
+    },
+
+    {
+      "id": 402,
+      "title": "🔍 Filter Rejections",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 45, "w": 12, "h": 7 },
+      "targets": [{
+        "expr": "rate(polymarket_filter_rejections_total[5m])",
+        "legendFormat": "{{filter_name}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } },
+          "color": { "mode": "continuous-blues" }
+        }
+      }
+    },
+
+    {
+      "id": 403,
+      "title": "📊 BAT Confidence Distribution",
+      "type": "heatmap",
+      "gridPos": { "x": 0, "y": 52, "w": 8, "h": 7 },
+      "targets": [{
+        "expr": "sum(rate(bat_entry_confidence_bucket{asset=~\"$asset\"}[$__range])) by (le)",
+        "legendFormat": "{{le}}",
+        "format": "heatmap"
+      }],
+      "options": { "calculate": true, "yAxis": { "unit": "percentunit" } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "scheme", "scheme": "Spectral" }
+        }
+      }
+    },
+
+    {
+      "id": 404,
+      "title": "📊 MR Z-Score (Live)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 52, "w": 8, "h": 7 },
+      "targets": [{
+        "expr": "mr_zscore{asset=~\"$asset\"}",
+        "legendFormat": "{{asset}} — {{market_id}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": -5,  "color": "red"    },
+              { "value": -2,  "color": "orange" },
+              { "value": 0,   "color": "green"  },
+              { "value": 2,   "color": "orange" },
+              { "value": 5,   "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 405,
+      "title": "📊 MR Entry Confidence",
+      "type": "heatmap",
+      "gridPos": { "x": 16, "y": 52, "w": 8, "h": 7 },
+      "targets": [{
+        "expr": "sum(rate(mr_entry_confidence_bucket{asset=~\"$asset\"}[$__range])) by (le)",
+        "legendFormat": "{{le}}",
+        "format": "heatmap"
+      }],
+      "options": { "calculate": true, "yAxis": { "unit": "percentunit" } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "scheme", "scheme": "Viridis" }
+        }
+      }
+    },
+
+    {
+      "id": 406,
+      "title": "🔁 BAT Consecutive Ticks Above Threshold",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 59, "w": 12, "h": 6 },
+      "targets": [{
+        "expr": "bat_consecutive_ticks{asset=~\"$asset\"}",
+        "legendFormat": "{{asset}} — {{market_id}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 2, "fillOpacity": 15 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "blue"   },
+              { "value": 2,  "color": "yellow" },
+              { "value": 3,  "color": "green"  }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 407,
+      "title": "🔄 Strategy Cycles by Result",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 59, "w": 12, "h": 6 },
+      "targets": [{
+        "expr": "rate(polymarket_strategy_cycles_total[5m])",
+        "legendFormat": "{{strategy}} — {{result}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 15, "stacking": { "mode": "normal" } } }
+      }
+    },
+
+    {
+      "id": 500,
+      "title": "⚡ EXECUTION QUALITY",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 65, "w": 24, "h": 1 },
+      "collapsed": false
+    },
+
+    {
+      "id": 501,
+      "title": "⏱️ Cycle Latency (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 66, "w": 12, "h": 7 },
       "targets": [
         {
           "expr": "histogram_quantile(0.50, rate(polymarket_cycle_duration_seconds_bucket[5m]))",
-          "legendFormat": "p50 {{asset}}/{{window}}"
+          "legendFormat": "p50 — {{asset}}/{{window}}"
         },
         {
           "expr": "histogram_quantile(0.95, rate(polymarket_cycle_duration_seconds_bucket[5m]))",
-          "legendFormat": "p95 {{asset}}/{{window}}"
+          "legendFormat": "p95 — {{asset}}/{{window}}"
         },
         {
           "expr": "histogram_quantile(0.99, rate(polymarket_cycle_duration_seconds_bucket[5m]))",
-          "legendFormat": "p99 {{asset}}/{{window}}"
+          "legendFormat": "p99 — {{asset}}/{{window}}"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s" } }
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "p50.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "green" } }] },
+          { "matcher": { "id": "byRegexp", "options": "p95.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byRegexp", "options": "p99.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
+        ]
+      }
     },
 
     {
-      "id": 8,
-      "title": "🔄 Ticks Recibidos por Mercado",
+      "id": 502,
+      "title": "🔄 Order Retries (Real Trading)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 66, "w": 12, "h": 7 },
+      "targets": [
+        {
+          "expr": "rate(polymarket_real_order_retries_total[5m])",
+          "legendFormat": "Retries — {{market_id}}/{{operation}}"
+        },
+        {
+          "expr": "rate(polymarket_real_order_errors_total[5m])",
+          "legendFormat": "Errors — {{market_id}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "Retries.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow" } }] },
+          { "matcher": { "id": "byRegexp", "options": "Errors.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red" } }] }
+        ]
+      }
+    },
+
+    {
+      "id": 503,
+      "title": "❌ Cycle Errors",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 73, "w": 8, "h": 5 },
       "targets": [{
-        "expr": "rate(polymarket_ws_ticks_total[1m])",
+        "expr": "rate(polymarket_cycle_errors_total[5m])",
+        "legendFormat": "Cycle Errors/s"
+      }],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20 },
+          "color": { "fixedColor": "red" }
+        }
+      }
+    },
+
+    {
+      "id": 504,
+      "title": "🌐 HTTP Request Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 73, "w": 8, "h": 5 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(polymarket_http_request_duration_seconds_bucket[5m])) * 1000",
+        "legendFormat": "{{endpoint}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,    "color": "green"  },
+              { "value": 200,  "color": "yellow" },
+              { "value": 500,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 505,
+      "title": "📡 API Endpoint Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 73, "w": 8, "h": 5 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(polymarket_api_request_duration_seconds_bucket[5m])) * 1000",
+        "legendFormat": "{{endpoint}} {{method}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,   "color": "green"  },
+              { "value": 50,  "color": "yellow" },
+              { "value": 200, "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 506,
+      "title": "🔄 Strategy Errors",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 78, "w": 12, "h": 5 },
+      "targets": [{
+        "expr": "rate(polymarket_strategy_errors_total[5m])",
+        "legendFormat": "{{strategy}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20 },
+          "color": { "fixedColor": "orange" }
+        }
+      }
+    },
+
+    {
+      "id": 507,
+      "title": "🌐 WS Errors",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 78, "w": 12, "h": 5 },
+      "targets": [{
+        "expr": "rate(polymarket_ws_errors_total[5m])",
         "legendFormat": "{{market_id}}"
       }],
-      "fieldConfig": { "defaults": { "unit": "ops" } }
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20 },
+          "color": { "fixedColor": "red" }
+        }
+      }
     },
 
     {
-      "id": 9,
-      "title": "📉 PnL por Trade (Histograma)",
-      "type": "histogram",
-      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
-      "targets": [{
-        "expr": "polymarket_pnl_per_trade_usdc_bucket{mode='paper'}",
-        "legendFormat": "{{exit_reason}}"
-      }],
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+      "id": 600,
+      "title": "🔒 SECURITY",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 83, "w": 24, "h": 1 },
+      "collapsed": false
     },
 
     {
-      "id": 10,
-      "title": "🔢 Ticks Consecutivos (BAT)",
-      "type": "timeseries",
-      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "id": 601,
+      "title": "🚫 Rate Limit Blocks",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 84, "w": 4, "h": 4 },
       "targets": [{
-        "expr": "bat_consecutive_ticks",
-        "legendFormat": "{{asset}} - {{market_id}}"
+        "expr": "polymarket_security_rate_limit_blocked_total",
+        "legendFormat": "Blocks"
       }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "area"
+      },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
+            "mode": "absolute",
             "steps": [
-              { "value": 0, "color": "blue"  },
-              { "value": 3, "color": "green" }
+              { "value": 0,  "color": "green"  },
+              { "value": 1,  "color": "yellow" },
+              { "value": 5,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 602,
+      "title": "🛡️ Guardrail Triggers",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 84, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(polymarket_security_guardrail_triggered_total)",
+        "legendFormat": "Triggers"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,  "color": "green"  },
+              { "value": 1,  "color": "orange" },
+              { "value": 3,  "color": "red"    }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 603,
+      "title": "📝 Audit Log Entries",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 84, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "sum(polymarket_security_audit_logs_total)",
+        "legendFormat": "Entries"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,   "color": "blue"  },
+              { "value": 10,  "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 604,
+      "title": "⚡ Circuit Breaker Trips",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 84, "w": 4, "h": 4 },
+      "targets": [{
+        "expr": "polymarket_circuit_breaker_state > 0",
+        "legendFormat": "Tripped"
+      }],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "value": "null", "text": "CLOSED ✅" },
+            { "type": "value", "value": "1", "text": "OPEN 🔴" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0, "color": "green" },
+              { "value": 1, "color": "red"   }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 605,
+      "title": "📊 Rate Limit Blocks (Time Series)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 88, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "rate(polymarket_security_rate_limit_blocked_total[5m])",
+        "legendFormat": "Rate Limit Blocks/s"
+      }],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20 },
+          "color": { "fixedColor": "red" }
+        }
+      }
+    },
+
+    {
+      "id": 606,
+      "title": "🛡️ Guardrail Triggers by Check",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 88, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "rate(polymarket_security_guardrail_triggered_total[5m])",
+        "legendFormat": "{{check}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+
+    {
+      "id": 607,
+      "title": "📝 Audit Log Volume by Action",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 88, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "rate(polymarket_security_audit_logs_total[5m])",
+        "legendFormat": "{{action}}"
+      }],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+
+    {
+      "id": 608,
+      "title": "📊 API 5xx Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 94, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(polymarket_api_requests_total{status=~\"5..\"}[1m])) / clamp_min(sum(rate(polymarket_api_requests_total[1m])), 0.001) * 100",
+          "legendFormat": "5xx Error Rate %"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "lineWidth": 3, "fillOpacity": 20 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": 0,   "color": "green"  },
+              { "value": 2,   "color": "yellow" },
+              { "value": 5,   "color": "orange" },
+              { "value": 10,  "color": "red"    }
             ]
           }
         }
       }
     }
 
-  ],
-
-  "templating": {
-    "list": [
-      {
-        "name": "mode",
-        "type": "custom",
-        "options": [
-          { "value": "paper", "selected": true },
-          { "value": "real",  "selected": false }
-        ]
-      }
-    ]
-  }
+  ]
 }

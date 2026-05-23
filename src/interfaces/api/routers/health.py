@@ -1,12 +1,11 @@
 # src/interfaces/api/routers/health.py
 
-import structlog
 import httpx
+import structlog
 from fastapi import APIRouter, Request
-from src.interfaces.api.schemas.health_schema import (
-    HealthResponse, ServiceStatusEnum
-)
+
 from src.infrastructure.observability.metrics import BOT_UPTIME
+from src.interfaces.api.schemas.health_schema import HealthResponse, ServiceStatusEnum
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

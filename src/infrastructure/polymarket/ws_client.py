@@ -2,25 +2,21 @@
 
 import asyncio
 import json
+from typing import Awaitable, Callable
+
 import structlog
 import websockets
-from websockets.exceptions import (
-    ConnectionClosed,
-    WebSocketException,
-)
-from datetime import datetime
-from typing import Callable, Awaitable
 
 from src.domain.value_objects.market_tick import MarketTick
-from src.domain.value_objects.ws_state import WSMarketState, WSConnectionStatus
-from src.infrastructure.polymarket.adapters import PolymarketAdapter
+from src.domain.value_objects.ws_state import WSConnectionStatus, WSMarketState
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.observability.metrics import (
     WS_CONNECTED,
+    WS_ERRORS,
     WS_RECONNECTS,
     WS_TICKS_RECEIVED,
-    WS_ERRORS,
 )
+from src.infrastructure.polymarket.adapters import PolymarketAdapter
 
 logger = structlog.get_logger(__name__)
 

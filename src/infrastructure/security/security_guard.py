@@ -1,17 +1,18 @@
 # src/infrastructure/security/security_guard.py
 
-import structlog
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from src.infrastructure.security.key_manager import KeyManager
-from src.infrastructure.security.rate_limiter import RateLimiter
-from src.infrastructure.security.secure_config import SecureConfig
-from src.infrastructure.security.audit_log import AuditLogger, AuditAction
+import structlog
+
 from src.infrastructure.observability.metrics import (
     SECURITY_GUARDRAIL_TRIGGERED,
     SECURITY_RATE_LIMIT_BLOCKED,
 )
+from src.infrastructure.security.audit_log import AuditAction, AuditLogger
+from src.infrastructure.security.key_manager import KeyManager
+from src.infrastructure.security.rate_limiter import RateLimiter
+from src.infrastructure.security.secure_config import SecureConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -164,8 +165,9 @@ class SecurityGuard:
 
         # 1. Variables de entorno presentes
         try:
-            from src.infrastructure.security.secure_config import REQUIRED_REAL
             import os
+
+            from src.infrastructure.security.secure_config import REQUIRED_REAL
             checklist["env_vars_present"] = all(
                 os.environ.get(k) for k in REQUIRED_REAL
             )

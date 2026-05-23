@@ -84,7 +84,7 @@ class IStrategy(ABC):
         2. on_tick(market, tick)          ← puede llamarse N veces por ciclo
         3. should_enter(market, tick)     → Signal
         4. should_exit(market, tick)      → Signal
-        5. on_cycle_end(market)
+        5. on_exit(market)
     """
 
     @property
@@ -130,7 +130,7 @@ class IStrategy(ABC):
         ...
 
     @abstractmethod
-    async def on_cycle_end(self, market: Market) -> None:
+    async def on_exit(self, market: Market) -> None:
         """
         Llamado al final de cada ciclo.
         Limpieza, persistencia de estado, métricas por ciclo.

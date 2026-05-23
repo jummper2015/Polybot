@@ -1,14 +1,17 @@
 # src/application/services/market_service.py
 
-import asyncio
-import structlog
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from src.domain.entities.market import Market, Asset, Window, MarketStatus
+import structlog
+
 from src.application.ports.market_data_port import IMarketDataPort
 from src.application.ports.repository_port import IRepositoryPort
+from src.domain.entities.market import Market
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
 from src.infrastructure.cache.redis_client import RedisClient
-from src.infrastructure.observability.metrics import MARKETS_DISCOVERED, MARKETS_ACTIVE
+from src.infrastructure.observability.metrics import MARKETS_ACTIVE, MARKETS_DISCOVERED
 
 logger = structlog.get_logger(__name__)
 
@@ -124,6 +127,13 @@ class MarketService:
         if cached:
             return cached
         return await self._repo.get_market_by_id(market_id)
+
+    async def get_market_tick(self, market_id: str) -> "MarketTick | None":
+        """
+        Obtiene el tick más reciente del mercado. Delega en el market data port.
+        Thin wrapper para que TradingService no acceda a atributos privados.
+        """
+        return await self._market_data.get_market_tick(market_id)
 
     async def update_market_prices(
         self,

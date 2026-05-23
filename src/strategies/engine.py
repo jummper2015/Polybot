@@ -1,17 +1,18 @@
 # src/strategies/engine.py
 
-import structlog
 from datetime import datetime
+
+import structlog
 
 from src.domain.entities.market import Market
 from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import Signal, SignalType
-from src.strategies.base import IStrategy, StrategyState
 from src.infrastructure.observability.metrics import (
     STRATEGY_CYCLES,
     STRATEGY_ERRORS,
-    FILTER_REJECTIONS,
 )
+from src.infrastructure.observability.tracing import get_tracer
+from src.strategies.base import IStrategy, StrategyState
 
 logger = structlog.get_logger(__name__)
 
@@ -120,7 +121,11 @@ class StrategyEngine:
         Devuelve la PRIMERA señal accionable encontrada.
         Si ninguna estrategia tiene señal → HOLD.
         Las estrategias se evalúan en orden de registro.
+
+        Instrumentado con OpenTelemetry: span por estrategia evaluada.
         """
+        tracer = get_tracer()
+
         for strategy in self._strategies:
             state = self._get_state(strategy, market)
 
@@ -129,7 +134,14 @@ class StrategyEngine:
                 continue
 
             try:
-                signal = await strategy.should_enter(market, tick)
+                with tracer.start_as_current_span("strategy_should_enter") as span:
+                    span.set_attribute("strategy.name", strategy.name)
+                    span.set_attribute("market.id", market.id)
+
+                    signal = await strategy.should_enter(market, tick)
+
+                    span.set_attribute("signal.type", signal.type.value)
+                    span.set_attribute("signal.actionable", str(signal.is_actionable()))
 
                 if signal.is_actionable():
                     logger.info(
@@ -164,7 +176,11 @@ class StrategyEngine:
         Consulta a cada estrategia si debe salir de posición existente.
         Devuelve la PRIMERA señal de salida encontrada.
         Solo evalúa estrategias que tienen posición abierta.
+
+        Instrumentado con OpenTelemetry: span por estrategia evaluada.
         """
+        tracer = get_tracer()
+
         for strategy in self._strategies:
             state = self._get_state(strategy, market)
 
@@ -173,7 +189,15 @@ class StrategyEngine:
                 continue
 
             try:
-                signal = await strategy.should_exit(market, tick)
+                with tracer.start_as_current_span("strategy_should_exit") as span:
+                    span.set_attribute("strategy.name", strategy.name)
+                    span.set_attribute("market.id", market.id)
+                    span.set_attribute("state.entry_price", str(state.entry_price or 0))
+
+                    signal = await strategy.should_exit(market, tick)
+
+                    span.set_attribute("signal.type", signal.type.value)
+                    span.set_attribute("signal.actionable", str(signal.is_actionable()))
 
                 if signal.is_actionable():
                     logger.info(
@@ -200,17 +224,17 @@ class StrategyEngine:
 
         return self._HOLD(market.id, "StrategyEngine")
 
-    async def on_cycle_end(self, market: Market) -> None:
+    async def on_exit(self, market: Market) -> None:
         """
         Notifica a todas las estrategias que terminó el ciclo.
         Oportunidad para limpiar estado temporal y emitir métricas.
         """
         for strategy in self._strategies:
             try:
-                await strategy.on_cycle_end(market)
+                await strategy.on_exit(market)
             except Exception as e:
                 logger.error(
-                    "strategy_on_cycle_end_error",
+                    "strategy_on_exit_error",
                     strategy=strategy.name,
                     market_id=market.id,
                     error=str(e),

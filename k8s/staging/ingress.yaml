@@ -1,0 +1,34 @@
+# k8s/staging/ingress.yaml
+# PolyBot — Staging: Ingress para acceso externo a la API
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: polybot-api
+  namespace: staging
+  labels:
+    app: polybot
+    component: api
+    environment: staging
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - staging.polybot.example.com
+      secretName: polybot-staging-tls
+  rules:
+    - host: staging.polybot.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: polybot-api
+                port:
+                  number: 8000

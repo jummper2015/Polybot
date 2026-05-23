@@ -2,10 +2,11 @@
 
 import csv
 import json
-import structlog
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+import structlog
 
 from src.domain.value_objects.market_tick import MarketTick
 
@@ -184,7 +185,6 @@ class DataLoader:
         Usa un random walk con tendencia configurable.
         """
         import random
-        import math
         from datetime import timedelta
 
         market_id  = f"synthetic_{asset}_{window}"

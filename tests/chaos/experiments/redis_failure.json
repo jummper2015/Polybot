@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "title": "Redis Failure During Active Trading",
+  "description": "Simulates Redis becoming unavailable and verifies the system falls back to database queries for market data and maintains balance state.",
+  "tags": ["redis", "cache", "fallback"],
+  "contributions": {
+    "reliability": "high",
+    "availability": "medium"
+  },
+  "steady-state-hypothesis": {
+    "title": "Bot continues operating after Redis failure",
+    "probes": [
+      {
+        "name": "verify-db-fallback-active",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_using_db_fallback",
+          "arguments": {
+            "timeout_seconds": 30
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.fallback_active",
+          "expect": true
+        }
+      },
+      {
+        "name": "verify-portfolio-balance-intact",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_balance_unaffected",
+          "arguments": {
+            "min_expected_balance": 50.0
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.balance",
+          "expect": {
+            "type": "range",
+            "lower": 50.0,
+            "upper": 1000000.0
+          }
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "stop-redis",
+      "provider": {
+        "type": "process",
+        "path": "docker",
+        "arguments": "stop polybot-redis"
+      },
+      "pauses": {
+        "after": 60
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "start-redis",
+      "provider": {
+        "type": "process",
+        "path": "docker",
+        "arguments": "start polybot-redis"
+      }
+    }
+  ]
+}

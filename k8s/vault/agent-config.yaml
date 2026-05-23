@@ -1,0 +1,81 @@
+# k8s/vault/agent-config.yaml
+# PolyBot — Vault Agent Injector Helm values
+#
+# Instala SOLO el injector (sidecar agent) — no el server.
+# El Vault server se asume externo o gestionado separadamente.
+#
+# Uso:
+#   helm repo add hashicorp https://helm.releases.hashicorp.com
+#   helm upgrade --install vault hashicorp/vault \
+#     --namespace vault --create-namespace \
+#     -f k8s/vault/agent-config.yaml
+# -------------------------------------------------------------------
+
+# ── Solo el injector, no el server ──────────────────────────────────
+server:
+  enabled: false
+
+injector:
+  enabled: true
+  replicas: 2
+
+  # ── Dirección del Vault server externo ─────────────────────────────
+  externalVaultAddr: "https://vault.internal:8200"
+
+  # ── TLS para comunicación injector → Vault ─────────────────────────
+  # Si Vault usa certificados auto-firmados, montar el CA bundle
+  # certs:
+  #   secretName: vault-ca-cert
+  #   caBundle: |
+  #     -----BEGIN CERTIFICATE-----
+  #     ...
+  #     -----END CERTIFICATE-----
+
+  # ── Affinity: distribuir réplicas del injector ─────────────────────
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vault-agent-injector
+            topologyKey: kubernetes.io/hostname
+
+  # ── Resources ──────────────────────────────────────────────────────
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  # ── Métricas Prometheus ────────────────────────────────────────────
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+  # ── Log level ──────────────────────────────────────────────────────
+  logLevel: "info"
+
+  # ── Agente sidecar defaults (aplican a todos los pods inyectados) ──
+  agentDefaults:
+    # CPU/Memory para el sidecar vault-agent en cada pod
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "32Mi"
+      limits:
+        cpu: "100m"
+        memory: "64Mi"
+
+    # Template general del agente (por defecto usa el del pod)
+    # Este se usa si el pod no especifica su propio template
+
+# ── CSI Provider (opcional — alternativa al agent injector) ─────────
+# El CSI provider monta secrets como volúmenes en lugar de archivos.
+# Mejor para aplicaciones que solo leen secrets al arranque.
+csi:
+  enabled: false  # Usamos agent injector (hot-reload requiere file watcher en la app)

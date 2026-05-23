@@ -1,8 +1,9 @@
 # src/infrastructure/security/key_manager.py
 
 import os
-import structlog
 from functools import cached_property
+
+import structlog
 
 logger = structlog.get_logger(__name__)
 

@@ -1,0 +1,201 @@
+# k8s/canary/deployment-trading.yaml
+# PolyBot — Canary: Real Trading con cap estricto de $50
+# Este deployment opera con dinero real pero limitado a $50 total exposure.
+# Si el canary sobrevive 7 días sin drawdown >5%, se promueve a producción.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polybot-trading
+  namespace: canary
+  labels:
+    app: polybot
+    component: trading
+    environment: canary
+    trading-mode: real
+  annotations:
+    # Alertmanager rule reference
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Solo una instancia real activa — recrear, no rolling
+  selector:
+    matchLabels:
+      app: polybot
+      component: trading
+  template:
+    metadata:
+      labels:
+        app: polybot
+        component: trading
+        environment: canary
+        trading-mode: real
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "polybot-canary"
+        vault.hashicorp.com/agent-inject-secret-polybot.env: "secret/data/polybot"
+        vault.hashicorp.com/agent-inject-template-polybot.env: |
+          {{- with secret "secret/data/polybot" -}}
+          POLYMARKET_PRIVATE_KEY={{ .Data.data.POLYMARKET_PRIVATE_KEY }}
+          POLYMARKET_API_KEY={{ .Data.data.POLYMARKET_API_KEY }}
+          POLYMARKET_API_SECRET={{ .Data.data.POLYMARKET_API_SECRET }}
+          POLYMARKET_API_PASSPHRASE={{ .Data.data.POLYMARKET_API_PASSPHRASE }}
+          POLYMARKET_WALLET_ADDRESS={{ .Data.data.POLYMARKET_WALLET_ADDRESS }}
+          TELEGRAM_BOT_TOKEN={{ .Data.data.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID={{ .Data.data.TELEGRAM_ADMIN_CHAT_ID }}
+          REAL_MODE_PIN={{ .Data.data.REAL_MODE_PIN }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-polybot-infra.env: "secret/data/polybot-infra"
+        vault.hashicorp.com/agent-inject-template-polybot-infra.env: |
+          {{- with secret "secret/data/polybot-infra" -}}
+          DATABASE_URL={{ .Data.data.DATABASE_URL }}
+          REDIS_URL={{ .Data.data.REDIS_URL }}
+          {{- end }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: polybot
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: trading
+          image: ghcr.io/polymarket-bot/polymarket-bot:canary
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              for f in /vault/secrets/*.env; do
+                [ -f "$f" ] && set -a && . "$f" && set +a
+              done
+              exec python main.py
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            # ── Real trading mode ─────────────────────────────────────
+            - name: TRADING_MODE
+              value: "real"
+            # ── Cap estricto: $50 max total exposure ──────────────────
+            - name: POSITION_SIZE_USDC
+              value: "10.0"
+            - name: MAX_TOTAL_EXPOSURE_USDC
+              value: "50.0"          # $50 hard cap — balance de cuenta canary
+            # ── Risk overrides para canary seguro ─────────────────────
+            - name: RISK_MAX_EXPOSURE_PCT
+              value: "1.0"          # Permite usar todo el balance de $50
+            - name: RISK_MAX_DRAWDOWN_PCT
+              value: "0.05"         # Drawdown 5% ($2.50) en modo canary
+            - name: RISK_MAX_POSITIONS
+              value: "3"            # Máximo 3 posiciones abiertas
+            - name: KELLY_CAP
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: KELLY_CAP
+            - name: KELLY_SAFETY_FACTOR
+              value: "0.10"         # Muy conservador en canary
+            - name: KELLY_POSITION_CAP
+              value: "15.0"         # $15 max por posición
+            # ── ConfigMap ─────────────────────────────────────────────
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: REDIS_URL
+            - name: BAT_THRESHOLD
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: BAT_THRESHOLD
+            - name: BAT_STOP_LOSS_PCT
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: BAT_STOP_LOSS_PCT
+            - name: BAT_TARGET_PRICE
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: BAT_TARGET_PRICE
+            - name: BAT_REQUIRED_TICKS
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: BAT_REQUIRED_TICKS
+            - name: BAT_MAX_SPREAD
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: BAT_MAX_SPREAD
+            - name: BAT_MIN_VOLUME_USDC
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: BAT_MIN_VOLUME_USDC
+            # ── Secrets desde Vault ───────────────────────────────────
+            - name: POLYMARKET_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: POLYMARKET_PRIVATE_KEY
+            - name: POLYMARKET_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: POLYMARKET_API_KEY
+            - name: POLYMARKET_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: POLYMARKET_API_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: DATABASE_URL
+            - name: REAL_MODE_PIN
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: REAL_MODE_PIN
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5  # Más tolerante en real — no queremos reinicios falsos
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      # ── Node affinity: evitar noisy neighbors ───────────────────────
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: component
+                      operator: In
+                      values: ["trading"]
+                topologyKey: kubernetes.io/hostname

@@ -1,0 +1,101 @@
+{
+  "version": "1.0.0",
+  "title": "Polymarket API 50% Packet Loss",
+  "description": "Simulates 50% packet loss on calls to the Polymarket API and verifies the circuit breaker opens (5 failures in 60s), retries work, and the system recovers when the API becomes healthy.",
+  "tags": ["api", "packet-loss", "circuit-breaker"],
+  "contributions": {
+    "reliability": "critical",
+    "availability": "high"
+  },
+  "steady-state-hypothesis": {
+    "title": "Bot survives 50% API packet loss",
+    "probes": [
+      {
+        "name": "verify-circuit-breaker-opens",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_circuit_breaker_state",
+          "arguments": {
+            "expected_state": "open"
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.circuit_state",
+          "expect": "open"
+        }
+      },
+      {
+        "name": "verify-no-duplicate-orders",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_no_duplicate_orders",
+          "arguments": {
+            "market_id": "${market_id}",
+            "time_window_seconds": 180
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.duplicate_count",
+          "expect": 0
+        }
+      },
+      {
+        "name": "verify-retry-attempts-recorded",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_retry_metrics_increased",
+          "arguments": {
+            "min_retries": 3
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.retry_count",
+          "expect": {
+            "type": "range",
+            "lower": 3,
+            "upper": 100
+          }
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "simulate-api-packet-loss",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "simulate_packet_loss",
+        "arguments": {
+          "target": "clob.polymarket.com",
+          "loss_percentage": 50.0,
+          "duration_seconds": 120
+        }
+      },
+      "pauses": {
+        "after": 120
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "stop-packet-loss",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "stop_packet_loss"
+      }
+    }
+  ]
+}

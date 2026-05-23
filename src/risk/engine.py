@@ -1,23 +1,26 @@
 # src/risk/engine.py
 
-import structlog
 from datetime import datetime, timezone
 
-from src.domain.value_objects.signal import Signal, SignalType
+import structlog
+
 from src.domain.value_objects.risk_decision import RiskDecision
-from src.risk.base import IRule
-from src.risk.context import RiskContext
-from src.risk.rules.min_balance import MinBalanceRule
-from src.risk.rules.drawdown import DrawdownRule
-from src.risk.rules.max_exposure import MaxExposureRule
-from src.risk.rules.max_positions import MaxPositionsRule
-from src.risk.rules.hedge import HedgeRule
+from src.domain.value_objects.signal import Signal
 from src.infrastructure.observability.metrics import (
     RISK_DECISIONS,
-    RISK_RULE_TRIGGERED,
     RISK_DRAWDOWN_GAUGE,
     RISK_EXPOSURE_GAUGE,
+    RISK_RULE_TRIGGERED,
 )
+from src.infrastructure.observability.tracing import get_tracer
+from src.risk.base import IRule
+from src.risk.context import RiskContext
+from src.risk.rules.drawdown import DrawdownRule
+from src.risk.rules.hedge import HedgeRule
+from src.risk.rules.kelly_sizing import KellySizingRule
+from src.risk.rules.max_exposure import MaxExposureRule
+from src.risk.rules.max_positions import MaxPositionsRule
+from src.risk.rules.min_balance import MinBalanceRule
 
 logger = structlog.get_logger(__name__)
 
@@ -32,12 +35,22 @@ class RiskEngineConfig:
         max_exposure_pct:       float = 0.30,
         max_open_positions:     int   = 5,
         max_net_exposure_pct:   float = 0.50,
+        kelly_cap:              float = 0.25,
+        kelly_safety_factor:    float = 0.25,
+        kelly_target_price:     float = 0.90,
+        kelly_position_floor:   float = 5.0,
+        kelly_position_cap:     float = 50.0,
     ):
         self.min_balance_usdc       = min_balance_usdc
         self.max_daily_drawdown_pct = max_daily_drawdown_pct
         self.max_exposure_pct       = max_exposure_pct
         self.max_open_positions     = max_open_positions
         self.max_net_exposure_pct   = max_net_exposure_pct
+        self.kelly_cap              = kelly_cap
+        self.kelly_safety_factor    = kelly_safety_factor
+        self.kelly_target_price     = kelly_target_price
+        self.kelly_position_floor   = kelly_position_floor
+        self.kelly_position_cap     = kelly_position_cap
 
 
 class RiskEngine:
@@ -56,6 +69,13 @@ class RiskEngine:
             [
                 MinBalanceRule(self._config.min_balance_usdc),
                 DrawdownRule(self._config.max_daily_drawdown_pct),
+                KellySizingRule(
+                    kelly_cap=self._config.kelly_cap,
+                    safety_factor=self._config.kelly_safety_factor,
+                    target_price=self._config.kelly_target_price,
+                    position_floor=self._config.kelly_position_floor,
+                    position_cap=self._config.kelly_position_cap,
+                ),
                 MaxExposureRule(self._config.max_exposure_pct),
                 MaxPositionsRule(self._config.max_open_positions),
                 HedgeRule(self._config.max_net_exposure_pct),
@@ -90,11 +110,21 @@ class RiskEngine:
         requested_amount:     float,
         market_id:            str,
         trading_mode:         str,
+        market_yes_price:     float = 0.5,
+        recent_volatility:    float | None = None,
     ) -> RiskDecision:
         """
         Punto de entrada principal del RiskEngine.
         Construye el contexto y evalúa todas las reglas en orden.
+
+        Parámetros opcionales para Kelly Criterion (P2.1):
+          - market_yes_price: precio YES actual del mercado (default 0.5)
+          - recent_volatility: volatilidad reciente (None → dampener=1.0)
+
+        Instrumentado con OpenTelemetry: span por regla evaluada.
         """
+        tracer = get_tracer()
+
         # Actualiza el balance inicial del día si cambió la fecha
         self._refresh_day_balance(current_balance)
 
@@ -107,6 +137,8 @@ class RiskEngine:
             requested_amount=requested_amount,
             market_id=market_id,
             trading_mode=trading_mode,
+            market_yes_price=market_yes_price,
+            recent_volatility=recent_volatility,
         )
 
         log = logger.bind(
@@ -128,7 +160,16 @@ class RiskEngine:
 
         # Evalúa reglas en orden de precedencia
         for rule in self._rules:
-            decision = rule.evaluate(signal, context)
+            with tracer.start_as_current_span("risk_rule_evaluate") as rule_span:
+                rule_span.set_attribute("risk.rule_name", rule.name)
+                rule_span.set_attribute("risk.rule_priority", rule.priority)
+
+                decision = rule.evaluate(signal, context)
+
+                rule_span.set_attribute("risk.allowed", str(decision.allowed))
+                rule_span.set_attribute("risk.reason", decision.reason[:200])
+                if decision.suggested_amount is not None:
+                    rule_span.set_attribute("risk.suggested_amount", str(decision.suggested_amount))
 
             log.debug(
                 "rule_evaluated",
@@ -196,6 +237,13 @@ class RiskEngine:
             [
                 MinBalanceRule(self._config.min_balance_usdc),
                 DrawdownRule(self._config.max_daily_drawdown_pct),
+                KellySizingRule(
+                    kelly_cap=self._config.kelly_cap,
+                    safety_factor=self._config.kelly_safety_factor,
+                    target_price=self._config.kelly_target_price,
+                    position_floor=self._config.kelly_position_floor,
+                    position_cap=self._config.kelly_position_cap,
+                ),
                 MaxExposureRule(self._config.max_exposure_pct),
                 MaxPositionsRule(self._config.max_open_positions),
                 HedgeRule(self._config.max_net_exposure_pct),

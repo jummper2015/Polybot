@@ -1,16 +1,16 @@
 # src/interfaces/telegram/bot.py
 
 import structlog
-from aiogram import Bot, Dispatcher, Router
-from aiogram.enums import ParseMode
+from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-from src.interfaces.telegram.handlers.start import router as start_router
-from src.interfaces.telegram.handlers.status import router as status_router
 from src.interfaces.telegram.handlers.positions import router as positions_router
 from src.interfaces.telegram.handlers.settings import router as settings_router
+from src.interfaces.telegram.handlers.start import router as start_router
+from src.interfaces.telegram.handlers.status import router as status_router
 from src.interfaces.telegram.middleware import AuthMiddleware
 
 logger = structlog.get_logger(__name__)

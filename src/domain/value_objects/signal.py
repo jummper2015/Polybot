@@ -2,14 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 
-
-class SignalType(str, Enum):
-    BUY_YES = "BUY_YES"    # Comprar posición YES
-    BUY_NO  = "BUY_NO"     # Comprar posición NO (hedge)
-    HOLD    = "HOLD"        # No hacer nada
-    EXIT    = "EXIT"        # Cerrar posición existente
+from src.domain.enums.signal_type import SignalType
 
 
 @dataclass(frozen=True)

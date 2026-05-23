@@ -1,24 +1,27 @@
 # src/strategies/buy_above_threshold/strategy.py
 
-import structlog
 from datetime import datetime
 
+import structlog
+
 from src.domain.entities.market import Market
+from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import Signal, SignalType
-from src.strategies.base import IStrategy, StrategyState
-from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
-from src.strategies.filters.spread_filter import SpreadFilter
-from src.strategies.filters.liquidity_filter import LiquidityFilter
-from src.strategies.filters.time_filter import TimeFilter
-from src.strategies.filters.tick_confirmation import TickConfirmationFilter
-from src.strategies.filters.base import IFilter, FilterResult
 from src.infrastructure.observability.metrics import (
-    FILTER_REJECTIONS,
-    STRATEGY_CYCLES,
     BAT_CONSECUTIVE_TICKS,
     BAT_ENTRY_CONFIDENCE,
+    FILTER_REJECTIONS,
+    STRATEGY_CYCLES,
 )
+from src.strategies.base import IStrategy, StrategyState
+from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
+from src.strategies.filters.base import FilterResult, IFilter
+from src.strategies.filters.liquidity_filter import LiquidityFilter
+from src.strategies.filters.multi_timeframe import MultiTimeframeFilter
+from src.strategies.filters.spread_filter import SpreadFilter
+from src.strategies.filters.tick_confirmation import TickConfirmationFilter
+from src.strategies.filters.time_filter import TimeFilter
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +58,10 @@ class BuyAboveThresholdStrategy(IStrategy):
         # El StrategyEngine inyecta el estado, pero la estrategia
         # también mantiene referencia local para acceso directo
         self._states: dict[str, StrategyState] = {}
+
+        # Filtro multi-timeframe (inyectado por el container)
+        # Si es None, la confirmación multi-timeframe está deshabilitada
+        self._mtf_filter: MultiTimeframeFilter | None = None
 
         logger.info(
             "strategy_initialized",
@@ -186,6 +193,17 @@ class BuyAboveThresholdStrategy(IStrategy):
                 FILTER_REJECTIONS.labels(filter_name=result.filter_name).inc()
                 return self._hold(result.reason, market.id)
 
+        # ── Confirmación multi-timeframe (M5 → M15) ──────────────────
+        if self._mtf_filter is not None:
+            mtf_result = await self._mtf_filter.apply(tick, state, market)
+            if not mtf_result.passed:
+                log.debug(
+                    "mtf_filter_rejected",
+                    filter=mtf_result.filter_name,
+                    reason=mtf_result.reason,
+                )
+                return self._hold(mtf_result.reason, market.id)
+
         # ── Todos los filtros pasaron → calcular confidence ───────────
         # Normaliza la distancia entre threshold y 1.0
         # Ej: precio=0.82, threshold=0.75 → confidence = (0.82-0.75)/(1.0-0.75) = 0.28
@@ -195,6 +213,16 @@ class BuyAboveThresholdStrategy(IStrategy):
             1.0,
             (tick.yes_price - self._config.threshold) / price_range
         ) if price_range > 0 else 1.0
+
+        # ── Boost de confidence si M15 confirma (solo M5) ────────────
+        if self._mtf_filter is not None and market.window == Window.M5:
+            base_conf = confidence
+            confidence = min(1.0, confidence * 1.25)
+            log.debug(
+                "mtf_confidence_boost",
+                base_confidence=round(base_conf, 3),
+                boosted_confidence=round(confidence, 3),
+            )
 
         reason = (
             f"price={tick.yes_price:.4f} >= threshold={self._config.threshold}, "
@@ -346,7 +374,7 @@ class BuyAboveThresholdStrategy(IStrategy):
         )
         return self._hold("holding_position", market.id)
 
-    async def on_cycle_end(self, market: Market) -> None:
+    async def on_exit(self, market: Market) -> None:
         """
         Cierre del ciclo: emite métricas de estado y limpia datos temporales.
         No toma decisiones — solo observabilidad.
@@ -401,6 +429,18 @@ class BuyAboveThresholdStrategy(IStrategy):
             source_strategy=STRATEGY_NAME,
             reason=reason,
             timestamp=datetime.utcnow(),
+        )
+
+    def set_mtf_filter(self, mtf_filter: MultiTimeframeFilter | None) -> None:
+        """
+        Inyecta el filtro multi-timeframe desde el container.
+        None lo deshabilita. Llamado tras la creación de MarketService.
+        """
+        self._mtf_filter = mtf_filter
+        logger.info(
+            "mtf_filter_set",
+            strategy=STRATEGY_NAME,
+            enabled=mtf_filter is not None,
         )
 
     def update_config(self, new_config: BuyAboveThresholdConfig) -> None:

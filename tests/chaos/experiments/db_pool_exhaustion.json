@@ -1,0 +1,82 @@
+{
+  "version": "1.0.0",
+  "title": "DB Connection Pool Exhaustion",
+  "description": "Simulates database connection pool exhaustion and verifies the system times out gracefully (pool_timeout=30s) without crashing or corrupting state.",
+  "tags": ["database", "pool", "exhaustion"],
+  "contributions": {
+    "reliability": "high",
+    "availability": "medium"
+  },
+  "steady-state-hypothesis": {
+    "title": "Bot handles DB pool exhaustion without data loss",
+    "probes": [
+      {
+        "name": "verify-no-data-corruption",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_no_order_data_corruption",
+          "arguments": {
+            "time_window_seconds": 120
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.corrupted_orders",
+          "expect": 0
+        }
+      },
+      {
+        "name": "verify-retry-count-increased",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_db_retry_count",
+          "arguments": {
+            "min_expected": 1
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.retry_count",
+          "expect": {
+            "type": "range",
+            "lower": 1,
+            "upper": 100
+          }
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "exhaust-db-pool",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "exhaust_db_pool",
+        "arguments": {
+          "target_pool_size": 5,
+          "duration_seconds": 60
+        }
+      },
+      "pauses": {
+        "after": 60
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "release-db-connections",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "release_db_pool"
+      }
+    }
+  ]
+}

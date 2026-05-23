@@ -1,23 +1,29 @@
 # src/execution/paper_handler.py
 
 import uuid
-import structlog
 from datetime import datetime
 
-from src.domain.entities.order import Order, OrderSide, OrderStatus, TradingMode
+import structlog
+from opentelemetry import trace
+
+from src.application.ports.notification_port import INotificationPort
+from src.application.ports.repository_port import IRepositoryPort
+from src.domain.entities.order import Order
 from src.domain.entities.position import Position
+from src.domain.enums.order_side import OrderSide
+from src.domain.enums.order_status import OrderStatus
+from src.domain.enums.trading_mode import TradingMode
 from src.domain.value_objects.signal import Signal, SignalType
 from src.domain.value_objects.trade_result import TradeResult
-from src.application.ports.repository_port import IRepositoryPort
-from src.application.ports.notification_port import INotificationPort
 from src.execution.base import IExecutionHandler
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.observability.metrics import (
     ORDERS_EXECUTED,
-    PNL_GAUGE,
     PAPER_BALANCE_GAUGE,
     PAPER_POSITIONS_OPEN,
+    PNL_GAUGE,
 )
+from src.infrastructure.observability.tracing import get_tracer
 
 logger = structlog.get_logger(__name__)
 
@@ -76,9 +82,10 @@ class PaperTradingHandler(IExecutionHandler):
             amount=amount,
             mode="paper",
         )
+        get_tracer()
+        trace.get_current_span()
 
         # Obtiene el tick actual para calcular slippage
-        # El tick viene del signal — extraemos precio y spread del contexto
         target_price = await self._get_target_price(signal, market_id)
         spread       = await self._get_current_spread(market_id)
 
@@ -186,6 +193,8 @@ class PaperTradingHandler(IExecutionHandler):
             reason=reason,
             mode="paper",
         )
+        get_tracer()
+        trace.get_current_span()
 
         # Precio actual y spread para calcular exit price
         current_price = await self._get_current_yes_price(position.market_id)

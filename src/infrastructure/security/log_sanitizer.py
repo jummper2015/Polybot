@@ -1,6 +1,7 @@
 # src/infrastructure/security/log_sanitizer.py
 
 import re
+
 from src.infrastructure.security.secure_config import SENSITIVE_KEYS
 
 # Patrones que identifican valores sensibles aunque no vengan de env vars

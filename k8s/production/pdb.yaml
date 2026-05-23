@@ -1,0 +1,54 @@
+# k8s/production/pdb.yaml
+# PolyBot — Production: Pod Disruption Budget
+# Garantiza que al menos 2 réplicas de la API estén disponibles
+# durante drenajes de nodo, actualizaciones de cluster, etc.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: polybot-api
+  namespace: production
+  labels:
+    app: polybot
+    component: api
+    environment: production
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: polybot
+      component: api
+---
+# ── PDB para Telegram (singleton — permitir disruption con precaución) ─
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: polybot-telegram
+  namespace: production
+  labels:
+    app: polybot
+    component: telegram
+    environment: production
+spec:
+  maxUnavailable: 1  # El singleton puede caer durante disruption
+  selector:
+    matchLabels:
+      app: polybot
+      component: telegram
+---
+# ── PDB para Trading (singleton — NO permitir disruption voluntaria) ──
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: polybot-trading
+  namespace: production
+  labels:
+    app: polybot
+    component: trading
+    environment: production
+spec:
+  maxUnavailable: 0  # Nunca drenar voluntariamente el pod de trading real
+  selector:
+    matchLabels:
+      app: polybot
+      component: trading

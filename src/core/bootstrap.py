@@ -1,12 +1,15 @@
 # src/core/bootstrap.py
 
 import asyncio
+import os
 import signal
+
 import structlog
+
 from src.core.config import load_config
 from src.core.container import Container
 from src.infrastructure.observability.logging import configure_logging
-import os
+from src.infrastructure.observability.tracing import init_tracing, shutdown_tracing
 
 logger = structlog.get_logger(__name__)
 
@@ -34,6 +37,7 @@ async def run_fastapi(container: Container) -> None:
     El container ya está inicializado — solo lo pasa a la app.
     """
     import uvicorn
+
     from src.interfaces.api.app import create_app
     from src.interfaces.api.middleware import (
         ObservabilityMiddleware,
@@ -98,17 +102,27 @@ async def bootstrap() -> None:
 
     logger.info("bootstrap_starting", version="1.0.0")
 
-    # ── Paso 2: Config ────────────────────────────────────────────────
+    # ── Paso 2: OpenTelemetry Tracing ─────────────────────────────────
+    # Se inicializa ANTES del container para capturar spans de init
+    tracing_enabled = init_tracing(
+        service_name=os.environ.get("OTEL_SERVICE_NAME", "polybot"),
+    )
+    if tracing_enabled:
+        logger.info("tracing_enabled")
+    else:
+        logger.info("tracing_disabled")
+
+    # ── Paso 3: Config ────────────────────────────────────────────────
     config = load_config()
 
-    # ── Paso 3: Container (DI + inicialización de todos los servicios) ─
+    # ── Paso 4: Container (DI + inicialización de todos los servicios) ─
     container = Container(config=config)
     await container.init()
 
-    # ── Paso 4: Migraciones de DB ─────────────────────────────────────
+    # ── Paso 5: Migraciones de DB ─────────────────────────────────────
     await _run_migrations()
 
-    # ── Paso 5: Setup graceful shutdown ──────────────────────────────
+    # ── Paso 6: Setup graceful shutdown ──────────────────────────────
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
 
@@ -119,7 +133,7 @@ async def bootstrap() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _signal_handler, sig)
 
-    # ── Paso 6: Lanza los tres servicios en paralelo ──────────────────
+    # ── Paso 7: Lanza los tres servicios en paralelo ──────────────────
     tasks = [
         asyncio.create_task(run_fastapi(container),  name="fastapi"),
         asyncio.create_task(run_telegram(container), name="telegram"),
@@ -132,7 +146,7 @@ async def bootstrap() -> None:
         tasks=[t.get_name() for t in tasks],
     )
 
-    # ── Paso 7: Espera señal de shutdown o error en alguna tarea ──────
+    # ── Paso 8: Espera señal de shutdown o error en alguna tarea ──────
     done, pending = await asyncio.wait(
         [*tasks, asyncio.create_task(shutdown_event.wait())],
         return_when=asyncio.FIRST_COMPLETED,
@@ -147,15 +161,16 @@ async def bootstrap() -> None:
                 error=str(task.exception()),
             )
 
-    # ── Paso 8: Cancela tareas pendientes ────────────────────────────
+    # ── Paso 9: Cancela tareas pendientes ────────────────────────────
     logger.info("initiating_graceful_shutdown")
     for task in pending:
         task.cancel()
 
     await asyncio.gather(*pending, return_exceptions=True)
 
-    # ── Paso 9: Apagado del container ────────────────────────────────
+    # ── Paso 10: Apagado del container + tracing ─────────────────────
     await container.shutdown()
+    shutdown_tracing()
 
     logger.info("bootstrap_shutdown_complete")
 

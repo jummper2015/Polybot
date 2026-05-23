@@ -1,8 +1,14 @@
 # src/domain/value_objects/ws_state.py
 
-from dataclasses import dataclass, field
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.domain.value_objects.market_tick import MarketTick
 
 
 class WSConnectionStatus(str, Enum):
@@ -45,7 +51,7 @@ class WSMarketState:
         self.reconnect_attempts += 1
         self.error              = error
 
-    def is_stale(self, timeout_seconds: int = 30) -> bool:
+    def is_stale(self, timeout_seconds: float = 30.0) -> bool:
         """
         Verdadero si no hemos recibido mensajes en más de timeout_seconds.
         Indica que la conexión está colgada sin haberse cerrado.

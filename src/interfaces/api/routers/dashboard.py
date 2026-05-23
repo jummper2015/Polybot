@@ -1,9 +1,10 @@
 # src/interfaces/api/routers/dashboard.py
 
-import structlog
-from fastapi import APIRouter, Request, Query
-from pydantic import BaseModel
 from datetime import datetime, timezone
+
+import structlog
+from fastapi import APIRouter, Query, Request
+from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()

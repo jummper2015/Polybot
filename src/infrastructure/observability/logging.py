@@ -1,8 +1,10 @@
 # src/infrastructure/observability/logging.py
 
 import logging
-import structlog
 import sys
+
+import structlog
+
 from src.infrastructure.security.log_sanitizer import LogSanitizer
 
 

@@ -1,12 +1,17 @@
 # tests/unit/test_strategy.py
 
-import pytest
 from datetime import datetime
+
+import pytest
+
+from src.domain.entities.market import Market
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.signal_type import SignalType
+from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
-from src.domain.entities.market import Market, Asset, Window, MarketStatus
-from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
-from src.domain.value_objects.signal import SignalType
+from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
 
 
 def make_tick(yes_price: float, spread: float = 0.01, volume: float = 5000.0) -> MarketTick:
@@ -114,7 +119,7 @@ class TestBuyAboveThreshold:
     @pytest.mark.asyncio
     async def test_stop_loss_triggers_exit(self, strategy, market):
         """Genera EXIT cuando la pérdida supera el stop loss."""
-        tick = make_tick(yes_price=0.80)
+        make_tick(yes_price=0.80)
         await strategy.on_cycle_start(market)
 
         state = strategy._states["test_market"]
@@ -131,7 +136,7 @@ class TestBuyAboveThreshold:
     @pytest.mark.asyncio
     async def test_target_reached_triggers_exit(self, strategy, market):
         """Genera EXIT cuando el precio alcanza el target."""
-        tick = make_tick(yes_price=0.80)
+        make_tick(yes_price=0.80)
         await strategy.on_cycle_start(market)
 
         state = strategy._states["test_market"]
@@ -186,15 +191,16 @@ class TestBuyAboveThreshold:
 
 # tests/unit/test_risk.py
 
+
 import pytest
-from datetime import datetime
-from src.domain.value_objects.signal import Signal, SignalType
+
+from src.domain.value_objects.signal import Signal
 from src.risk.context import RiskContext
-from src.risk.rules.min_balance import MinBalanceRule
 from src.risk.rules.drawdown import DrawdownRule
+from src.risk.rules.hedge import HedgeRule
 from src.risk.rules.max_exposure import MaxExposureRule
 from src.risk.rules.max_positions import MaxPositionsRule
-from src.risk.rules.hedge import HedgeRule
+from src.risk.rules.min_balance import MinBalanceRule
 
 
 def make_signal(signal_type: SignalType = SignalType.BUY_YES) -> Signal:
@@ -326,14 +332,15 @@ class TestHedgeRule:
 
 # tests/unit/test_filters.py
 
+
 import pytest
-from datetime import datetime
-from src.strategies.filters.spread_filter import SpreadFilter
-from src.strategies.filters.liquidity_filter import LiquidityFilter
-from src.strategies.filters.time_filter import TimeFilter
-from src.strategies.filters.tick_confirmation import TickConfirmationFilter
-from src.strategies.base import StrategyState
+
 from src.domain.value_objects.market_tick import MarketTick
+from src.strategies.base import StrategyState
+from src.strategies.filters.liquidity_filter import LiquidityFilter
+from src.strategies.filters.spread_filter import SpreadFilter
+from src.strategies.filters.tick_confirmation import TickConfirmationFilter
+from src.strategies.filters.time_filter import TimeFilter
 
 
 def make_tick_for_filter(

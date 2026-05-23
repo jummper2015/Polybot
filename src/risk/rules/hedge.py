@@ -1,7 +1,8 @@
 # src/risk/rules/hedge.py
 
-from src.domain.value_objects.signal import Signal, SignalType
+from src.domain.enums.signal_type import SignalType
 from src.domain.value_objects.risk_decision import RiskDecision
+from src.domain.value_objects.signal import Signal
 from src.risk.base import IRule
 from src.risk.context import RiskContext
 

@@ -2,8 +2,9 @@
 # Registro COMPLETO y consolidado de todas las métricas del sistema
 
 from prometheus_client import (
-    Counter, Gauge, Histogram, Summary,
-    CollectorRegistry, REGISTRY,
+    Counter,
+    Gauge,
+    Histogram,
 )
 
 # ══════════════════════════════════════════════════════════════
@@ -156,6 +157,21 @@ BAT_ENTRY_CONFIDENCE = Histogram(
 )
 
 # ══════════════════════════════════════════════════════════════
+# MEAN REVERSION STRATEGY
+# ══════════════════════════════════════════════════════════════
+MR_ZSCORE = Gauge(
+    "mr_zscore",
+    "Current z-score for mean reversion per market",
+    ["market_id", "asset"],
+)
+MR_ENTRY_CONFIDENCE = Histogram(
+    "mr_entry_confidence",
+    "Confidence score at mean reversion entry signal generation",
+    ["market_id", "asset"],
+    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+)
+
+# ══════════════════════════════════════════════════════════════
 # RISK ENGINE
 # ══════════════════════════════════════════════════════════════
 RISK_DECISIONS = Counter(
@@ -195,6 +211,19 @@ SECURITY_AUDIT_LOGS_WRITTEN = Counter(
     "polymarket_security_audit_logs_total",
     "Audit log entries written per action",
     ["action"],
+)
+CIRCUIT_BREAKER_STATE = Gauge(
+    "polymarket_circuit_breaker_state",
+    "Circuit breaker state (0=closed, 1=open, 2=half_open)",
+)
+
+# ══════════════════════════════════════════════════════════════
+# GRACEFUL DEGRADATION WS → REST
+# ══════════════════════════════════════════════════════════════
+MARKET_DATA_SOURCE = Gauge(
+    "polymarket_market_data_source",
+    "Current data source per market (2=ws, 1=rest)",
+    ["market_id"],
 )
 
 # ══════════════════════════════════════════════════════════════

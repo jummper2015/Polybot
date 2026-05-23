@@ -1,8 +1,8 @@
 # src/interfaces/telegram/handlers/start.py
 
 from aiogram import Router
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import CommandStart
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 router = Router()
 

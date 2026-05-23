@@ -1,6 +1,7 @@
 # src/interfaces/api/routers/markets.py
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query, Request
+
 from src.interfaces.api.schemas.market_schema import MarketResponse, MarketsListResponse
 
 router = APIRouter()

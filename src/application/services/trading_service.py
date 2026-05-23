@@ -1,18 +1,22 @@
 # src/application/services/trading_service.py
 
 import asyncio
-import structlog
 from datetime import datetime
 
-from src.domain.entities.market import Market
-from src.application.services.market_service import MarketService
+import structlog
+
+from src.application.ports.notification_port import INotificationPort
 from src.application.ports.repository_port import IRepositoryPort
-from src.strategies.engine import StrategyEngine
-from src.risk.engine import RiskEngine
+from src.application.services.market_service import MarketService
+from src.application.services.portfolio_service import PortfolioService
+from src.domain.entities.market import Market
+from src.domain.value_objects.market_tick import MarketTick
+from src.domain.value_objects.signal import Signal
 from src.execution.base import IExecutionHandler
-from src.infrastructure.observability.metrics import (
-    CYCLE_DURATION, CYCLE_ERRORS, SIGNALS_GENERATED
-)
+from src.infrastructure.observability.metrics import CYCLE_DURATION, CYCLE_ERRORS, SIGNALS_GENERATED
+from src.infrastructure.observability.tracing import get_tracer
+from src.risk.engine import RiskEngine
+from src.strategies.engine import StrategyEngine
 
 logger = structlog.get_logger(__name__)
 
@@ -31,17 +35,25 @@ class TradingService:
 
     def __init__(
         self,
-        market_service:   MarketService,
-        strategy_engine:  StrategyEngine,
-        risk_engine:      RiskEngine,
-        execution_handler: IExecutionHandler,
-        repository:       IRepositoryPort,
+        market_service:     MarketService,
+        strategy_engine:    StrategyEngine,
+        risk_engine:        RiskEngine,
+        execution_handler:  IExecutionHandler,
+        repository:         IRepositoryPort,
+        notifier:           INotificationPort,
+        portfolio_service:  PortfolioService,
+        position_size_usdc: float = 10.0,
+        trading_mode:       str   = "paper",
     ):
         self._market_svc   = market_service
         self._strategy     = strategy_engine
         self._risk         = risk_engine
         self._execution    = execution_handler
         self._repo         = repository
+        self._notifier     = notifier
+        self._portfolio    = portfolio_service
+        self._position_size = position_size_usdc
+        self._trading_mode  = trading_mode
 
         self._running      = False
         self._tasks:       list[asyncio.Task] = []
@@ -147,14 +159,112 @@ class TradingService:
     # CICLO POR MERCADO
     # ------------------------------------------------------------------
 
-    # Actualización de src/application/services/trading_service.py
-# Reemplaza el bloque de evaluación de riesgo en _run_market_cycle()
+    async def _run_market_cycle(self, market: Market) -> None:
+        """
+        Ejecuta un ciclo completo de trading para un mercado específico:
+        1. Inicia ciclo en strategy engine
+        2. Obtiene tick actual
+        3. Evalúa salida (si hay posición abierta)
+        4. Evalúa entrada (si no hay posición) → riesgo → ejecución
+        5. Finaliza ciclo en strategy engine (siempre, incluso en error)
 
-async def _run_market_cycle(self, market: Market) -> None:
+        Instrumentado con OpenTelemetry: span raíz con sub-spans anidados
+        para strategy_evaluation, risk_evaluation y execution.
+        """
+        log = logger.bind(
+            market_id=market.id,
+            asset=market.asset.value,
+        )
+        tracer = get_tracer()
 
-    if entry_signal.is_actionable():
+        # ── Span raíz: market_cycle ───────────────────────────────────
+        with tracer.start_as_current_span("market_cycle") as cycle_span:
+            cycle_span.set_attribute("market.id", market.id)
+            cycle_span.set_attribute("market.asset", market.asset.value)
+            cycle_span.set_attribute("market.window", market.window.value)
 
-        # Construye los datos del contexto consultando el portfolio
+            try:
+                with CYCLE_DURATION.labels(market_id=market.id).time():
+                    # ── 1. Inicio de ciclo ────────────────────────────
+                    await self._strategy.on_cycle_start(market)
+
+                    # ── 2. Obtener tick actual ────────────────────────
+                    with tracer.start_as_current_span("fetch_tick") as tick_span:
+                        tick = await self._get_current_tick(market)
+                        if tick is None:
+                            log.debug("no_tick_available")
+                            return
+                        tick_span.set_attribute("tick.yes_price", str(tick.yes_price))
+                        tick_span.set_attribute("tick.spread", str(tick.spread))
+
+                    # ── 3. Procesar tick ───────────────────────────────
+                    await self._strategy.on_tick(market, tick)
+
+                    # ── 4. Evaluar salida (posición existente) ────────
+                    with tracer.start_as_current_span("strategy_evaluation") as strat_span:
+                        strat_span.set_attribute("evaluation_type", "exit")
+                        exit_signal: Signal = await self._strategy.should_exit(
+                            market, tick
+                        )
+
+                    if exit_signal.is_actionable():
+                        log.info(
+                            "exit_signal_detected",
+                            signal_type=exit_signal.type.value,
+                            reason=exit_signal.reason,
+                        )
+                        await self._execute_exit(market, exit_signal)
+                        return  # No evaluar entrada si acabamos de salir
+
+                    # ── 5. Evaluar entrada (sin posición) ─────────────
+                    with tracer.start_as_current_span("strategy_evaluation") as strat_span:
+                        strat_span.set_attribute("evaluation_type", "entry")
+                        entry_signal: Signal = await self._strategy.should_enter(
+                            market, tick
+                        )
+
+                    if entry_signal.is_actionable():
+                        log.info(
+                            "entry_signal_detected",
+                            signal_type=entry_signal.type.value,
+                            confidence=entry_signal.confidence,
+                            reason=entry_signal.reason,
+                        )
+                        await self._evaluate_risk_and_execute(
+                            market, entry_signal, tick
+                        )
+
+                    SIGNALS_GENERATED.inc()
+
+            except Exception as e:
+                log.error("market_cycle_error", error=str(e))
+                CYCLE_ERRORS.inc()
+                cycle_span.set_attribute("error", str(e)[:256])
+
+            finally:
+                # ── 6. Fin de ciclo — SIEMPRE se ejecuta ──────────────
+                await self._strategy.on_exit(market)
+
+    # ------------------------------------------------------------------
+    # ENTRADA: RIESGO + EJECUCIÓN
+    # ------------------------------------------------------------------
+
+    async def _evaluate_risk_and_execute(
+        self,
+        market: Market,
+        entry_signal: Signal,
+        tick:         MarketTick | None = None,
+    ) -> None:
+        """
+        Evalúa riesgo de la señal y ejecuta si es aprobada.
+        Si el riesgo deniega, notifica al usuario.
+
+        Instrumentado con OpenTelemetry: sub-spans anidados para
+        risk_evaluation y execution.
+        """
+        tracer = get_tracer()
+
+        # Construye el contexto del portfolio para RiskEngine
         open_positions  = await self._repo.get_positions(open_only=True)
         balance         = await self._portfolio.get_balance()
         market_exposure = sum(
@@ -163,27 +273,53 @@ async def _run_market_cycle(self, market: Market) -> None:
         )
         total_exposure  = sum(p.amount for p in open_positions)
 
-        # Evalúa riesgo con contexto completo
-        risk_decision = await self._risk.evaluate(
-            signal=entry_signal,
-            current_balance=balance,
-            open_positions_count=len(open_positions),
-            market_exposure_usdc=market_exposure,
-            total_exposure_usdc=total_exposure,
-            requested_amount=self._config.position_size_usdc,
-            market_id=market.id,
-            trading_mode=self._config.trading_mode,
-        )
+        # Extrae datos de mercado para RiskContext (Kelly Criterion)
+        market_yes_price = tick.yes_price if tick else 0.5
+
+        # ── Sub-span: risk_evaluation ─────────────────────────────────
+        with tracer.start_as_current_span("risk_evaluation") as risk_span:
+            risk_span.set_attribute("market.id", market.id)
+            risk_span.set_attribute("signal.confidence", str(entry_signal.confidence))
+            risk_span.set_attribute("requested_amount", str(self._position_size))
+            risk_span.set_attribute("current_balance", str(balance))
+
+            # Evalúa riesgo con contexto completo
+            risk_decision = await self._risk.evaluate(
+                signal=entry_signal,
+                current_balance=balance,
+                open_positions_count=len(open_positions),
+                market_exposure_usdc=market_exposure,
+                total_exposure_usdc=total_exposure,
+                requested_amount=self._position_size,
+                market_id=market.id,
+                trading_mode=self._trading_mode,
+                market_yes_price=market_yes_price,
+            )
+
+            risk_span.set_attribute("risk.allowed", str(risk_decision.allowed))
+            risk_span.set_attribute("risk.rule", risk_decision.rule_triggered)
 
         if risk_decision.allowed:
-            # Usa el monto ajustado por el RiskEngine si lo hay
-            amount = risk_decision.suggested_amount or self._config.position_size_usdc
+            # ── Sub-span: execution ───────────────────────────────────
+            with tracer.start_as_current_span("execution") as exec_span:
+                exec_span.set_attribute("execution.type", "entry")
+                exec_span.set_attribute("execution.market_id", market.id)
 
-            result = await self._execution.execute_entry(
-                signal=entry_signal,
-                market_id=market.id,
-                amount=amount,
-            )
+                # Usa el monto ajustado por el RiskEngine si lo hay
+                amount = (
+                    risk_decision.suggested_amount
+                    or self._position_size
+                )
+
+                result = await self._execution.execute_entry(
+                    signal=entry_signal,
+                    market_id=market.id,
+                    amount=amount,
+                )
+
+                exec_span.set_attribute("execution.success", str(result.success))
+                if result.fill_price:
+                    exec_span.set_attribute("execution.fill_price", str(result.fill_price))
 
             if result.success:
                 self._strategy.mark_entry(
@@ -191,9 +327,99 @@ async def _run_market_cycle(self, market: Market) -> None:
                     market_id=market.id,
                     price=result.fill_price,
                 )
+                logger.info(
+                    "entry_executed",
+                    market_id=market.id,
+                    strategy=entry_signal.source_strategy,
+                    fill_price=result.fill_price,
+                    amount=amount,
+                )
         else:
             # Notifica al usuario si el riesgo bloqueó la operación
+            logger.info(
+                "risk_denied",
+                market_id=market.id,
+                rule=risk_decision.rule_triggered,
+                reason=risk_decision.reason,
+            )
             await self._notifier.send_risk_alert(
                 rule_triggered=risk_decision.rule_triggered,
                 reason=risk_decision.reason,
             )
+
+    # ------------------------------------------------------------------
+    # SALIDA
+    # ------------------------------------------------------------------
+
+    async def _execute_exit(
+        self,
+        market: Market,
+        exit_signal: Signal,
+    ) -> None:
+        """
+        Ejecuta la salida de una posición existente.
+        Busca la posición abierta para este mercado y la cierra.
+
+        Instrumentado con OpenTelemetry: sub-span para exit execution.
+        """
+        tracer = get_tracer()
+
+        # Obtiene todas las posiciones abiertas y filtra por market_id
+        all_open = await self._repo.get_positions(open_only=True)
+        market_positions = [p for p in all_open if p.market_id == market.id]
+
+        if not market_positions:
+            logger.warning(
+                "exit_signal_no_open_position",
+                market_id=market.id,
+            )
+            return
+
+        position = market_positions[0]
+
+        with tracer.start_as_current_span("execution") as exec_span:
+            exec_span.set_attribute("execution.type", "exit")
+            exec_span.set_attribute("execution.market_id", market.id)
+            exec_span.set_attribute("execution.exit_reason", exit_signal.reason)
+
+            result = await self._execution.execute_exit(
+                position=position,
+                reason=exit_signal.reason,
+            )
+
+            exec_span.set_attribute("execution.success", str(result.success))
+            if result.pnl is not None:
+                exec_span.set_attribute("execution.pnl", str(result.pnl))
+
+        if result.success:
+            self._strategy.mark_exit(
+                strategy_name=exit_signal.source_strategy,
+                market_id=market.id,
+            )
+            logger.info(
+                "exit_executed",
+                market_id=market.id,
+                pnl=result.pnl,
+                reason=exit_signal.reason,
+            )
+
+    # ------------------------------------------------------------------
+    # HELPERS
+    # ------------------------------------------------------------------
+
+    async def _get_current_tick(
+        self, market: Market
+    ) -> MarketTick | None:
+        """
+        Obtiene el tick más reciente del mercado vía MarketService.
+        Delega en el market data port (HTTP client con fallback a WS).
+        """
+        try:
+            return await self._market_svc.get_market_tick(market.id)
+        except Exception as e:
+            logger.debug(
+                "tick_fetch_failed",
+                market_id=market.id,
+                error=str(e),
+            )
+            return None

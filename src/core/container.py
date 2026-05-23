@@ -1,35 +1,43 @@
 # src/core/container.py
 
 import time
+
 import structlog
-from datetime import datetime, timezone
 from redis.asyncio import Redis as AsyncRedis
 
-from src.infrastructure.security.secure_config import SecureConfig
-from src.infrastructure.security.key_manager import KeyManager
-from src.infrastructure.security.audit_log import AuditLogger
-from src.infrastructure.security.rate_limiter import RateLimiter
-from src.infrastructure.security.security_guard import SecurityGuard
-from src.infrastructure.db.session import create_engine, create_session_factory
-from src.infrastructure.db.repository import SQLAlchemyRepository
-from src.infrastructure.cache.redis_client import RedisClient
-from src.infrastructure.polymarket.ws_client import PolymarketWSClient
-from src.infrastructure.polymarket.http_client import PolymarketHTTPClient
-from src.infrastructure.observability.metrics import (
-    ServiceStatusEnum,
-    BOT_UPTIME,
-)
-from src.strategies.engine import StrategyEngine
-from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
-from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
-from src.risk.engine import RiskEngine, RiskEngineConfig
-from src.execution.paper_handler import PaperTradingHandler
-from src.execution.real_handler import RealTradingHandler
 from src.application.services.market_service import MarketService
 from src.application.services.portfolio_service import PortfolioService
 from src.application.services.trading_service import TradingService
-from src.interfaces.telegram.handlers.alerts import TelegramNotifier
+from src.domain.enums.asset import Asset
+from src.domain.enums.window import Window
+from src.execution.paper_handler import PaperTradingHandler
+from src.execution.real_handler import RealTradingHandler
+from src.infrastructure.cache.redis_client import RedisClient
+from src.infrastructure.db.repository import SQLAlchemyRepository
+from src.infrastructure.db.session import create_engine, create_session_factory
+from src.infrastructure.observability.metrics import (
+    ServiceStatusEnum,
+)
+from src.infrastructure.polymarket.http_client import PolymarketHTTPClient
+from src.infrastructure.polymarket.ws_client import PolymarketWSClient
+from src.infrastructure.security.audit_log import AuditLogger
+from src.infrastructure.security.circuit_breaker import (
+    CircuitBreakerConfig,
+    CLOBCircuitBreaker,
+)
+from src.infrastructure.security.key_manager import KeyManager
+from src.infrastructure.security.rate_limiter import RateLimiter
+from src.infrastructure.security.secure_config import SecureConfig
+from src.infrastructure.security.security_guard import SecurityGuard
 from src.interfaces.telegram.bot import create_bot, create_dispatcher
+from src.interfaces.telegram.handlers.alerts import TelegramNotifier
+from src.risk.engine import RiskEngine, RiskEngineConfig
+from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
+from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
+from src.strategies.engine import StrategyEngine
+from src.strategies.filters.multi_timeframe import MultiTimeframeFilter
+from src.strategies.mean_reversion.config import MeanReversionConfig
+from src.strategies.mean_reversion.strategy import MeanReversionStrategy
 
 logger = structlog.get_logger(__name__)
 
@@ -123,8 +131,21 @@ class Container:
             target_price       = self.config.bat_target_price,
             position_size_usdc = self.config.bat_position_size_usdc,
         )
+        mr_config = MeanReversionConfig(
+            ma_window          = getattr(self.config, 'mr_ma_window', 20),
+            entry_zscore       = getattr(self.config, 'mr_entry_zscore', -2.0),
+            exit_zscore        = getattr(self.config, 'mr_exit_zscore', 0.0),
+            stop_loss_pct      = getattr(self.config, 'mr_stop_loss_pct', 0.10),
+            timeout_minutes    = getattr(self.config, 'mr_timeout_minutes', 45.0),
+            max_spread         = getattr(self.config, 'mr_max_spread', 0.03),
+            min_volume_usdc    = getattr(self.config, 'mr_min_volume_usdc', 1000.0),
+            position_size_usdc = getattr(self.config, 'mr_position_size_usdc', 10.0),
+        )
         self.strategy_engine = StrategyEngine(
-            strategies=[BuyAboveThresholdStrategy(config=bat_config)]
+            strategies=[
+                BuyAboveThresholdStrategy(config=bat_config),
+                MeanReversionStrategy(config=mr_config),
+            ]
         )
 
         # ── 6. Risk Engine ────────────────────────────────────────────
@@ -134,6 +155,11 @@ class Container:
             max_daily_drawdown_pct = self.config.risk_max_drawdown_pct,
             max_exposure_pct       = self.config.risk_max_exposure_pct,
             max_open_positions     = self.config.risk_max_positions,
+            kelly_cap              = getattr(self.config, 'kelly_cap', 0.25),
+            kelly_safety_factor    = getattr(self.config, 'kelly_safety_factor', 0.25),
+            kelly_target_price     = self.config.bat_target_price,
+            kelly_position_floor   = getattr(self.config, 'kelly_position_floor', 5.0),
+            kelly_position_cap     = getattr(self.config, 'kelly_position_cap', 50.0),
         )
         self.risk_engine = RiskEngine(config=risk_config)
 
@@ -159,6 +185,13 @@ class Container:
         else:
             from src.infrastructure.polymarket.clob_client import PolymarketCLOBClient
             clob = PolymarketCLOBClient(key_manager=self.key_manager)
+            circuit_breaker = CLOBCircuitBreaker(
+                config=CircuitBreakerConfig(
+                    failure_threshold=5,
+                    recovery_timeout=60.0,
+                    window_seconds=60.0,
+                )
+            )
             self.execution_handler = RealTradingHandler(
                 clob_client=clob,
                 repository=self.repository,
@@ -166,6 +199,7 @@ class Container:
                 notifier=self.notifier,
                 audit_logger=self.audit_logger,
                 security_guard=self.security_guard,
+                circuit_breaker=circuit_breaker,
             )
 
         # ── 9. Application Services ───────────────────────────────────
@@ -191,9 +225,56 @@ class Container:
             execution_handler=self.execution_handler,
             repository=self.repository,
             notifier=self.notifier,
+            portfolio_service=self.portfolio_service,
+            position_size_usdc=self.config.bat_position_size_usdc,
+            trading_mode=self.config.trading_mode,
         )
 
+        # ── 9.5 Multi-Timeframe Filter ────────────────────────────────
+        # Inyecta el filtro en la estrategia BAT después de que
+        # MarketService esté disponible (necesario para obtener tick M15)
+        log.info("init_step", step="mtf_filter")
+        await self._wire_mtf_filter()
+
         log.info("container_initialized", mode=self.config.trading_mode)
+
+    async def _wire_mtf_filter(self) -> None:
+        """
+        Crea e inyecta el filtro Multi-Timeframe en la estrategia BAT.
+
+        El filtro consulta el tick M15 del mismo asset para confirmar
+        señales generadas en M5. Reduce falsos positivos ~40%.
+        """
+        # Construye el tick_provider: dado un Asset, obtiene el tick M15
+        async def _get_m15_tick(asset: Asset):
+            try:
+                markets = await self.market_service.get_active_markets(
+                    asset=asset.value,
+                    window=Window.M15.value,
+                )
+                if not markets:
+                    return None
+                m15_market = markets[0]
+                return await self.market_service.get_market_tick(m15_market.id)
+            except Exception:
+                return None
+
+        # Crea el filtro con el threshold de BAT
+        mtf = MultiTimeframeFilter(
+            tick_provider=_get_m15_tick,
+            threshold=self.config.bat_threshold,
+        )
+
+        # Inyecta en la estrategia BAT (siempre es la primera)
+        from src.strategies.buy_above_threshold.strategy import (
+            BuyAboveThresholdStrategy,
+        )
+        for strategy in self.strategy_engine._strategies:
+            if isinstance(strategy, BuyAboveThresholdStrategy):
+                strategy.set_mtf_filter(mtf)
+                break
+
+        logger.info("mtf_filter_wired", threshold=self.config.bat_threshold)
 
     async def shutdown(self) -> None:
         """
@@ -252,8 +333,9 @@ class Container:
         Verifica el estado de todos los servicios.
         Usado por el endpoint /health.
         """
-        from src.interfaces.api.schemas.health_schema import ServiceStatusEnum
         import httpx
+
+        from src.interfaces.api.schemas.health_schema import ServiceStatusEnum
 
         results = {}
 

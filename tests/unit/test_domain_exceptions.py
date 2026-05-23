@@ -10,7 +10,7 @@ Ejecutar con:
 Cobertura esperada: 100% de src/domain/exceptions.py
 """
 
-import pytest
+import os
 
 # ---------------------------------------------------------------------------
 # Importar todas las excepciones a probar
@@ -18,27 +18,45 @@ import pytest
 # En tu proyecto real, el import sería:
 #   from src.domain.exceptions import (...)
 # Aquí usamos la ruta relativa del archivo que acabamos de crear.
+import sys
 
-import sys, os
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from src.domain.exceptions import (
-    PolyBotError,
-    MarketError,
-    NoActiveMarketsError,
-    MarketFilterError,
-    ExecutionError,
-    OrderSubmitError,
-    OrderIdempotencyError,
-    ConfirmationTimeoutError,
-    RiskError,
-    RiskDeniedError,
-    WebSocketError,
-    WebSocketConnectionError,
-    WebSocketMaxRetriesError,
+    AuthenticationError,
+    CircuitBreakerOpenError,
     ConfigurationError,
+    ConfirmationTimeoutError,
+    DatabaseConnectionError,
+    DomainError,
+    ExecutionError,
+    InfrastructureError,
+    InsufficientBalanceError,
+    InvalidConfigError,
+    MarketError,
+    MarketExpiredError,
+    MarketFilterError,
+    MarketNotFoundError,
+    MissingEnvironmentVariableError,
+    NoActiveMarketsError,
+    OrderIdempotencyError,
+    OrderRejectedError,
+    OrderSubmitError,
+    PolyBotError,
+    PositionNotFoundError,
+    RateLimitExceededError,
+    RedisConnectionError,
+    RiskDeniedError,
+    RiskError,
+    SecurityError,
+    SignalRejectedError,
+    TradingError,
+    WebSocketConnectionError,
+    WebSocketError,
+    WebSocketMaxRetriesError,
 )
-
 
 # ===========================================================================
 # Jerarquía de herencia
@@ -77,6 +95,58 @@ class TestHierarchy:
     def test_configuration_is_polybot_error(self):
         assert issubclass(ConfigurationError, PolyBotError)
 
+    def test_domain_error_alias_equals_polybot_error(self):
+        """DomainError y PolyBotError son la misma clase."""
+        assert DomainError is PolyBotError
+
+    def test_market_not_found_is_market_error(self):
+        assert issubclass(MarketNotFoundError, MarketError)
+
+    def test_market_expired_is_market_error(self):
+        assert issubclass(MarketExpiredError, MarketError)
+
+    def test_insufficient_balance_is_trading_error(self):
+        assert issubclass(InsufficientBalanceError, TradingError)
+
+    def test_position_not_found_is_trading_error(self):
+        assert issubclass(PositionNotFoundError, TradingError)
+
+    def test_order_rejected_is_trading_error(self):
+        assert issubclass(OrderRejectedError, TradingError)
+
+    def test_signal_rejected_is_trading_error(self):
+        assert issubclass(SignalRejectedError, TradingError)
+
+    def test_circuit_breaker_is_execution_error(self):
+        assert issubclass(CircuitBreakerOpenError, ExecutionError)
+
+    def test_invalid_config_is_configuration_error(self):
+        assert issubclass(InvalidConfigError, ConfigurationError)
+
+    def test_missing_env_var_is_configuration_error(self):
+        assert issubclass(MissingEnvironmentVariableError, ConfigurationError)
+
+    def test_authentication_is_security_error(self):
+        assert issubclass(AuthenticationError, SecurityError)
+
+    def test_rate_limit_is_security_error(self):
+        assert issubclass(RateLimitExceededError, SecurityError)
+
+    def test_db_connection_is_infrastructure_error(self):
+        assert issubclass(DatabaseConnectionError, InfrastructureError)
+
+    def test_redis_connection_is_infrastructure_error(self):
+        assert issubclass(RedisConnectionError, InfrastructureError)
+
+    def test_trading_error_is_domain_error(self):
+        assert issubclass(TradingError, DomainError)
+
+    def test_security_error_is_domain_error(self):
+        assert issubclass(SecurityError, DomainError)
+
+    def test_infrastructure_error_is_domain_error(self):
+        assert issubclass(InfrastructureError, DomainError)
+
     def test_catch_all_with_polybot_error(self):
         """Un solo except PolyBotError captura todas las excepciones."""
         exceptions_to_test = [
@@ -89,10 +159,45 @@ class TestHierarchy:
             WebSocketConnectionError(),
             WebSocketMaxRetriesError(),
             ConfigurationError(),
+            MarketNotFoundError(),
+            MarketExpiredError(),
+            InsufficientBalanceError(),
+            PositionNotFoundError(),
+            OrderRejectedError(),
+            SignalRejectedError(),
+            CircuitBreakerOpenError(),
+            InvalidConfigError(),
+            MissingEnvironmentVariableError(),
+            AuthenticationError(),
+            RateLimitExceededError(),
+            DatabaseConnectionError(),
+            RedisConnectionError(),
         ]
         for exc in exceptions_to_test:
             assert isinstance(exc, PolyBotError), (
                 f"{type(exc).__name__} no hereda de PolyBotError"
+            )
+
+    def test_catch_all_with_domain_error(self):
+        """DomainError también captura todas las excepciones nuevas."""
+        exceptions_to_test = [
+            MarketNotFoundError(),
+            MarketExpiredError(),
+            InsufficientBalanceError(),
+            PositionNotFoundError(),
+            OrderRejectedError(),
+            SignalRejectedError(),
+            CircuitBreakerOpenError(),
+            InvalidConfigError(),
+            MissingEnvironmentVariableError(),
+            AuthenticationError(),
+            RateLimitExceededError(),
+            DatabaseConnectionError(),
+            RedisConnectionError(),
+        ]
+        for exc in exceptions_to_test:
+            assert isinstance(exc, DomainError), (
+                f"{type(exc).__name__} no hereda de DomainError"
             )
 
 
@@ -192,7 +297,7 @@ class TestMarketFilterError:
 
     def test_tokens_identicos_caso_real(self):
         """Simula el caso más común: yes_token_id == no_token_id."""
-        yes_id = no_id = "0xabc123"
+        yes_id = "0xabc123"
         exc = MarketFilterError(
             market_id="condition-abc",
             reason=f"yes_token_id y no_token_id son idénticos ({yes_id})",
@@ -386,6 +491,297 @@ class TestConfigurationError:
         )
         assert exc.variable == "REDIS_URL"
         assert exc.reason == "formato inválido"
+
+
+# ===========================================================================
+# MarketNotFoundError
+# ===========================================================================
+
+class TestMarketNotFoundError:
+
+    def test_mensaje_contiene_market_id_truncado(self):
+        market_id = "condition-btc-5m-extra-largo"
+        exc = MarketNotFoundError(market_id=market_id)
+        assert market_id[:16] in str(exc)
+
+    def test_con_detail(self):
+        exc = MarketNotFoundError(market_id="mkt-1", detail="no existe en DB ni Redis")
+        assert "no existe en DB ni Redis" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = MarketNotFoundError()
+        assert exc.is_recoverable is True
+
+
+# ===========================================================================
+# MarketExpiredError
+# ===========================================================================
+
+class TestMarketExpiredError:
+
+    def test_mensaje_contiene_market_id(self):
+        exc = MarketExpiredError(market_id="mkt-expired-001")
+        assert "mkt-expired-001" in str(exc)
+
+    def test_con_expiry(self):
+        from datetime import datetime
+        expiry = datetime(2024, 1, 15, 12, 0, 0)
+        exc = MarketExpiredError(market_id="mkt-1", expiry=expiry)
+        assert "2024-01-15" in str(exc)
+
+    def test_no_es_recuperable(self):
+        exc = MarketExpiredError()
+        assert exc.is_recoverable is False
+
+
+# ===========================================================================
+# InsufficientBalanceError
+# ===========================================================================
+
+class TestInsufficientBalanceError:
+
+    def test_muestra_valores(self):
+        exc = InsufficientBalanceError(available=5.0, required=10.0)
+        assert "5.00" in str(exc)
+        assert "10.00" in str(exc)
+
+    def test_con_detail(self):
+        exc = InsufficientBalanceError(
+            available=3.0, required=10.0, detail="paper balance"
+        )
+        assert "paper balance" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = InsufficientBalanceError()
+        assert exc.is_recoverable is True
+
+    def test_atributos(self):
+        exc = InsufficientBalanceError(available=5.5, required=10.5)
+        assert exc.available == 5.5
+        assert exc.required == 10.5
+
+
+# ===========================================================================
+# PositionNotFoundError
+# ===========================================================================
+
+class TestPositionNotFoundError:
+
+    def test_mensaje_contiene_market_id(self):
+        exc = PositionNotFoundError(market_id="mkt-btc-5m")
+        assert "mkt-btc-5m" in str(exc)
+
+    def test_con_detail(self):
+        exc = PositionNotFoundError(market_id="mkt-1", detail="ya fue cerrada")
+        assert "ya fue cerrada" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = PositionNotFoundError()
+        assert exc.is_recoverable is True
+
+
+# ===========================================================================
+# OrderRejectedError
+# ===========================================================================
+
+class TestOrderRejectedError:
+
+    def test_mensaje_contiene_order_id(self):
+        exc = OrderRejectedError(order_id="ord-123", reason="precio fuera de rango")
+        assert "ord-123" in str(exc)
+        assert "precio fuera de rango" in str(exc)
+
+    def test_no_es_recuperable(self):
+        exc = OrderRejectedError()
+        assert exc.is_recoverable is False
+
+
+# ===========================================================================
+# SignalRejectedError
+# ===========================================================================
+
+class TestSignalRejectedError:
+
+    def test_mensaje_contiene_filtro(self):
+        exc = SignalRejectedError(
+            reason="liquidez insuficiente",
+            filter_name="liquidity_filter",
+        )
+        assert "liquidity_filter" in str(exc)
+        assert "liquidez insuficiente" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = SignalRejectedError()
+        assert exc.is_recoverable is True
+
+    def test_atributos(self):
+        exc = SignalRejectedError(
+            reason="spread demasiado alto",
+            filter_name="spread_filter",
+        )
+        assert exc.reason == "spread demasiado alto"
+        assert exc.filter_name == "spread_filter"
+
+
+# ===========================================================================
+# CircuitBreakerOpenError
+# ===========================================================================
+
+class TestCircuitBreakerOpenError:
+
+    def test_mensaje_contiene_fallos(self):
+        exc = CircuitBreakerOpenError(failure_count=5, recovery_seconds=60)
+        assert "5" in str(exc)
+        assert "60" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = CircuitBreakerOpenError()
+        assert exc.is_recoverable is True
+
+    def test_atributos(self):
+        exc = CircuitBreakerOpenError(failure_count=7, recovery_seconds=30)
+        assert exc.failure_count == 7
+        assert exc.recovery_seconds == 30
+
+
+# ===========================================================================
+# InvalidConfigError
+# ===========================================================================
+
+class TestInvalidConfigError:
+
+    def test_mensaje_contiene_variable_y_valor(self):
+        exc = InvalidConfigError(
+            variable="BAT_THRESHOLD",
+            value=1.5,
+            constraint="debe estar entre 0.01 y 0.99",
+        )
+        assert "BAT_THRESHOLD" in str(exc)
+        assert "1.5" in str(exc)
+
+    def test_no_es_recuperable(self):
+        exc = InvalidConfigError()
+        assert exc.is_recoverable is False
+
+    def test_atributos(self):
+        exc = InvalidConfigError(
+            variable="POSITION_SIZE", value=-10, constraint="debe ser > 0"
+        )
+        assert exc.variable == "POSITION_SIZE"
+        assert exc.value == -10
+        assert exc.constraint == "debe ser > 0"
+
+
+# ===========================================================================
+# MissingEnvironmentVariableError
+# ===========================================================================
+
+class TestMissingEnvironmentVariableError:
+
+    def test_mensaje_contiene_variable(self):
+        exc = MissingEnvironmentVariableError(
+            variable="DATABASE_URL",
+            hint="Configura la URL de conexión",
+        )
+        assert "DATABASE_URL" in str(exc)
+        assert "URL de conexión" in str(exc)
+
+    def test_no_es_recuperable(self):
+        exc = MissingEnvironmentVariableError(variable="REDIS_URL")
+        assert exc.is_recoverable is False
+
+    def test_atributos(self):
+        exc = MissingEnvironmentVariableError(
+            variable="API_KEY", hint="genera una en polymarket.com"
+        )
+        assert exc.variable == "API_KEY"
+        assert exc.hint == "genera una en polymarket.com"
+
+
+# ===========================================================================
+# AuthenticationError
+# ===========================================================================
+
+class TestAuthenticationError:
+
+    def test_mensaje_con_reason(self):
+        exc = AuthenticationError(reason="API key expirada")
+        assert "API key expirada" in str(exc)
+
+    def test_mensaje_sin_reason(self):
+        exc = AuthenticationError()
+        assert "Error de autenticación" in str(exc)
+
+    def test_no_es_recuperable(self):
+        exc = AuthenticationError()
+        assert exc.is_recoverable is False
+
+
+# ===========================================================================
+# RateLimitExceededError
+# ===========================================================================
+
+class TestRateLimitExceededError:
+
+    def test_mensaje_contiene_limites(self):
+        exc = RateLimitExceededError(window_seconds=60, max_requests=100)
+        assert "100" in str(exc)
+        assert "60" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = RateLimitExceededError()
+        assert exc.is_recoverable is True
+
+    def test_atributos(self):
+        exc = RateLimitExceededError(window_seconds=30, max_requests=50)
+        assert exc.window_seconds == 30
+        assert exc.max_requests == 50
+
+
+# ===========================================================================
+# DatabaseConnectionError
+# ===========================================================================
+
+class TestDatabaseConnectionError:
+
+    def test_mensaje_con_error(self):
+        exc = DatabaseConnectionError(original_error="Connection refused")
+        assert "Connection refused" in str(exc)
+
+    def test_mensaje_sin_error(self):
+        exc = DatabaseConnectionError()
+        assert "Error de conexión a la base de datos" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = DatabaseConnectionError()
+        assert exc.is_recoverable is True
+
+    def test_atributos(self):
+        exc = DatabaseConnectionError(original_error="timeout")
+        assert exc.original_error == "timeout"
+
+
+# ===========================================================================
+# RedisConnectionError
+# ===========================================================================
+
+class TestRedisConnectionError:
+
+    def test_mensaje_con_error(self):
+        exc = RedisConnectionError(original_error="NOAUTH Authentication required")
+        assert "NOAUTH" in str(exc)
+
+    def test_mensaje_sin_error(self):
+        exc = RedisConnectionError()
+        assert "Error de conexión a Redis" in str(exc)
+
+    def test_es_recuperable(self):
+        exc = RedisConnectionError()
+        assert exc.is_recoverable is True
+
+    def test_atributos(self):
+        exc = RedisConnectionError(original_error="connection timeout")
+        assert exc.original_error == "connection timeout"
 
 
 # ===========================================================================

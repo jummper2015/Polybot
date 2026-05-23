@@ -1,8 +1,10 @@
 # src/backtesting/metrics.py
 
 import math
+
 import structlog
-from src.backtesting.engine import BacktestResult, BacktestPosition
+
+from src.backtesting.engine import BacktestResult
 
 logger = structlog.get_logger(__name__)
 

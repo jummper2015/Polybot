@@ -1,10 +1,10 @@
 # src/infrastructure/security/secure_config.py
 
-import os
 import hashlib
-import structlog
+import os
 from dataclasses import dataclass
-from typing import Any
+
+import structlog
 
 logger = structlog.get_logger(__name__)
 

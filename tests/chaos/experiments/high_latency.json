@@ -1,0 +1,88 @@
+{
+  "version": "1.0.0",
+  "title": "High Latency (500ms+) on External Calls",
+  "description": "Simulates 500ms+ latency on all external API calls and verifies timeouts are respected, no operations hang indefinitely, and the system remains responsive.",
+  "tags": ["latency", "timeout", "performance"],
+  "contributions": {
+    "reliability": "medium",
+    "availability": "medium"
+  },
+  "steady-state-hypothesis": {
+    "title": "Bot survives high latency without hanging",
+    "probes": [
+      {
+        "name": "verify-timeouts-respected",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_api_timeouts_not_exceeded",
+          "arguments": {
+            "max_timeout": 10.0
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.max_observed_timeout",
+          "expect": {
+            "type": "range",
+            "lower": 0.0,
+            "upper": 10.0
+          }
+        }
+      },
+      {
+        "name": "verify-cycle-latency-within-tolerance",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_cycle_latency",
+          "arguments": {
+            "max_p95_seconds": 15.0
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.p95_latency",
+          "expect": {
+            "type": "range",
+            "lower": 0.0,
+            "upper": 15.0
+          }
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "simulate-high-latency",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "simulate_network_latency",
+        "arguments": {
+          "target": "clob.polymarket.com",
+          "latency_ms": 500,
+          "jitter_ms": 100,
+          "duration_seconds": 90
+        }
+      },
+      "pauses": {
+        "after": 90
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "stop-latency-simulation",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "stop_network_latency"
+      }
+    }
+  ]
+}

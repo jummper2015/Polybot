@@ -1,6 +1,7 @@
 # src/application/ports/market_data_port.py
 
 from abc import ABC, abstractmethod
+
 from src.domain.value_objects.market_tick import MarketTick
 
 

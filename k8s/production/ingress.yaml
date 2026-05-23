@@ -1,0 +1,41 @@
+# k8s/production/ingress.yaml
+# PolyBot — Production: Ingress con TLS + rate limiting + WAF
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: polybot-api
+  namespace: production
+  labels:
+    app: polybot
+    component: api
+    environment: production
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # ── WAF: ModSecurity ──────────────────────────────────────────
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/modsecurity-snippet: |
+      SecRuleEngine On
+      SecRule REQUEST_URI "@beginsWith /admin" "id:1001,deny,status:403"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.polybot.example.com
+      secretName: polybot-prod-tls
+  rules:
+    - host: api.polybot.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: polybot-api
+                port:
+                  number: 8000

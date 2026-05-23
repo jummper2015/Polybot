@@ -26,6 +26,10 @@ class RiskContext:
     market_id:            str     # Mercado al que va dirigida la señal
     trading_mode:         str     # "paper" o "real"
 
+    # ── Datos de mercado (para Kelly Criterion) ───────────────────────
+    market_yes_price:     float   = 0.5     # Precio YES actual del mercado
+    recent_volatility:    float | None = None  # Volatilidad reciente (None → dampener=1.0)
+
     # ── Timestamp ─────────────────────────────────────────────────────
     evaluated_at:         datetime = None
 

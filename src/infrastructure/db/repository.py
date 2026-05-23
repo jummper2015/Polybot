@@ -1,17 +1,22 @@
 # src/infrastructure/db/repository.py
 
-import structlog
 from datetime import datetime
-from sqlalchemy import select, update, func
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+import structlog
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.application.ports.repository_port import IRepositoryPort
-from src.domain.entities.market import Market, Asset, Window, MarketStatus
-from src.domain.entities.order import Order, OrderSide, OrderStatus, TradingMode
+from src.domain.entities.market import Market
+from src.domain.entities.order import Order
 from src.domain.entities.position import Position
-from src.infrastructure.db.models import (
-    MarketModel, OrderModel, PositionModel, AuditLogModel
-)
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.order_side import OrderSide
+from src.domain.enums.order_status import OrderStatus
+from src.domain.enums.trading_mode import TradingMode
+from src.domain.enums.window import Window
+from src.infrastructure.db.models import AuditLogModel, MarketModel, OrderModel, PositionModel
 
 logger = structlog.get_logger(__name__)
 

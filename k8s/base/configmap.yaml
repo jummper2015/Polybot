@@ -1,0 +1,53 @@
+# k8s/base/configmap.yaml
+# PolyBot — ConfigMap con variables no sensibles
+# Los valores de TRADING_MODE y POSITION_SIZE se sobrescriben por namespace.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: polybot-config
+  labels:
+    app: polybot
+data:
+  # ── Entorno ───────────────────────────────────────────────────────
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  ENV: "production"
+
+  # ── Infraestructura ───────────────────────────────────────────────
+  REDIS_URL: "redis://redis:6379/0"
+
+  # ── Modo de trading ───────────────────────────────────────────────
+  TRADING_MODE: "paper"
+  POSITION_SIZE_USDC: "10.0"
+
+  # ── Estrategia Buy Above Threshold ────────────────────────────────
+  BAT_THRESHOLD: "0.75"
+  BAT_STOP_LOSS_PCT: "0.15"
+  BAT_TARGET_PRICE: "0.90"
+  BAT_REQUIRED_TICKS: "3"
+  BAT_MAX_SPREAD: "0.03"
+  BAT_MIN_VOLUME_USDC: "1000.0"
+
+  # ── Estrategia Mean Reversion ─────────────────────────────────────
+  MR_MA_WINDOW: "20"
+  MR_ENTRY_ZSCORE: "-2.0"
+  MR_EXIT_ZSCORE: "0.0"
+  MR_STOP_LOSS_PCT: "0.10"
+  MR_TIMEOUT_MINUTES: "45.0"
+  MR_MAX_SPREAD: "0.03"
+  MR_MIN_VOLUME_USDC: "1000.0"
+
+  # ── Risk Management ───────────────────────────────────────────────
+  RISK_MIN_BALANCE: "50.0"
+  RISK_MAX_DRAWDOWN_PCT: "0.15"
+  RISK_MAX_EXPOSURE_PCT: "0.50"
+  RISK_MAX_POSITIONS: "5"
+  KELLY_CAP: "0.25"
+  KELLY_SAFETY_FACTOR: "0.25"
+  KELLY_POSITION_FLOOR: "5.0"
+  KELLY_POSITION_CAP: "50.0"
+
+  # ── Observabilidad ────────────────────────────────────────────────
+  LOG_LEVEL: "INFO"
+  PROMETHEUS_PORT: "8000"

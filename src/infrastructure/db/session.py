@@ -2,10 +2,10 @@
 
 import structlog
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
     AsyncEngine,
-    create_async_engine,
+    AsyncSession,
     async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
 
@@ -29,9 +29,13 @@ def create_engine(database_url: str) -> AsyncEngine:
         database_url,
         pool_size=5,          # Conexiones permanentes en el pool
         max_overflow=10,      # Conexiones extra permitidas bajo carga
+        pool_recycle=3600,    # Reciclar conexiones cada hora (evita stale connections)
         pool_timeout=30,      # Segundos de espera para obtener conexión
         pool_pre_ping=True,   # Verifica que la conexión esté viva
         echo=False,           # True solo en desarrollo para ver SQL
+        connect_args={
+            "server_settings": {"application_name": "polybot"}
+        },
     )
     logger.info(
         "db_engine_created",

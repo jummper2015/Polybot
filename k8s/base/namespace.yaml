@@ -1,0 +1,29 @@
+# k8s/base/namespace.yaml
+# PolyBot — Namespaces para staging, canary y production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    app: polybot
+    environment: staging
+    trading-mode: paper
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: canary
+  labels:
+    app: polybot
+    environment: canary
+    trading-mode: real
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    app: polybot
+    environment: production
+    trading-mode: real

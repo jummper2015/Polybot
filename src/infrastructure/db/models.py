@@ -1,12 +1,19 @@
 # src/infrastructure/db/models.py
 
 from datetime import datetime
+
 from sqlalchemy import (
-    String, Float, Integer, Boolean,
-    DateTime, Text, JSON, Index,
+    JSON,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+
 from src.infrastructure.db.session import Base
 
 
@@ -63,6 +70,9 @@ class OrderModel(Base):
     strategy:     Mapped[str]            = mapped_column(String(50), nullable=False)
     reason:       Mapped[str]            = mapped_column(Text, nullable=False, default="")
     error:        Mapped[str | None]     = mapped_column(Text, nullable=True)
+    retry_count:  Mapped[int]            = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_retry_at:Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    idempotency_key: Mapped[str | None]  = mapped_column(String(32), nullable=True, unique=True)
     created_at:   Mapped[datetime]       = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -73,6 +83,7 @@ class OrderModel(Base):
         Index("ix_orders_status",    "status"),
         Index("ix_orders_mode",      "mode"),
         Index("ix_orders_created",   "created_at"),
+        Index("ix_orders_idempotency", "idempotency_key"),
     )
 
 
@@ -134,4 +145,19 @@ class AuditLogModel(Base):
         Index("ix_audit_action",    "action"),
         Index("ix_audit_order_id",  "order_id"),
         Index("ix_audit_timestamp", "timestamp"),
+    )
+
+
+class BotSettingsModel(Base):
+    """
+    Tabla: bot_settings
+    Almacena configuración del bot como clave-valor.
+    Permite cambios en caliente sin reiniciar la aplicación.
+    """
+    __tablename__ = "bot_settings"
+
+    key:        Mapped[str]      = mapped_column(String(50), primary_key=True)
+    value:      Mapped[str]      = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )

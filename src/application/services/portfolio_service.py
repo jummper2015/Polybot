@@ -1,7 +1,8 @@
 # src/application/services/portfolio_service.py
 
-import structlog
 from datetime import datetime, timezone
+
+import structlog
 
 from src.application.ports.repository_port import IRepositoryPort
 from src.execution.paper_handler import PaperTradingHandler

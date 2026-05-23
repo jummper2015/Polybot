@@ -1,28 +1,37 @@
 # src/execution/real_handler.py
 
-import uuid
 import asyncio
-import structlog
+import hashlib
+import uuid
 from datetime import datetime, timezone
 
 import httpx
+import structlog
 
-from src.domain.entities.order import Order, OrderSide, OrderStatus, TradingMode
+from src.application.ports.notification_port import INotificationPort
+from src.application.ports.repository_port import IRepositoryPort
+from src.domain.entities.order import Order
 from src.domain.entities.position import Position
+from src.domain.enums.order_side import OrderSide
+from src.domain.enums.order_status import OrderStatus
+from src.domain.enums.trading_mode import TradingMode
 from src.domain.value_objects.signal import Signal, SignalType
 from src.domain.value_objects.trade_result import TradeResult
-from src.application.ports.repository_port import IRepositoryPort
-from src.application.ports.notification_port import INotificationPort
 from src.execution.base import IExecutionHandler
-from src.infrastructure.polymarket.clob_client import PolymarketCLOBClient
 from src.infrastructure.cache.redis_client import RedisClient
-from src.infrastructure.security.audit_log import AuditLogger, AuditAction
 from src.infrastructure.observability.metrics import (
     ORDERS_EXECUTED,
     PNL_GAUGE,
-    REAL_ORDER_RETRIES,
     REAL_ORDER_ERRORS,
+    REAL_ORDER_RETRIES,
 )
+from src.infrastructure.observability.tracing import get_tracer
+from src.infrastructure.polymarket.clob_client import PolymarketCLOBClient
+from src.infrastructure.security.audit_log import AuditAction, AuditLogger
+from src.infrastructure.security.circuit_breaker import (
+    CLOBCircuitBreaker,
+)
+from src.infrastructure.security.security_guard import SecurityGuard
 
 logger = structlog.get_logger(__name__)
 
@@ -48,29 +57,35 @@ class RealTradingHandler(IExecutionHandler):
     GARANTÍAS DE SEGURIDAD:
     - Guardrails hardcoded que no pueden superarse por config
     - Toda operación genera audit log inmutable
-    - Idempotencia: el order_id se genera ANTES de llamar a la API
+    - Idempotency key SHA256 determinista: mismo signal en el mismo minuto = misma key
+    - Circuit breaker: 5 fallos en 60s → bloquea llamadas al CLOB por 60s
     - Retry solo en errores de red (no en 4xx de lógica)
     - Doble confirmación requerida antes de activar este handler
     """
 
     def __init__(
         self,
-        clob_client:  PolymarketCLOBClient,
-        repository:   IRepositoryPort,
-        redis:        RedisClient,
-        notifier:     INotificationPort,
-        audit_logger: AuditLogger,
+        clob_client:      PolymarketCLOBClient,
+        repository:       IRepositoryPort,
+        redis:            RedisClient,
+        notifier:         INotificationPort,
+        audit_logger:     AuditLogger,
+        security_guard:   SecurityGuard | None = None,
+        circuit_breaker:  CLOBCircuitBreaker | None = None,
     ):
-        self._clob     = clob_client
-        self._repo     = repository
-        self._redis    = redis
-        self._notifier = notifier
-        self._audit    = audit_logger
+        self._clob      = clob_client
+        self._repo      = repository
+        self._redis     = redis
+        self._notifier  = notifier
+        self._audit     = audit_logger
+        self._security  = security_guard
+        self._circuit   = circuit_breaker
 
         logger.info(
             "real_handler_initialized",
             max_order_usdc=MAX_ORDER_AMOUNT_USDC,
             max_retries=MAX_RETRIES,
+            circuit_breaker=circuit_breaker is not None,
         )
 
     # ------------------------------------------------------------------
@@ -82,54 +97,12 @@ class RealTradingHandler(IExecutionHandler):
         signal:    Signal,
         market_id: str,
         amount:    float,
-
-        # Actualización de src/execution/real_handler.py
-# Añadir SecurityGuard al flujo de execute_entry()
-
-class RealTradingHandler(IExecutionHandler):
-
-    def __init__(
-        self,
-        clob_client:     PolymarketCLOBClient,
-        repository:      IRepositoryPort,
-        redis:           RedisClient,
-        notifier:        INotificationPort,
-        audit_logger:    AuditLogger,
-        security_guard:  "SecurityGuard",   # NUEVO
-    ):
-        # ... (inicialización anterior) ...
-        self._security = security_guard
-
-    async def execute_entry(
-        self, signal: Signal, market_id: str, amount: float
-    ) -> TradeResult:
-
-        order_id = str(uuid.uuid4())
-
-        # ── SecurityGuard ANTES de cualquier operación ────────────────
-        security_result = await self._security.check_real_order(
-            order_id=order_id,
-            market_id=market_id,
-            amount=amount,
-            side=signal.type.value,
-        )
-
-        if not security_result.passed:
-            logger.warning(
-                "real_order_blocked_by_security",
-                reason=security_result.reason,
-                checks=security_result.checks,
-            )
-            return self._failed_result(
-                market_id, signal, amount, 0.0,
-                security_result.reason
-            )
-
-        # ... (resto del flujo C12) ...
     ) -> TradeResult:
         """
         Ejecuta una compra real en Polymarket.
         Flujo: Guardrails → Audit → API call con retry → Persistencia
+
+        Instrumentado con OpenTelemetry: span raíz con atributos de orden.
         """
         log = logger.bind(
             market_id=market_id,
@@ -137,6 +110,35 @@ class RealTradingHandler(IExecutionHandler):
             amount=amount,
             mode="real",
         )
+        tracer = get_tracer()
+
+        with tracer.start_as_current_span("execution.entry") as entry_span:
+            entry_span.set_attribute("execution.mode", "real")
+            entry_span.set_attribute("execution.market_id", market_id)
+            entry_span.set_attribute("execution.amount", str(amount))
+            entry_span.set_attribute("execution.side", signal.type.value)
+
+        # ── SecurityGuard ANTES de cualquier operación ────────────────
+        if self._security is not None:
+            security_result = await self._security.check_real_order(
+                order_id=str(uuid.uuid4()),
+                market_id=market_id,
+                amount=amount,
+                side=signal.type.value,
+            )
+
+            if not security_result.passed:
+                logger.warning(
+                    "real_order_blocked_by_security",
+                    reason=security_result.reason,
+                    checks=security_result.checks,
+                )
+                entry_span.set_attribute("error", security_result.reason[:200])
+                entry_span.set_attribute("execution.success", "false")
+                return self._failed_result(
+                    market_id, signal, amount, 0.0,
+                    security_result.reason
+                )
 
         # ── GUARDRAILS (hardcoded, inamovibles) ───────────────────────
         guardrail_result = self._apply_guardrails(amount, market_id)
@@ -148,6 +150,8 @@ class RealTradingHandler(IExecutionHandler):
                 market_id=market_id,
                 amount=amount,
             )
+            entry_span.set_attribute("error", guardrail_result[:200])
+            entry_span.set_attribute("execution.success", "false")
             return self._failed_result(
                 market_id, signal, amount, 0.0, guardrail_result
             )
@@ -160,10 +164,14 @@ class RealTradingHandler(IExecutionHandler):
             market_id, signal.type
         )
 
-        # ── Genera order_id ANTES de llamar a la API ──────────────────
-        # Idempotencia: si el request falla a mitad, el reintento
-        # enviará el mismo order_id y Polymarket no duplicará la orden
-        order_id = str(uuid.uuid4())
+        # ── Genera order_id determinista ANTES de llamar a la API ────
+        # Idempotencia SHA256: mismo signal en el mismo minuto = misma key
+        # Si el request falla a mitad, el reintento enviará la misma key
+        # y Polymarket no duplicará la orden
+        order_id = self._generate_idempotency_key(
+            strategy_name=signal.source_strategy,
+            market_id=market_id,
+        )
 
         # ── Audit: intento de orden ───────────────────────────────────
         await self._audit.log(
@@ -181,18 +189,19 @@ class RealTradingHandler(IExecutionHandler):
 
         # ── Crea la orden en DB (estado PENDING antes de la API call) ─
         order = Order(
-            id           = order_id,
-            market_id    = market_id,
-            side         = OrderSide.YES if signal.type == SignalType.BUY_YES
-                           else OrderSide.NO,
-            amount       = safe_amount,
-            target_price = target_price,
-            fill_price   = None,
-            slippage     = None,
-            status       = OrderStatus.PENDING,
-            mode         = TRADING_MODE,
-            strategy     = signal.source_strategy,
-            reason       = signal.reason,
+            id              = str(uuid.uuid4()),
+            market_id       = market_id,
+            side            = OrderSide.YES if signal.type == SignalType.BUY_YES
+                              else OrderSide.NO,
+            amount          = safe_amount,
+            target_price    = target_price,
+            fill_price      = None,
+            slippage        = None,
+            status          = OrderStatus.PENDING,
+            mode            = TRADING_MODE,
+            strategy        = signal.source_strategy,
+            reason          = signal.reason,
+            idempotency_key = order_id,
         )
         await self._repo.save_order(order)
         log.info("real_order_pending", order_id=order_id)
@@ -224,6 +233,8 @@ class RealTradingHandler(IExecutionHandler):
                 amount=safe_amount,
             )
             REAL_ORDER_ERRORS.labels(market_id=market_id).inc()
+            entry_span.set_attribute("error", error[:200])
+            entry_span.set_attribute("execution.success", "false")
             return self._failed_result(
                 market_id, signal, safe_amount, target_price, error
             )
@@ -253,6 +264,11 @@ class RealTradingHandler(IExecutionHandler):
         )
 
         ORDERS_EXECUTED.labels(mode="real", side=order.side.value).inc()
+
+        entry_span.set_attribute("execution.success", "true")
+        entry_span.set_attribute("execution.order_id", order_id)
+        entry_span.set_attribute("execution.fill_price", str(fill_price))
+        entry_span.set_attribute("execution.slippage", str(slippage))
 
         log.info(
             "real_order_filled",
@@ -293,6 +309,8 @@ class RealTradingHandler(IExecutionHandler):
         """
         Vende la posición existente en Polymarket.
         En mercados de predicción: vender = crear orden opuesta al precio actual.
+
+        Instrumentado con OpenTelemetry: span con atributos de salida.
         """
         log = logger.bind(
             position_id=position.id,
@@ -300,9 +318,19 @@ class RealTradingHandler(IExecutionHandler):
             reason=reason,
             mode="real",
         )
+        tracer = get_tracer()
+
+        with tracer.start_as_current_span("execution.exit") as exit_span:
+            exit_span.set_attribute("execution.mode", "real")
+            exit_span.set_attribute("execution.market_id", position.market_id)
+            exit_span.set_attribute("execution.position_id", position.id)
+            exit_span.set_attribute("execution.exit_reason", reason)
 
         current_price = await self._get_current_price(position.market_id)
-        order_id      = str(uuid.uuid4())
+        order_id      = self._generate_idempotency_key(
+            strategy_name=position.strategy,
+            market_id=position.market_id,
+        )
 
         await self._audit.log(
             action=AuditAction.REAL_EXIT_ATTEMPT,
@@ -371,6 +399,11 @@ class RealTradingHandler(IExecutionHandler):
 
         PNL_GAUGE.labels(mode="real").inc(position.pnl or 0)
         ORDERS_EXECUTED.labels(mode="real", side="EXIT").inc()
+
+        exit_span.set_attribute("execution.success", "true")
+        exit_span.set_attribute("execution.exit_price", str(exit_price))
+        if position.pnl is not None:
+            exit_span.set_attribute("execution.pnl", str(position.pnl))
 
         log.info(
             "real_exit_success",
@@ -452,9 +485,15 @@ class RealTradingHandler(IExecutionHandler):
             amount=position.amount,
         )
 
+        # Genera order_id determinista para redeem (mismo patrón idempotencia)
+        redeem_order_id = self._generate_idempotency_key(
+            strategy_name="redeem",
+            market_id=position.market_id,
+        )
+
         api_response, error = await self._call_with_retry(
             operation="redeem",
-            order_id=str(uuid.uuid4()),
+            order_id=redeem_order_id,
             fn=lambda: self._clob.redeem_position(
                 token_id=token_id,
                 market_id=position.market_id,
@@ -492,7 +531,7 @@ class RealTradingHandler(IExecutionHandler):
         )
 
         return TradeResult(
-            order_id     = str(uuid.uuid4()),
+            order_id     = redeem_order_id,
             market_id    = position.market_id,
             side         = position.side,
             amount       = redeemed_usdc,
@@ -509,6 +548,25 @@ class RealTradingHandler(IExecutionHandler):
     # RETRY CON BACKOFF EXPONENCIAL
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _generate_idempotency_key(
+        strategy_name: str,
+        market_id:     str,
+    ) -> str:
+        """
+        Genera una idempotency key determinista basada en SHA256.
+
+        Fórmula (según PLAN_MEJORAS.txt P1.4):
+          key = SHA256(strategy_name + market_id + timestamp_truncado_a_minuto)[:16]
+
+        Mismo signal en el mismo minuto = misma key.
+        Polymarket desduplica automáticamente basado en order_id.
+        """
+        now = datetime.now(timezone.utc)
+        minute_bucket = now.strftime("%Y%m%d%H%M")  # Truncado al minuto
+        raw = f"{strategy_name}{market_id}{minute_bucket}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
     async def _call_with_retry(
         self,
         operation: str,
@@ -520,7 +578,32 @@ class RealTradingHandler(IExecutionHandler):
         Ejecuta una función async con retry y backoff exponencial.
         Retorna (response, None) si éxito o (None, error_msg) si fallo definitivo.
         Solo reintenta en errores de red o 5xx — nunca en 4xx (errores de lógica).
+
+        Protegido por Circuit Breaker: si el circuito está abierto,
+        retorna fallo inmediato sin intentar llamadas a la API.
         """
+        # ── Circuit Breaker: verificar antes de cualquier llamada ─────
+        if self._circuit is not None and self._circuit.is_open():
+            error_msg = (
+                f"Circuit breaker open: {self._circuit.state.value} "
+                f"— API calls blocked"
+            )
+            log.warning(
+                "circuit_breaker_blocked",
+                operation=operation,
+                state=self._circuit.state.value,
+            )
+            await self._audit.log(
+                action=AuditAction.GUARDRAIL_TRIGGERED,
+                details={
+                    "operation": operation,
+                    "reason": "circuit_breaker_open",
+                    "state": self._circuit.state.value,
+                },
+                order_id=order_id,
+            )
+            return None, error_msg
+
         last_error = None
 
         for attempt in range(MAX_RETRIES):
@@ -533,6 +616,13 @@ class RealTradingHandler(IExecutionHandler):
                         operation=operation,
                         attempt=attempt + 1,
                     )
+
+                # ── Registrar éxito en circuit breaker ────────────────
+                if self._circuit is not None:
+                    try:
+                        await self._circuit.record_success()
+                    except Exception:
+                        pass
 
                 return response, None
 
@@ -591,6 +681,14 @@ class RealTradingHandler(IExecutionHandler):
             attempts=MAX_RETRIES,
             last_error=last_error,
         )
+
+        # ── Registrar fallo en circuit breaker ────────────────────────
+        if self._circuit is not None:
+            try:
+                await self._circuit.record_failure()
+            except Exception:
+                pass  # No queremos que el circuit breaker rompa el flujo
+
         return None, f"All {MAX_RETRIES} attempts failed. Last: {last_error}"
 
     # ------------------------------------------------------------------
@@ -637,7 +735,6 @@ class RealTradingHandler(IExecutionHandler):
         """
         market = await self._redis.get_market(market_id)
         if not market:
-            from fastapi import HTTPException
             raise ValueError(f"Market {market_id} no encontrado en Redis/DB")
 
         ws_state = await self._redis.get_ws_state(market_id)
@@ -705,4 +802,3 @@ class RealTradingHandler(IExecutionHandler):
             timestamp    = datetime.now(timezone.utc),
             error        = error,
         )
-        

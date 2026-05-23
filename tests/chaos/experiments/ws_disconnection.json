@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "title": "WS Disconnection During Active Trading",
+  "description": "Simulates WebSocket disconnection and verifies graceful degradation to REST polling. The bot must continue operating with REST data until WS recovers.",
+  "tags": ["ws", "network", "graceful-degradation"],
+  "contributions": {
+    "reliability": "high",
+    "availability": "medium"
+  },
+  "steady-state-hypothesis": {
+    "title": "Bot continues operating after WS disconnection",
+    "probes": [
+      {
+        "name": "verify-rest-fallback-active",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_market_data_source_is_rest",
+          "arguments": {
+            "market_id": "${market_id}",
+            "max_wait_seconds": 90
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.source",
+          "expect": "rest"
+        }
+      },
+      {
+        "name": "verify-no-orders-during-degradation",
+        "type": "probe",
+        "provider": {
+          "type": "python",
+          "module": "tests.chaos.probes",
+          "func": "verify_no_duplicate_orders",
+          "arguments": {
+            "market_id": "${market_id}",
+            "time_window_seconds": 120
+          }
+        },
+        "tolerance": {
+          "type": "jsonpath",
+          "path": "$.duplicate_count",
+          "expect": 0
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "disconnect-websocket",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "disconnect_websocket",
+        "arguments": {
+          "market_id": "${market_id}",
+          "duration_seconds": 120
+        }
+      },
+      "pauses": {
+        "after": 90
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "reconnect-websocket",
+      "provider": {
+        "type": "python",
+        "module": "tests.chaos.actions",
+        "func": "reconnect_websocket",
+        "arguments": {
+          "market_id": "${market_id}"
+        }
+      }
+    }
+  ]
+}

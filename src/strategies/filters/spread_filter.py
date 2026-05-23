@@ -1,8 +1,8 @@
 # src/strategies/filters/spread_filter.py
 
-from src.strategies.filters.base import IFilter, FilterResult
 from src.domain.value_objects.market_tick import MarketTick
 from src.strategies.base import StrategyState
+from src.strategies.filters.base import FilterResult, IFilter
 
 
 class SpreadFilter(IFilter):

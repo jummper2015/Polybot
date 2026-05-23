@@ -1,10 +1,11 @@
 # src/interfaces/telegram/middleware.py
 
 import os
+from typing import Any, Awaitable, Callable
+
 import structlog
-from typing import Any, Callable, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery, TelegramObject
+from aiogram.types import CallbackQuery, Message, TelegramObject
 
 logger = structlog.get_logger(__name__)
 

@@ -20,7 +20,7 @@ class MarketTick:
     timestamp:  datetime
 
     @property
-    def is_liquid(self) -> bool:
+    def is_liquid_enough(self) -> bool:
         """Atajos rápidos usados por los filtros de estrategia."""
         return self.volume_24h > 0 and self.spread < 1.0
 

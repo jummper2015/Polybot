@@ -1,0 +1,13 @@
+# .bandit — Bandit security linter configuration for PolyBot
+# P3.5 Security Scanning
+#
+# Excludes:
+#   - tests/ (test code doesn't run in production)
+#   - alembic/ (migration scripts are trusted)
+#   - monitoring/ (config files, not Python code)
+#
+# Severity filter: -ll (medium and high only) is applied via CLI flag
+
+[bandit]
+exclude_dirs: tests,alembic,monitoring,scripts,.git
+skips: B101,B311  # B101: assert_used (allowed in domain __post_init__); B311: random (we don't use random for crypto)

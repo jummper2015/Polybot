@@ -1,8 +1,9 @@
 # src/infrastructure/security/audit_log.py
 
-import structlog
 from datetime import datetime, timezone
 from enum import Enum
+
+import structlog
 
 from src.application.ports.repository_port import IRepositoryPort
 

@@ -1,6 +1,7 @@
 # src/interfaces/api/routers/positions.py
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query, Request
+
 from src.interfaces.api.schemas.position_schema import PositionResponse, PositionsListResponse
 
 router = APIRouter()

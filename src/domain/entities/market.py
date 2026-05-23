@@ -2,24 +2,10 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 
-
-class Asset(str, Enum):
-    BTC = "BTC"
-    ETH = "ETH"
-
-
-class Window(str, Enum):
-    M5  = "5m"
-    M15 = "15m"
-
-
-class MarketStatus(str, Enum):
-    ACTIVE   = "active"
-    EXPIRED  = "expired"
-    RESOLVED = "resolved"
-    UNKNOWN  = "unknown"
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
 
 
 @dataclass

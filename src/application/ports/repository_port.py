@@ -1,6 +1,7 @@
 # src/application/ports/repository_port.py
 
 from abc import ABC, abstractmethod
+
 from src.domain.entities.market import Market
 from src.domain.entities.order import Order
 from src.domain.entities.position import Position

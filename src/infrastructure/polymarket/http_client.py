@@ -1,12 +1,18 @@
 # src/infrastructure/polymarket/http_client.py
 
+import time
+
 import httpx
 import structlog
+
 from src.application.ports.market_data_port import IMarketDataPort
 from src.domain.value_objects.market_tick import MarketTick
+from src.infrastructure.observability.metrics import (
+    HTTP_REQUEST_DURATION,
+    MARKET_DATA_SOURCE,
+)
 from src.infrastructure.polymarket.adapters import PolymarketAdapter
 from src.infrastructure.polymarket.ws_client import PolymarketWSClient
-from src.infrastructure.observability.metrics import HTTP_REQUEST_DURATION
 
 logger = structlog.get_logger(__name__)
 
@@ -14,11 +20,21 @@ logger = structlog.get_logger(__name__)
 CLOB_BASE_URL   = "https://clob.polymarket.com"
 GAMMA_BASE_URL  = "https://gamma-api.polymarket.com"
 
+# Graceful degradation config
+REST_CACHE_TTL          = 15.0   # segundos: cachear tick REST para evitar polling excesivo
+WS_STALE_THRESHOLD      = 60.0   # segundos: umbral para considerar WS caído
+RECOVERY_PROBE_INTERVAL = 30.0   # segundos: cada cuánto probar si WS se recuperó
+
 
 class PolymarketHTTPClient(IMarketDataPort):
     """
     Implementa IMarketDataPort usando la API REST + WS de Polymarket.
     REST para discovery y snapshots. WS para streaming en tiempo real.
+
+    Graceful degradation WS → REST:
+      - Si WS está stale > 60s → activa modo degradado (REST polling 15s cache)
+      - En modo degradado, sondea recuperación WS cada 30s
+      - Métrica MARKET_DATA_SOURCE rastrea el origen por mercado
     """
 
     def __init__(self, ws_client: PolymarketWSClient):
@@ -29,6 +45,14 @@ class PolymarketHTTPClient(IMarketDataPort):
             timeout=httpx.Timeout(10.0, connect=5.0),
             headers={"Accept": "application/json"},
         )
+
+        # ── Estado de degradación ──────────────────────────────────
+        # market_id → timestamp de último tick REST cacheado
+        self._rest_cache: dict[str, tuple[float, MarketTick]] = {}
+        # market_id → timestamp de cuándo se activó la degradación
+        self._degraded_since: dict[str, float] = {}
+        # market_id → timestamp del último probe de recuperación
+        self._last_recovery_probe: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # IMarketDataPort — Discovery
@@ -83,37 +107,132 @@ class PolymarketHTTPClient(IMarketDataPort):
             raise
 
     # ------------------------------------------------------------------
-    # IMarketDataPort — Tick por REST (fallback cuando WS no disponible)
+    # IMarketDataPort — Tick con Graceful Degradation WS → REST
     # ------------------------------------------------------------------
 
     async def get_market_tick(self, market_id: str) -> MarketTick:
         """
-        Obtiene el tick actual de un mercado via REST (CLOB API).
-        Usado como fallback si el WS no tiene datos recientes.
-        Primero intenta el estado WS en memoria, luego hace REST call.
+        Obtiene el tick actual de un mercado con degradación progresiva:
+
+        Modo NORMAL (WS):
+          1. Usa el último tick del WebSocket si está CONNECTED y no stale.
+          2. Si WS está stale > 60s → activa modo DEGRADED.
+
+        Modo DEGRADED (REST):
+          3. Cachea el tick REST por 15s para evitar polling excesivo.
+          4. Cada 30s sondea si WS se recuperó → vuelve a modo NORMAL.
+
+        La métrica MARKET_DATA_SOURCE se actualiza en cada llamada.
         """
-        # Intenta usar el último tick del WebSocket si está disponible
-        ws_state = None
-        # Aquí accedemos al ws_client directamente para el fallback
+        now = time.monotonic()
         from src.domain.value_objects.ws_state import WSConnectionStatus
+
+        # ── Modo DEGRADED: usar REST con cache ───────────────────────
+        if market_id in self._degraded_since:
+            return await self._get_tick_degraded(market_id, now)
+
+        # ── Modo NORMAL: intentar WS ─────────────────────────────────
         state = await self._ws.get_state(market_id)
 
         if (
             state
             and state.status == WSConnectionStatus.CONNECTED
             and state.last_tick
-            and not state.is_stale(timeout_seconds=60)
+            and not state.is_stale(timeout_seconds=WS_STALE_THRESHOLD)
         ):
+            # WS está sano → usar tick directo
+            MARKET_DATA_SOURCE.labels(market_id=market_id).set(2.0)
             return state.last_tick
 
-        # Fallback: REST call al CLOB
-        logger.info("ws_fallback_to_rest", market_id=market_id)
-
-        response = await self._http.get(
-            f"{CLOB_BASE_URL}/book",
-            params={"token_id": market_id},
+        # ── WS caído o stale → activar degradación ───────────────────
+        import datetime as dt
+        logger.warning(
+            "ws_degraded_activating_rest_fallback",
+            market_id=market_id,
+            ws_status=state.status.value if state else "no_state",
+            last_tick_age_seconds=(
+                (dt.datetime.utcnow() - state.last_message_at).total_seconds()
+                if state and state.last_message_at else "unknown"
+            ),
         )
-        response.raise_for_status()
+        self._degraded_since[market_id] = now
+        self._last_recovery_probe[market_id] = now
+        MARKET_DATA_SOURCE.labels(market_id=market_id).set(1.0)
+
+        return await self._fetch_tick_rest(market_id)
+
+    # ------------------------------------------------------------------
+    # MÉTODOS PRIVADOS DE DEGRADACIÓN
+    # ------------------------------------------------------------------
+
+    async def _get_tick_degraded(
+        self, market_id: str, now: float
+    ) -> MarketTick:
+        """
+        Sirve el tick en modo degradado: cache REST (15s TTL)
+        con sondeo periódico de recuperación WS.
+        """
+        from src.domain.value_objects.ws_state import WSConnectionStatus
+
+        # ── Verificar cache ─────────────────────────────────────────
+        cached = self._rest_cache.get(market_id)
+        if cached:
+            cached_at, tick = cached
+            if now - cached_at < REST_CACHE_TTL:
+                # Cache hit: devolver tick cacheado sin llamada REST
+                MARKET_DATA_SOURCE.labels(market_id=market_id).set(1.0)
+                return tick
+
+        # ── Probar recuperación WS periódicamente ───────────────────
+        last_probe = self._last_recovery_probe.get(market_id, 0.0)
+        if now - last_probe >= RECOVERY_PROBE_INTERVAL:
+            self._last_recovery_probe[market_id] = now
+
+            state = await self._ws.get_state(market_id)
+            if (
+                state
+                and state.status == WSConnectionStatus.CONNECTED
+                and state.last_tick
+                and not state.is_stale(timeout_seconds=WS_STALE_THRESHOLD)
+            ):
+                # ✅ WS recuperado → salir de degradación
+                logger.info(
+                    "ws_recovered_from_degraded",
+                    market_id=market_id,
+                    degraded_seconds=now - self._degraded_since[market_id],
+                )
+                self._degraded_since.pop(market_id, None)
+                self._rest_cache.pop(market_id, None)
+                self._last_recovery_probe.pop(market_id, None)
+                MARKET_DATA_SOURCE.labels(market_id=market_id).set(2.0)
+                return state.last_tick
+
+            logger.debug(
+                "ws_still_degraded",
+                market_id=market_id,
+                ws_status=state.status.value if state else "no_state",
+            )
+
+        # ── Cache miss o WS no recuperado → llamada REST ────────────
+        tick = await self._fetch_tick_rest(market_id)
+        self._rest_cache[market_id] = (now, tick)
+        MARKET_DATA_SOURCE.labels(market_id=market_id).set(1.0)
+        return tick
+
+    async def _fetch_tick_rest(self, market_id: str) -> MarketTick:
+        """
+        Llama al endpoint REST /book del CLOB y parsea la respuesta.
+        Encapsula la lógica REST para reutilizar desde get_market_tick
+        y _get_tick_degraded.
+        """
+        with HTTP_REQUEST_DURATION.labels(
+            endpoint="get_market_tick"
+        ).time():
+            response = await self._http.get(
+                f"{CLOB_BASE_URL}/book",
+                params={"token_id": market_id},
+            )
+            response.raise_for_status()
 
         raw = response.json()
         raw["event_type"] = "book"  # Fuerza tipo para el adaptador
@@ -123,6 +242,21 @@ class PolymarketHTTPClient(IMarketDataPort):
             raise ValueError(f"No se pudo parsear tick para {market_id}")
 
         return tick
+
+    # ------------------------------------------------------------------
+    # QUERY PÚBLICA: estado de degradación
+    # ------------------------------------------------------------------
+
+    def is_degraded(self, market_id: str) -> bool:
+        """Devuelve True si el mercado está en modo REST fallback."""
+        return market_id in self._degraded_since
+
+    def degraded_seconds(self, market_id: str) -> float | None:
+        """Segundos que lleva un mercado en modo degradado, o None si está sano."""
+        since = self._degraded_since.get(market_id)
+        if since is None:
+            return None
+        return time.monotonic() - since
 
     # ------------------------------------------------------------------
     # IMarketDataPort — WebSocket streaming
@@ -139,6 +273,10 @@ class PolymarketHTTPClient(IMarketDataPort):
         await self._ws.unsubscribe(market_id)
 
     async def close(self) -> None:
-        """Cierra el cliente HTTP y todas las conexiones WS."""
+        """Cierra el cliente HTTP, todas las conexiones WS y resetea estado de degradación."""
         await self._ws.unsubscribe_all()
         await self._http.aclose()
+        # Limpia estado de degradación
+        self._rest_cache.clear()
+        self._degraded_since.clear()
+        self._last_recovery_probe.clear()

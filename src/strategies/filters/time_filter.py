@@ -1,9 +1,8 @@
 # src/strategies/filters/time_filter.py
 
-from datetime import datetime, timezone
-from src.strategies.filters.base import IFilter, FilterResult
 from src.domain.value_objects.market_tick import MarketTick
 from src.strategies.base import StrategyState
+from src.strategies.filters.base import FilterResult, IFilter
 
 
 class TimeFilter(IFilter):

@@ -1,17 +1,20 @@
 # src/backtesting/engine.py
 
-import structlog
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterator
 
-from src.domain.entities.market import Market, Asset, Window, MarketStatus
+import structlog
+
+from src.backtesting.data_loader import HistoricalDataset
+from src.domain.entities.market import Market
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import SignalType
-from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
+from src.risk.engine import RiskEngineConfig
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
-from src.risk.engine import RiskEngine, RiskEngineConfig
-from src.backtesting.data_loader import HistoricalDataset
+from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
 
 logger = structlog.get_logger(__name__)
 
@@ -414,7 +417,6 @@ class BacktestEngine:
     @staticmethod
     def _make_synthetic_market(dataset: HistoricalDataset) -> Market:
         """Crea un Market sintético para usar en el backtest."""
-        from datetime import timezone
         return Market(
             id           = dataset.market_id,
             asset        = Asset(dataset.asset),

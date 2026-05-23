@@ -2,6 +2,7 @@
 
 import time
 import uuid
+
 import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -10,8 +11,10 @@ from src.infrastructure.observability.metrics import (
     API_REQUEST_COUNT,
     API_REQUEST_DURATION,
 )
+from src.infrastructure.observability.tracing import get_tracer
 
 logger = structlog.get_logger(__name__)
+tracer = get_tracer()
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):
@@ -27,49 +30,61 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())[:8]
         start_time = time.perf_counter()
 
-        # Bind del request_id al contexto de structlog
-        # Todos los logs dentro de este request tendrán el mismo ID
-        log = logger.bind(
-            request_id=request_id,
-            method=request.method,
-            path=request.url.path,
-        )
-        log.info("request_started")
+        # ── OpenTelemetry: span por cada request HTTP ────────────────
+        span_name = f"HTTP {request.method} {request.url.path}"
+        with tracer.start_as_current_span(span_name) as request_span:
+            request_span.set_attribute("http.method", request.method)
+            request_span.set_attribute("http.url", str(request.url))
+            request_span.set_attribute("http.request_id", request_id)
 
-        try:
-            response = await call_next(request)
-            status   = response.status_code
-
-        except Exception as e:
-            log.error("request_failed", error=str(e))
-            status = 500
-            raise
-
-        finally:
-            duration = time.perf_counter() - start_time
-            endpoint = request.url.path
-
-            # Añade request_id al header de respuesta (útil para debugging)
-            if "response" in dir():
-                response.headers["X-Request-ID"] = request_id
-
-            log.info(
-                "request_completed",
-                status=status,
-                duration_ms=round(duration * 1000, 2),
+            # Bind del request_id al contexto de structlog
+            # Todos los logs dentro de este request tendrán el mismo ID
+            log = logger.bind(
+                request_id=request_id,
+                method=request.method,
+                path=request.url.path,
             )
+            log.info("request_started")
 
-            # Registra métricas Prometheus
-            API_REQUEST_COUNT.labels(
-                endpoint=endpoint,
-                method=request.method,
-                status=str(status),
-            ).inc()
+            try:
+                response = await call_next(request)
+                status   = response.status_code
 
-            API_REQUEST_DURATION.labels(
-                endpoint=endpoint,
-                method=request.method,
-            ).observe(duration)
+            except Exception as e:
+                log.error("request_failed", error=str(e))
+                status = 500
+                request_span.set_attribute("http.status_code", 500)
+                request_span.set_attribute("error", str(e)[:256])
+                raise
+
+            finally:
+                duration = time.perf_counter() - start_time
+                endpoint = request.url.path
+
+                # Añade request_id al header de respuesta (útil para debugging)
+                if "response" in dir():
+                    response.headers["X-Request-ID"] = request_id
+
+                log.info(
+                    "request_completed",
+                    status=status,
+                    duration_ms=round(duration * 1000, 2),
+                )
+
+                request_span.set_attribute("http.status_code", status)
+                request_span.set_attribute("http.duration_ms", round(duration * 1000, 2))
+
+                # Registra métricas Prometheus
+                API_REQUEST_COUNT.labels(
+                    endpoint=endpoint,
+                    method=request.method,
+                    status=str(status),
+                ).inc()
+
+                API_REQUEST_DURATION.labels(
+                    endpoint=endpoint,
+                    method=request.method,
+                ).observe(duration)
 
         return response
 

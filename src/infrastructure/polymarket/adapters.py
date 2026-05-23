@@ -1,8 +1,10 @@
 # src/infrastructure/polymarket/adapters.py
 
 from datetime import datetime
-from src.domain.value_objects.market_tick import MarketTick
+
 import structlog
+
+from src.domain.value_objects.market_tick import MarketTick
 
 logger = structlog.get_logger(__name__)
 

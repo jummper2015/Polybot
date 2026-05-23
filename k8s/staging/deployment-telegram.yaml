@@ -1,0 +1,108 @@
+# k8s/staging/deployment-telegram.yaml
+# PolyBot — Staging: Telegram Bot (1 réplica)
+# El Telegram bot debe ser singleton — polling no soporta múltiples instancias
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polybot-telegram
+  namespace: staging
+  labels:
+    app: polybot
+    component: telegram
+    environment: staging
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Singleton — recrear en vez de rolling update
+  selector:
+    matchLabels:
+      app: polybot
+      component: telegram
+  template:
+    metadata:
+      labels:
+        app: polybot
+        component: telegram
+        environment: staging
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "polybot-staging"
+        vault.hashicorp.com/agent-inject-secret-polybot.env: "secret/data/polybot"
+        vault.hashicorp.com/agent-inject-template-polybot.env: |
+          {{- with secret "secret/data/polybot" -}}
+          POLYMARKET_PRIVATE_KEY={{ .Data.data.POLYMARKET_PRIVATE_KEY }}
+          POLYMARKET_API_KEY={{ .Data.data.POLYMARKET_API_KEY }}
+          POLYMARKET_API_SECRET={{ .Data.data.POLYMARKET_API_SECRET }}
+          POLYMARKET_API_PASSPHRASE={{ .Data.data.POLYMARKET_API_PASSPHRASE }}
+          POLYMARKET_WALLET_ADDRESS={{ .Data.data.POLYMARKET_WALLET_ADDRESS }}
+          TELEGRAM_BOT_TOKEN={{ .Data.data.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID={{ .Data.data.TELEGRAM_ADMIN_CHAT_ID }}
+          REAL_MODE_PIN={{ .Data.data.REAL_MODE_PIN }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-polybot-infra.env: "secret/data/polybot-infra"
+        vault.hashicorp.com/agent-inject-template-polybot-infra.env: |
+          {{- with secret "secret/data/polybot-infra" -}}
+          DATABASE_URL={{ .Data.data.DATABASE_URL }}
+          REDIS_URL={{ .Data.data.REDIS_URL }}
+          {{- end }}
+    spec:
+      serviceAccountName: polybot
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: telegram
+          image: ghcr.io/polymarket-bot/polymarket-bot:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              for f in /vault/secrets/*.env; do
+                [ -f "$f" ] && set -a && . "$f" && set +a
+              done
+              exec python main.py
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: TRADING_MODE
+              value: "paper"
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: TELEGRAM_BOT_TOKEN
+            - name: TELEGRAM_ADMIN_CHAT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: TELEGRAM_ADMIN_CHAT_ID
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: polybot-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: polybot-config
+                  key: REDIS_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3

@@ -1,9 +1,10 @@
 # src/execution/base.py
 
 from abc import ABC, abstractmethod
+
+from src.domain.entities.position import Position
 from src.domain.value_objects.signal import Signal
 from src.domain.value_objects.trade_result import TradeResult
-from src.domain.entities.position import Position
 
 
 class IExecutionHandler(ABC):

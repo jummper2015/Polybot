@@ -1,0 +1,75 @@
+# k8s/production/cronjob-backtest.yaml
+# PolyBot — Production: Backtesting diario automatizado
+# Ejecuta backtest a las 06:00 UTC y publica métricas en logs.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: polybot-backtest
+  namespace: production
+  labels:
+    app: polybot
+    component: backtest
+    environment: production
+spec:
+  # ── Schedule: diario a las 06:00 UTC ──────────────────────────────
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid           # No solapar ejecuciones
+  successfulJobsHistoryLimit: 7       # 1 semana de historia
+  failedJobsHistoryLimit: 3           # 3 fallos visibles
+  startingDeadlineSeconds: 300        # 5 min de margen
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600      # 10 min máximo
+      template:
+        metadata:
+          labels:
+            app: polybot
+            component: backtest
+            environment: production
+        spec:
+          serviceAccountName: polybot
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            fsGroup: 1000
+          containers:
+            - name: backtest
+              image: ghcr.io/polymarket-bot/polymarket-bot:stable
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  python -m src.backtesting.cli \
+                    --assets BTC,ETH \
+                    --windows 5m,15m \
+                    --start "$(date -d '30 days ago' +%Y-%m-%d)" \
+                    --end "$(date +%Y-%m-%d)" \
+                    --strategies buy_above_threshold,mean_reversion \
+                    --no-save \
+                    --output json
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: polybot-secrets
+                      key: DATABASE_URL
+                - name: REDIS_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: polybot-config
+                      key: REDIS_URL
+                - name: PYTHONUNBUFFERED
+                  valueFrom:
+                    configMapKeyRef:
+                      name: polybot-config
+                      key: PYTHONUNBUFFERED
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
+                limits:
+                  cpu: "1000m"
+                  memory: "1Gi"

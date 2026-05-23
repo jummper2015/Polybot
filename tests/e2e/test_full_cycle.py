@@ -1,17 +1,19 @@
 # tests/e2e/test_full_cycle.py
 
-import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
 
-from src.domain.entities.market import Market, Asset, Window, MarketStatus
+import pytest
+
+from src.domain.entities.market import Market
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.signal_type import SignalType
+from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
-from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
-from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
-from src.strategies.engine import StrategyEngine
 from src.risk.engine import RiskEngine, RiskEngineConfig
-from src.domain.value_objects.signal import SignalType
+from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
+from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
+from src.strategies.engine import StrategyEngine
 
 
 def make_market() -> Market:
@@ -85,7 +87,8 @@ class TestFullTradingCycle:
             max_open_positions=5,
         ))
 
-        from src.domain.value_objects.signal import Signal, SignalType
+        from src.domain.enums.signal_type import SignalType
+        from src.domain.value_objects.signal import Signal
         signal = Signal(
             type=SignalType.BUY_YES,
             market_id="e2e_market",
@@ -114,7 +117,8 @@ class TestFullTradingCycle:
         """El RiskEngine deniega cuando el balance es insuficiente."""
         risk   = RiskEngine(config=RiskEngineConfig(min_balance_usdc=50.0))
 
-        from src.domain.value_objects.signal import Signal, SignalType
+        from src.domain.enums.signal_type import SignalType
+        from src.domain.value_objects.signal import Signal
         signal = Signal(
             type=SignalType.BUY_YES, market_id="e2e_market",
             confidence=0.8, source_strategy="test",

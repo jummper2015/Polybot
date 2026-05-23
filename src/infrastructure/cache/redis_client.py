@@ -1,27 +1,38 @@
 # src/infrastructure/cache/redis_client.py
 
-import json
-import structlog
 from datetime import datetime
+
+import orjson
+import structlog
 from redis.asyncio import Redis
 
-from src.domain.entities.market import Market, Asset, Window, MarketStatus
+from src.domain.entities.market import Market
+from src.domain.enums.asset import Asset
+from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
 
 logger = structlog.get_logger(__name__)
 
-# Prefijos de keys en Redis
+# ── Prefijos de keys en Redis ─────────────────────────────────────────
 KEY_MARKET       = "market:{market_id}"
 KEY_ACTIVE_LIST  = "markets:active:{asset}:{window}"
+KEY_WS_STATE     = "ws:state:{market_id}"
+KEY_PAPER_BALANCE = "paper:balance"
+KEY_WS_LAST_PRICE = "ws:price:{market_id}"
 
 
 class RedisClient:
     """
     Maneja el estado runtime en Redis.
-    Markets activos, locks de ciclo, estado de estrategias.
+    Markets activos, estado WebSocket, balance paper, locks de ciclo.
     """
 
     def __init__(self, redis: Redis):
         self._redis = redis
+
+    # ──────────────────────────────────────────────────────────────────
+    # Market Discovery (B6)
+    # ──────────────────────────────────────────────────────────────────
 
     async def set_market(self, market: Market, ttl_seconds: int = 3900) -> None:
         """
@@ -30,20 +41,20 @@ class RedisClient:
         """
         key  = KEY_MARKET.format(market_id=market.id)
         data = {
-            "id":           market.id,
-            "asset":        market.asset.value,
-            "window":       market.window.value,
-            "question":     market.question,
-            "status":       market.status.value,
-            "yes_token_id": market.yes_token_id,
-            "no_token_id":  market.no_token_id,
-            "yes_price":    market.yes_price,
-            "no_price":     market.no_price,
-            "volume_24h":   market.volume_24h,
-            "expiry":       market.expiry.isoformat(),
+            "id":            market.id,
+            "asset":         market.asset.value,
+            "window":        market.window.value,
+            "question":      market.question,
+            "status":        market.status.value,
+            "yes_token_id":  market.yes_token_id,
+            "no_token_id":   market.no_token_id,
+            "yes_price":     market.yes_price,
+            "no_price":      market.no_price,
+            "volume_24h":    market.volume_24h,
+            "expiry":        market.expiry.isoformat(),
             "discovered_at": market.discovered_at.isoformat(),
         }
-        await self._redis.setex(key, ttl_seconds, json.dumps(data))
+        await self._redis.setex(key, ttl_seconds, orjson.dumps(data).decode())
 
         # Añade a la lista de activos para búsqueda rápida
         list_key = KEY_ACTIVE_LIST.format(
@@ -59,7 +70,7 @@ class RedisClient:
         data = await self._redis.get(key)
         if not data:
             return None
-        return self._deserialize(json.loads(data))
+        return self._deserialize(orjson.loads(data))
 
     async def get_active_markets(
         self,
@@ -89,28 +100,23 @@ class RedisClient:
     def _deserialize(self, data: dict) -> Market:
         """Reconstruye una entidad Market desde un dict JSON."""
         return Market(
-            id           = data["id"],
-            asset        = Asset(data["asset"]),
-            window       = Window(data["window"]),
-            question     = data["question"],
-            status       = MarketStatus(data["status"]),
-            yes_token_id = data["yes_token_id"],
-            no_token_id  = data["no_token_id"],
-            yes_price    = data["yes_price"],
-            no_price     = data["no_price"],
-            volume_24h   = data["volume_24h"],
-            expiry       = datetime.fromisoformat(data["expiry"]),
-            discovered_at= datetime.fromisoformat(data["discovered_at"]),
+            id            = data["id"],
+            asset         = Asset(data["asset"]),
+            window        = Window(data["window"]),
+            question      = data["question"],
+            status        = MarketStatus(data["status"]),
+            yes_token_id  = data["yes_token_id"],
+            no_token_id   = data["no_token_id"],
+            yes_price     = data["yes_price"],
+            no_price      = data["no_price"],
+            volume_24h    = data["volume_24h"],
+            expiry        = datetime.fromisoformat(data["expiry"]),
+            discovered_at = datetime.fromisoformat(data["discovered_at"]),
         )
-        # Añadir a src/infrastructure/cache/redis_client.py
 
-import dataclasses
-
-KEY_WS_STATE = "ws:state:{market_id}"
-
-
-class RedisClient:
-    # ... (métodos anteriores de B6) ...
+    # ──────────────────────────────────────────────────────────────────
+    # WebSocket State
+    # ──────────────────────────────────────────────────────────────────
 
     async def set_ws_state(
         self,
@@ -135,26 +141,22 @@ class RedisClient:
                                   if state.connected_at else None,
             "error":              state.error,
         }
-        await self._redis.setex(key, ttl_seconds, json.dumps(data))
+        await self._redis.setex(key, ttl_seconds, orjson.dumps(data).decode())
 
     async def get_ws_state(self, market_id: str) -> dict | None:
         """Recupera el estado WS de un mercado. Dict simple, no la entidad."""
         key  = KEY_WS_STATE.format(market_id=market_id)
         data = await self._redis.get(key)
-        return json.loads(data) if data else None
+        return orjson.loads(data) if data else None
 
     async def delete_ws_state(self, market_id: str) -> None:
         """Elimina el estado WS al desuscribirse."""
         key = KEY_WS_STATE.format(market_id=market_id)
         await self._redis.delete(key)
 
-        # Añadir a src/infrastructure/cache/redis_client.py
-
-KEY_PAPER_BALANCE  = "paper:balance"
-KEY_WS_LAST_PRICE  = "ws:price:{market_id}"
-
-class RedisClient:
-    # ... (métodos anteriores) ...
+    # ──────────────────────────────────────────────────────────────────
+    # Paper Trading Balance & Prices
+    # ──────────────────────────────────────────────────────────────────
 
     async def set_paper_balance(self, balance: float) -> None:
         """
@@ -170,9 +172,9 @@ class RedisClient:
 
     async def set_last_tick_price(
         self,
-        market_id:  str,
-        yes_price:  float,
-        spread:     float,
+        market_id: str,
+        yes_price: float,
+        spread:    float,
     ) -> None:
         """
         Guarda el último precio conocido de un mercado.

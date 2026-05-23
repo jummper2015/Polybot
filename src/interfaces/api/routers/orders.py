@@ -1,6 +1,7 @@
 # src/interfaces/api/routers/orders.py
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query, Request
+
 from src.interfaces.api.schemas.order_schema import OrderResponse, OrdersListResponse
 
 router = APIRouter()

@@ -1,0 +1,23 @@
+# k8s/production/service.yaml
+# PolyBot — Production: Service para exponer la API
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: polybot-api
+  namespace: production
+  labels:
+    app: polybot
+    component: api
+    environment: production
+spec:
+  type: ClusterIP
+  selector:
+    app: polybot
+    component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  sessionAffinity: None

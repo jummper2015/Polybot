@@ -2,9 +2,10 @@
 
 import csv
 import json
-import structlog
 from datetime import datetime, timezone
 from pathlib import Path
+
+import structlog
 
 from src.backtesting.engine import BacktestResult
 from src.backtesting.metrics import BacktestMetrics

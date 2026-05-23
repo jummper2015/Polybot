@@ -2,8 +2,8 @@
 # Uso: python -m src.backtesting.cli --help
 
 import argparse
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -65,8 +65,8 @@ def main():
     from src.backtesting.engine import BacktestEngine
     from src.backtesting.metrics import BacktestMetrics
     from src.backtesting.reporter import BacktestReporter
-    from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
     from src.risk.engine import RiskEngineConfig
+    from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 
     # ── Carga de datos ────────────────────────────────────────────────
     if args.synthetic:
@@ -107,7 +107,7 @@ def main():
 
     # ── Modo sweep ────────────────────────────────────────────────────
     if args.sweep:
-        print(f"\n🔍 Iniciando parameter sweep...")
+        print("\n🔍 Iniciando parameter sweep...")
         engine = BacktestEngine(
             strategy_config=strategy_config,
             risk_config=risk_config,
@@ -116,7 +116,7 @@ def main():
         results = engine.run_parameter_sweep(dataset)
         comparisons = BacktestMetrics.compare(results)
 
-        print(f"\n📊 TOP 10 configuraciones por Sharpe Ratio:\n")
+        print("\n📊 TOP 10 configuraciones por Sharpe Ratio:\n")
         print(f"  {'Threshold':>10} {'StopLoss':>10} {'Target':>8} "
               f"{'Sharpe':>8} {'WinRate':>8} {'PF':>6} {'PnL':>10}")
         print("  " + "-" * 70)

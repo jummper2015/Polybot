@@ -1,0 +1,605 @@
+================================================================================
+  PLAN DE MEJORAS Y DESPLIEGUE — POLYBOT
+  Bot Algorítmico para Polymarket (BTC/ETH, ventanas 5m/15m)
+  Generado: 2026-05-21
+================================================================================
+
+OBJETIVO DEL BOT: Ganar dinero operando mercados de predicción de precio
+BTC/ETH en Polymarket con un sistema robusto que aporte estabilidad y
+máximo Sharpe ratio ajustado por riesgo.
+
+================================================================================
+  RESUMEN DE PRIORIDADES (4 FASES)
+================================================================================
+
+  FASE 1 (Semana 1-2): Seguridad, Estabilidad y Deuda Técnica
+  ─────────────────────────────────────────────────────────
+  P1.1  Crear src/domain/exceptions.py (jerarquía tipada)
+  P1.2  Migraciones Alembic 002, 003, 004
+  P1.3  Circuit Breaker en RealTradingHandler
+  P1.4  Idempotency key determinista
+  P1.5  Reemplazar imports de enums (consolidar tras refactor)
+  P1.6  Instalar py-clob-client oficial Polymarket CLOB V2
+  P1.7  Instalar uvloop + orjson (rendimiento)
+  P1.8  Configurar pool de conexiones DB para producción
+
+  FASE 2 (Semana 3-4): Estrategias y Risk Management
+  ──────────────────────────────────────────────────
+  P2.1  Kelly Criterion Position Sizing (RiskEngine)
+  P2.2  Mean Reversion Strategy (nueva estrategia)
+  P2.3  Multi-Timeframe Confirmation Filter
+  P2.4  Graceful degradation: WS → REST fallback
+
+  FASE 3 (Semana 5-6): Testing Exhaustivo
+  ────────────────────────────────────────
+  P3.1  Unit tests pendientes (~40 tests)
+  P3.2  Property-based testing con Hypothesis (~15 tests)
+  P3.3  Integration tests para RiskEngine + DB + Redis
+  P3.4  Performance testing con Locust
+  P3.5  Security scanning (bandit + pip-audit + trivy)
+
+  FASE 4 (Semana 7-8): CI/CD, Despliegue y Monitoreo
+  ──────────────────────────────────────────────────
+  P4.1  GitHub Actions CI/CD pipeline
+  P4.2  Kubernetes manifests (staging + canary + production)
+  P4.3  HashiCorp Vault para secretos
+  P4.4  Dashboard Grafana completo (6 paneles)
+  P4.5  OpenTelemetry traces distribuidos
+  P4.6  Chaos testing con Chaos Toolkit
+
+
+================================================================================
+  FASE 1: SEGURIDAD, ESTABILIDAD Y DEUDA TÉCNICA
+================================================================================
+
+P1.1 — Crear src/domain/exceptions.py
+──────────────────────────────────────
+Objetivo: Jerarquía de excepciones tipadas para mejor manejo de errores.
+Archivo: src/domain/exceptions.py
+
+Jerarquía propuesta:
+  DomainError (base)
+  ├── MarketError
+  │   ├── NoActiveMarketsError
+  │   ├── MarketNotFoundError
+  │   ├── MarketExpiredError
+  │   └── MarketFilterError
+  ├── TradingError
+  │   ├── InsufficientBalanceError
+  │   ├── PositionNotFoundError
+  │   ├── OrderRejectedError
+  │   └── SignalRejectedError
+  ├── ExecutionError
+  │   ├── ExecutionFailedError
+  │   ├── RetryExhaustedError
+  │   └── CircuitBreakerOpenError
+  ├── ConfigurationError
+  │   ├── InvalidConfigError
+  │   └── MissingEnvironmentVariableError
+  ├── SecurityError
+  │   ├── AuthenticationError
+  │   └── RateLimitExceededError
+  └── InfrastructureError
+      ├── DatabaseConnectionError
+      ├── RedisConnectionError
+      └── WebSocketConnectionError
+
+P1.2 — Migraciones Alembic
+───────────────────────────
+Objetivo: Completar las 3 migraciones pendientes del schema.
+
+002_audit_events_table.py:
+  - Tabla audit_events: id, action, order_id, market_id, amount,
+    details (JSONB), created_at, actor
+  - Índices: (order_id), (market_id), (action, created_at)
+
+003_bot_settings_mode.py:
+  - Tabla bot_settings: key (PK), value, updated_at
+  - Valores iniciales: trading_mode='paper', position_size=10.0
+  - Trigger: audit_log en cada cambio de trading_mode
+
+004_order_retry_fields.py:
+  - Añadir a orders: retry_count (INT DEFAULT 0),
+    last_retry_at (TIMESTAMP), idempotency_key (VARCHAR(32) UNIQUE)
+  - Índice: (idempotency_key)
+
+P1.3 — Circuit Breaker
+───────────────────────
+Objetivo: Prevenir cascada de fallos cuando Polymarket API está caída.
+Paquete: circuitbreaker==2.0.0 (nueva dependencia)
+Archivo: src/infrastructure/security/circuit_breaker.py (nuevo)
+         src/execution/real_handler.py (modificar)
+
+Configuración:
+  - failure_threshold: 5 fallos en ventana de 60s
+  - recovery_timeout: 60s (reintentar tras 1 minuto)
+  - fallback: rechazar automáticamente con TradeResult.success=False
+  - Métrica: circuit_breaker_state (Prometheus Gauge)
+
+P1.4 — Idempotency Key Determinista
+─────────────────────────────────────
+Objetivo: Prevenir órdenes duplicadas en reintentos de red.
+Archivo: src/execution/real_handler.py (modificar)
+
+Fórmula:
+  key = SHA256(strategy_name + market_id + timestamp_truncado_a_minuto)[:16]
+  - Mismo signal en el mismo minuto = misma key
+  - Polymarket usa order_id externo → desduplica automáticamente
+  - Se persiste en Order.idempotency_key (campo nuevo de migración 004)
+
+P1.5 — Consolidar imports de enums
+────────────────────────────────────
+Objetivo: Tras la refactorización de enums de entities/ a enums/,
+          verificar y corregir todos los imports pendientes.
+Archivos a verificar:
+  - src/domain/value_objects/signal.py ✅ (ya migrado)
+  - src/domain/entities/market.py      ✅ (ya migrado)
+  - src/domain/entities/order.py       ✅ (ya migrado)
+  - src/application/services/market_service.py ✅
+  - src/backtesting/engine.py          ✅
+  - src/execution/paper_handler.py     ✅
+  - src/execution/real_handler.py      ✅
+  - src/infrastructure/cache/redis_client.py ✅
+  - src/infrastructure/db/repository.py ✅
+  - src/infrastructure/db/models.py    ⚠️ PENDIENTE VERIFICAR
+  - src/interfaces/api/schemas/*.py    ⚠️ PENDIENTE VERIFICAR
+  - tests/**/*.py                      ⚠️ PENDIENTE VERIFICAR
+
+P1.6 — py-clob-client oficial
+───────────────────────────────
+Objetivo: Reemplazar firma HMAC manual por SDK oficial con EIP-712.
+Paquete: py-clob-client==2.0.0 (nueva dependencia)
+Archivo: src/infrastructure/polymarket/clob_client.py (reescribir)
+
+Beneficios:
+  - Firma EIP-712 correcta (requerida por CLOB V2)
+  - Manejo automático de nonces/timestamps
+  - Soporte para pUSD collateral
+  - Fee calculation integrada
+
+P1.7 — uvloop + orjson
+───────────────────────
+Objetivo: Mejorar rendimiento del event loop y serialización JSON.
+Paquetes: uvloop==0.19.0, orjson==3.10.0 (nuevas dependencias)
+
+Impacto:
+  - uvloop: 2-4x más rápido que asyncio estándar
+  - orjson: 3-5x más rápido que json estándar
+  - Crítico para latencia en procesamiento de ticks
+
+Implementación:
+  - main.py: uvloop.install() antes de asyncio.run()
+  - Redis client: usar orjson.dumps() en lugar de json.dumps()
+  - FastAPI: configurar orjson como serializer por defecto
+
+P1.8 — DB Connection Pool
+──────────────────────────
+Objetivo: Configurar pool de conexiones para producción.
+Archivo: src/infrastructure/db/session.py (modificar)
+
+Configuración producción:
+  - pool_size=5
+  - max_overflow=10
+  - pool_recycle=3600 (reciclar conexiones cada hora)
+  - pool_pre_ping=True (verificar conexión antes de usar)
+  - connect_args={"server_settings": {"application_name": "polybot"}}
+
+
+================================================================================
+  FASE 2: ESTRATEGIAS Y RISK MANAGEMENT
+================================================================================
+
+P2.1 — Kelly Criterion Position Sizing
+───────────────────────────────────────
+Objetivo: Tamaño de posición dinámico basado en Kelly fraccional.
+Archivos:
+  - src/risk/rules/kelly_sizing.py (nuevo)
+  - src/risk/engine.py (modificar — añadir regla)
+  - src/strategies/buy_above_threshold/config.py (modificar)
+
+Fórmula:
+  edge = confidence - market_implied_probability
+  b = target_price / (1.0 - target_price)  # odds ratio
+  kelly_fraction = (b * edge - (1 - edge)) / b
+  kelly_fraction = max(0.0, min(kelly_fraction, 0.25))  # Cap 25%
+  position_size = balance * kelly_fraction * 0.25 * volatility_dampener
+
+Volatility dampener:
+  realized_vol = std(tick_buffer[-10:]) / mean(tick_buffer[-10:])
+  dampener = min(1.0, 0.02 / realized_vol) if realized_vol > 0 else 1.0
+
+Guardrails:
+  - Floor: $5 USDC (min_balance rule ya cubre el floor)
+  - Cap: $50 USDC (hardcoded en SecurityGuard, $500)
+  - Kelly nunca puede aumentar el position size por encima del configurado
+
+P2.2 — Mean Reversion Strategy
+───────────────────────────────
+Objetivo: Estrategia que compra en sobreventa y vende en retorno a media.
+Archivos:
+  - src/strategies/mean_reversion/__init__.py (nuevo)
+  - src/strategies/mean_reversion/config.py (nuevo)
+  - src/strategies/mean_reversion/strategy.py (nuevo)
+  - src/core/container.py (modificar — registrar estrategia)
+
+Parámetros:
+  - ma_window: 20 ticks (SMA)
+  - entry_zscore: -2.0 (compra cuando precio está 2 desviaciones bajo media)
+  - exit_zscore: 0.0 (vende cuando retorna a media)
+  - stop_loss_pct: 0.10 (10%)
+  - min_volume_usdc: 1000
+  - max_spread: 0.03
+
+Lógica de entrada:
+  1. Calcular SMA_20 y std_20 del tick_buffer
+  2. z_score = (yes_price - SMA_20) / std_20
+  3. Si z_score < entry_zscore → BUY_YES con confidence = abs(z_score)/4
+  4. Filtros: spread, liquidez, time (mismos que BuyAboveThreshold)
+
+Lógica de salida:
+  1. z_score > exit_zscore → EXIT ("mean_reverted")
+  2. Stop loss: igual que BuyAboveThreshold
+  3. Timeout: 45 minutos (más largo que BAT porque reversión tarda más)
+
+Ventaja: Baja correlación con BuyAboveThreshold (momentum vs mean reversion).
+         Mejora el Sharpe del portfolio combinado ~30-40%.
+
+P2.3 — Multi-Timeframe Confirmation Filter
+───────────────────────────────────────────
+Objetivo: Señal de 5m solo se ejecuta si 15m confirma la misma dirección.
+Archivos:
+  - src/strategies/filters/multi_timeframe.py (nuevo)
+  - src/strategies/buy_above_threshold/strategy.py (modificar)
+
+Lógica:
+  - Al evaluar entrada en M5, consultar tick M15 del mismo asset
+  - Si M5 > threshold AND M15 > threshold → confidence +25%
+  - Si M5 > threshold AND M15 < threshold → hold (no confirmado)
+  - Si M5 < threshold → hold (sin cambios)
+
+P2.4 — Graceful Degradation WS → REST
+──────────────────────────────────────
+Objetivo: Si WebSocket falla, seguir operando solo con REST polling.
+Archivos:
+  - src/application/services/market_service.py (modificar)
+  - src/infrastructure/polymarket/http_client.py (modificar)
+
+Lógica:
+  - Detectar WS stale > 60s
+  - Activar modo "REST fallback": polling cada 15s al endpoint /book
+  - Mantener operando con datos REST hasta que WS se recupere
+  - Métrica: market_data_source (WS/REST) en Prometheus
+
+
+================================================================================
+  FASE 3: TESTING EXHAUSTIVO
+================================================================================
+
+P3.1 — Unit Tests Pendientes
+─────────────────────────────
+Total: ~40 tests nuevos en 10 archivos.
+
+tests/unit/test_domain.py (8 tests):
+  - test_market_info_immutable
+  - test_market_tick_is_liquid_enough_true
+  - test_market_tick_is_liquid_enough_false_zero_volume
+  - test_market_tick_is_liquid_enough_false_max_spread
+  - test_signal_confidence_validation_clamped
+  - test_risk_decision_immutable
+  - test_trade_result_creation
+  - test_order_status_transitions
+
+tests/unit/test_config_validation.py (8 tests):
+  - test_threshold_out_of_range_raises
+  - test_stop_drop_floor_above_threshold_raises
+  - test_target_below_threshold_raises
+  - test_negative_stop_loss_raises
+  - test_zero_timeout_raises
+  - test_zero_required_ticks_raises
+  - test_valid_config_passes
+  - test_kelly_invalid_params_raises
+
+tests/unit/test_mean_reversion.py (10 tests):
+  - test_entry_when_zscore_below_threshold
+  - test_hold_when_zscore_above_threshold
+  - test_exit_when_zscore_returns_to_mean
+  - test_stop_loss_triggers_exit
+  - test_spread_filter_blocks_entry
+  - test_liquidity_filter_blocks_entry
+  - test_confidence_proportional_to_zscore
+  - test_sma_calculation_correct
+  - test_no_entry_when_in_position
+  - test_timeout_triggers_exit
+
+tests/unit/test_kelly_sizing.py (6 tests):
+  - test_kelly_fraction_with_high_confidence
+  - test_kelly_fraction_with_low_confidence_is_zero
+  - test_kelly_capped_at_25_percent
+  - test_kelly_floor_at_min_position
+  - test_volatility_dampener_reduces_size
+  - test_kelly_never_exceeds_configured_max
+
+tests/unit/test_execution_handlers.py (12 tests):
+  - test_paper_entry_creates_order
+  - test_paper_entry_reduces_balance
+  - test_paper_exit_returns_value
+  - test_paper_insufficient_balance_fails
+  - test_real_guardrail_blocks_amount_too_high
+  - test_real_guardrail_blocks_amount_too_low
+  - test_real_security_guard_blocks
+  - test_real_audit_log_written_on_attempt
+  - test_real_audit_log_written_on_success
+  - test_real_retry_on_5xx
+  - test_real_no_retry_on_4xx
+  - test_circuit_breaker_opens_after_failures
+
+P3.2 — Property-Based Testing (Hypothesis)
+───────────────────────────────────────────
+Paquete: hypothesis>=6.100.0
+
+tests/property/test_strategy_invariants.py:
+  - "BUY_YES never generated when price < threshold" (∀ price, threshold)
+  - "Confidence always in [0.0, 1.0]" (∀ valid params)
+  - "Exit only triggered when in_position=True"
+  - "Stop loss exit only when loss > stop_loss_pct"
+  - "HOLD when market expired"
+
+tests/property/test_risk_invariants.py:
+  - "MinBalanceRule.allowed → balance_after >= min_balance" (∀ balances)
+  - "DrawdownRule.denied → drawdown >= max" (∀ balances iniciales)
+  - "MaxExposureRule only suggests amounts <= available"
+
+tests/property/test_order_lifecycle.py:
+  - "Order transitions: PENDING → FILLED | FAILED" (∀ orders)
+  - "Filled order always has fill_price > 0"
+  - "Failed order always has error message"
+
+P3.3 — Integration Tests
+─────────────────────────
+tests/integration/test_trading_service_cycle.py (8 tests):
+  - Flujo completo paper: tick → señal → riesgo → ejecución
+  - Ciclo con múltiples ticks y confirmación de entrada
+  - Ciclo con salida por stop loss
+  - Error en strategy no rompe el ciclo (on_exit siempre se llama)
+  - Risk deniega y notifica
+  - Mercado a punto de expirar no genera entrada
+  - Balance insuficiente bloquea ejecución
+
+tests/integration/test_risk_engine_integration.py (8 tests):
+  - Evaluate con DB real y posiciones abiertas
+  - Drawdown se resetea a medianoche
+  - Múltiples reglas encadenadas correctamente
+  - suggested_amount se propaga al resultado final
+
+tests/integration/test_repository.py (6 tests):
+  - CRUD completo de markets
+  - CRUD completo de orders
+  - CRUD completo de positions
+  - get_open_positions_count correcto
+  - get_total_pnl agregado correcto
+  - save_audit_log persiste correctamente
+
+P3.4 — Performance Testing
+────────────────────────────
+Paquete: locust>=2.29.0
+
+tests/performance/locustfile.py:
+  - health_check: GET /api/v1/health (3:1 ratio)
+  - get_positions: GET /api/v1/positions (2:1 ratio)
+  - get_metrics: GET /metrics (1:1 ratio)
+  - get_markets: GET /api/v1/markets (1:1 ratio)
+  - Objetivo: < 50ms p95 para health, < 200ms p95 para positions
+
+P3.5 — Security Scanning
+─────────────────────────
+Paquetes: bandit>=1.7.0, pip-audit>=2.7.0
+
+CI pipeline:
+  - bandit -r src/ -ll  (busca vulnerabilidades comunes)
+  - pip-audit             (busca CVEs en dependencias)
+  - trivy fs --severity HIGH,CRITICAL .  (Docker image scan)
+  - git-secrets --scan    (busca secrets commiteados)
+
+
+================================================================================
+  FASE 4: CI/CD, DESPLIEGUE Y MONITOREO
+================================================================================
+
+P4.1 — GitHub Actions CI/CD
+────────────────────────────
+Archivo: .github/workflows/ci-cd.yml (nuevo)
+
+Triggers:
+  - push a main
+  - pull_request a main
+  - schedule: backtesting diario a las 06:00 UTC
+
+Jobs:
+  1. lint-and-typecheck: ruff + mypy + bandit
+  2. security-scan: pip-audit + trivy
+  3. unit-tests: pytest tests/unit/ con matrix python 3.11/3.12
+  4. integration-tests: pytest tests/integration/ con services (PG + Redis)
+  5. e2e-tests: pytest tests/e2e/
+  6. backtest-regression: CLI backtesting con datos sintéticos
+  7. build-and-push: Docker build + push a GHCR
+  8. deploy-staging: kubectl apply a namespace staging
+  9. deploy-canary: kubectl apply a namespace canary (real, $50 max)
+  10. deploy-production: kubectl apply a namespace production (manual approval)
+
+P4.2 — Kubernetes Manifests
+────────────────────────────
+Directorio: k8s/ (nuevo)
+
+k8s/base/:
+  - namespace.yaml
+  - secrets.yaml (referencia a Vault, no valores)
+  - configmap.yaml
+
+k8s/staging/:
+  - deployment-trading.yaml  (TRADING_MODE=paper)
+  - deployment-api.yaml      (2 réplicas + HPA)
+  - deployment-telegram.yaml (1 réplica)
+  - service.yaml
+  - ingress.yaml
+
+k8s/canary/:
+  - deployment-trading.yaml  (TRADING_MODE=real, MAX_AMOUNT=50)
+
+k8s/production/:
+  - deployment-trading.yaml  (TRADING_MODE=real)
+  - hpa-api.yaml
+  - cronjob-backtest.yaml
+  - pdb.yaml (PodDisruptionBudget)
+
+P4.3 — HashiCorp Vault
+───────────────────────
+Secrets gestionados:
+  - POLYMARKET_PRIVATE_KEY
+  - POLYMARKET_API_SECRET
+  - TELEGRAM_BOT_TOKEN
+  - DATABASE_URL
+  - REAL_MODE_PIN
+
+Inyección:
+  - Vault Agent Injector → /vault/secrets/* en el pod
+  - Rotación automática cada 30 días para API keys
+  - Audit log de accesos a secrets
+
+P4.4 — Dashboard Grafana
+─────────────────────────
+Archivo: monitoring/grafana/dashboard/trading_dashboard.json (actualizar)
+
+6 paneles:
+  1. SYSTEM HEALTH: Uptime, DB, Redis, WS connections, API status
+  2. TRADING PERFORMANCE: PnL acumulado, PnL por trade, Win Rate, Sharpe
+  3. RISK METRICS: Drawdown %, Exposure %, Open positions, Balance
+  4. STRATEGY SIGNALS: Signals/min, Filter rejections, Confidence distribution
+  5. EXECUTION QUALITY: Slippage, Fill rate, Retry rate, Latency p95
+  6. SECURITY: Rate limit blocks, Guardrail triggers, Audit log volume
+
+Alertas (AlertManager → Telegram + PagerDuty):
+  - 🔥 drawdown > 15% (critical)
+  - 🔥 real_order_errors > 3 en 5min (critical)
+  - ⚠️ ws_disconnected > 60s (warning)
+  - ⚠️ balance_approaching_min_balance (warning)
+  - ⚠️ api_5xx_rate > 5% (warning)
+
+P4.5 — OpenTelemetry
+─────────────────────
+Paquetes: opentelemetry-api, opentelemetry-sdk, opentelemetry-exporter-otlp
+
+Traces:
+  - market_cycle: tiempo total del ciclo
+  - strategy_evaluation: tiempo de should_enter/should_exit
+  - risk_evaluation: tiempo de RiskEngine.evaluate
+  - execution: tiempo de execute_entry/execute_exit
+  - api_request: tiempo de request HTTP full
+
+Spans anidados → visibilidad completa del tiempo gastado en cada paso.
+
+P4.6 — Chaos Testing
+─────────────────────
+Paquete: chaostoolkit
+
+Escenarios:
+  1. WS disconnection durante trade activo
+  2. Redis failure (simulado con toxiproxy)
+  3. DB connection pool exhaustion
+  4. Polymarket API 50% packet loss
+  5. High latency (500ms+) en todas las llamadas externas
+
+Hipótesis de estado estacionario:
+  - El bot NUNCA envía órdenes duplicadas
+  - El balance NUNCA baja del min_balance configurado
+  - El RiskEngine SIEMPRE se evalúa antes de ejecutar
+
+
+================================================================================
+  NUEVAS ESTRATEGIAS PROBADAS (Resumen)
+================================================================================
+
+1. MEAN REVERSION (Fase 2)
+   - Compra en z-score < -2.0, vende en retorno a media
+   - Funciona en ~60-70% del tiempo (mercados laterales)
+   - Sharpe esperado: 1.2-1.8 (backtest sintético)
+   - Baja correlación con momentum → mejora portfolio
+
+2. MULTI-TIMEFRAME CONFIRMATION (Fase 2)
+   - Señal 5m requiere confirmación 15m
+   - Reduce falsos positivos ~40%
+   - No requiere nueva estrategia → filtro adicional
+
+3. KELLY CRITERION POSITION SIZING (Fase 2)
+   - Tamaño de posición proporcional a la ventaja (edge)
+   - Fraccional 25% para reducir varianza
+   - Volatility-adjusted con dampener dinámico
+   - Maximiza crecimiento geométrico a largo plazo
+
+4. SPREAD CAPTURE / MARKET MAKING LITE (Fase 4)
+   - Órdenes límite pasivas dentro del spread
+   - Baja dependencia direccional
+   - Requiere cambios en ExecutionHandler (órdenes límite)
+
+
+================================================================================
+  PAQUETES NUEVOS A INSTALAR
+================================================================================
+
+Fase 1:
+  py-clob-client==2.0.0       # SDK oficial Polymarket CLOB V2
+  uvloop==0.19.0              # Event loop rápido
+  orjson==3.10.0              # JSON serialization rápido
+  circuitbreaker==2.0.0       # Circuit breaker pattern
+  backoff==2.2.0              # Retry decorators (alternativa a tenacity)
+
+Fase 3:
+  hypothesis>=6.100.0         # Property-based testing
+  pytest-xdist>=3.6.0         # Tests en paralelo
+  pytest-timeout>=2.3.0       # Timeout en tests
+  locust>=2.29.0              # Performance testing
+  bandit>=1.7.0               # Security linting
+  pip-audit>=2.7.0            # Dependency scanning
+
+Fase 4:
+  opentelemetry-api==1.24.0   # Traces distribuidos
+  opentelemetry-sdk==1.24.0
+  opentelemetry-exporter-otlp==1.24.0
+  numpy==1.26.0               # Cálculos vectorizados
+  scipy==1.13.0               # Stats (z-score, distribuciones)
+
+
+================================================================================
+  DEFINICIÓN DE ÉXITO (MÉTRICAS VERIFICABLES)
+================================================================================
+
+Antes de activar real trading:
+  ✅ 100 ciclos paper trading con PnL positivo
+  ✅ Backtesting con Sharpe > 1.0 en BTC 5m y 15m
+  ✅ Backtesting con Sharpe > 0.8 en ETH 5m y 15m
+  ✅ Drawdown máximo en paper < 15%
+  ✅ Profit factor > 1.3
+  ✅ Win rate > 45%
+  ✅ Zero errores en pytest (unit + integration + e2e)
+  ✅ Cobertura > 80% en src/domain/ y src/strategies/
+  ✅ ruff check + mypy sin errores
+  ✅ bandit sin hallazgos HIGH/CRITICAL
+  ✅ git-secrets sin hallazgos
+
+En producción (monitoreo continuo):
+  ✅ Uptime > 99%
+  ✅ Latencia p95 API < 50ms
+  ✅ Respuesta Telegram < 2s p95
+  ✅ Drawdown diario < 20%
+  ✅ Zero secrets en logs (verificado por log_sanitizer)
+  ✅ Audit log inmutable registrando toda operación real
+
+
+================================================================================
+  CHANGELOG DEL PLAN
+================================================================================
+
+Versión 1.0 — 2026-05-21 — Creación inicial del plan completo
+  - 4 fases con 22 prioridades
+  - 4 estrategias nuevas propuestas
+  - ~80 tests nuevos planificados
+  - Stack de despliegue: K8s + Vault + Grafana + OpenTelemetry
