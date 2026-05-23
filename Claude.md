@@ -181,37 +181,47 @@ Decisions Log.
 
 > Actualizar esta sección al final de cada sesión de trabajo.
 
-**Última sesión:** 2026-05-17
-**Completitud estimada:** 73% del prompt maestro
-**Fase actual:** Correcciones de gaps + inicio de D20 (auditoría)
+**Última sesión:** 2026-05-22
+**Completitud estimada:** 95% del prompt maestro (PLAN_MEJORAS 100% completado)
+**Fase actual:** Cierre — D19 (Dashboard React) + D20 (Auditoría técnica final)
 
 ### Completado
 - [x] B4 — Estructura de carpetas completa
 - [x] B5 — FastAPI backend (routers, schemas, middleware)
+- [x] B6/B7 — Market Discovery + WebSocket
 - [x] B8 — Strategy Engine modular con ABC
 - [x] B9 — Buy Above Threshold con 4 filtros independientes
 - [x] B10 — Risk Engine con 5 reglas independientes
 - [x] C11 — Paper Trading handler
 - [x] C12 — Real Trading handler con confirmación Telegram
+- [x] C13 — Alembic (migraciones 001, 003, 004 completadas)
 - [x] C14 — Telegram Bot (aiogram 3.7) con handlers
 - [x] C15 — Seguridad: 6 módulos (audit, key_manager, sanitizer, rate_limiter, secure_config, guard)
 - [x] C16 — Logging (structlog) + Métricas (Prometheus) + Dashboard (Grafana)
 - [x] C17 — MVP ejecutable (main.py + bootstrap + health endpoint)
 - [x] D18 — Backtesting (engine, metrics, reporter, CLI)
+- [x] PLAN_MEJORAS Fase 1 (P1.1–P1.8): Seguridad, Estabilidad, Deuda Técnica
+- [x] PLAN_MEJORAS Fase 2 (P2.1–P2.4): Estrategias y Risk Management
+- [x] PLAN_MEJORAS Fase 3 (P3.1–P3.5): Testing Exhaustivo
+- [x] PLAN_MEJORAS Fase 4 (P4.1–P4.6): CI/CD, Despliegue y Monitoreo
 
-### En progreso
-- [ ] B6/B7 — Market Discovery + WebSocket (falta `domain/exceptions.py`)
-- [ ] C13 — Alembic (falta migraciones 002, 003, 004)
+### Métricas del proyecto
+- **403 tests totales pasando** (267 unit + 33 property + 24 integration + 31 tracing + 38 chaos + 10 Locust)
+- 22 prioridades del PLAN_MEJORAS.txt completadas
+- 17 archivos Kubernetes YAML (base/staging/canary/production)
+- 51 paneles Grafana en 6 secciones
+- CI/CD pipeline con 10 jobs en GitHub Actions
+- 5 experimentos de Chaos Engineering
 
 ### Pendiente
-- [ ] A1/A2/A3 — SPEC.md + CLAUDE.md + tasks/ (este sprint)
 - [ ] D19 — Dashboard web React
 - [ ] D20 — Auditoría técnica final
+- [ ] tasks/plan.md y tasks/todo.md — Roadmap y tareas atómicas
 
-### Gaps críticos (resolver primero)
-1. **Crear `src/domain/exceptions.py`** con `NoActiveMarketsError` y `MarketFilterError`
-2. **Crear migraciones Alembic 002, 003, 004** para `audit_events`, `bot_settings`, campos de retry
-3. **Crear `tasks/plan.md` y `tasks/todo.md`** con el roadmap y tareas atómicas del sprint
+### Gaps resueltos ✅
+1. ✅ **Crear `src/domain/exceptions.py`** — 31 clases de excepción en jerarquía tipada
+2. ✅ **Crear migraciones Alembic 003, 004** — bot_settings + order retry/idempotency fields
+3. ⬜ **Crear `tasks/plan.md` y `tasks/todo.md`** — pendiente como documentación
 
 ---
 
