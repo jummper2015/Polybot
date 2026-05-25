@@ -62,8 +62,14 @@ class PolymarketHTTPClient(IMarketDataPort):
         self, asset: str, window: str
     ) -> list[dict]:
         """
-        Consulta Polymarket Gamma API para obtener mercados activos.
-        Filtra por asset en el query param y devuelve dicts normalizados.
+        Consulta Polymarket Gamma API /events para obtener mercados activos.
+
+        Usa el endpoint /events (que contiene markets anidados con datos completos:
+        conditionId, clobTokenIds, outcomes, outcomePrices, startDateIso, endDateIso)
+        en lugar de /markets (que devuelve datos incompletos sin IDs ni tokens).
+
+        Filtra por tag=crypto y luego extrae/flattenea todos los markets de cada evento.
+        El filtrado por asset (BTC/ETH) y ventana (5m/15m) se hace en MarketService.
         """
         log = logger.bind(asset=asset, window=window)
 
@@ -72,27 +78,37 @@ class PolymarketHTTPClient(IMarketDataPort):
                 endpoint="get_active_markets"
             ).time():
                 response = await self._http.get(
-                    f"{GAMMA_BASE_URL}/markets",
+                    f"{GAMMA_BASE_URL}/events",
                     params={
                         "active":    "true",
                         "closed":    "false",
-                        "tag":       asset,       # Filtra por tag BTC o ETH
-                        "_limit":    "100",
-                        "_order":    "volume24hr",
-                        "_sort":     "desc",
+                        "tag":       "crypto",
+                        "limit":     "50",
+                        "order":     "volume24hr",
+                        "sort":      "desc",
                     },
                 )
                 response.raise_for_status()
 
-            raw_markets = response.json()
+            events = response.json()
 
-            # Normaliza cada market al formato esperado por MarketService
-            normalized = [
-                PolymarketAdapter.parse_rest_market(m)
-                for m in raw_markets
-            ]
+            # Extrae y normaliza todos los markets de todos los eventos
+            normalized: list[dict] = []
+            for event in events:
+                markets = event.get("markets") or []
+                for m in markets:
+                    try:
+                        parsed = PolymarketAdapter.parse_rest_market(m)
+                        if parsed.get("condition_id") and parsed.get("tokens"):
+                            normalized.append(parsed)
+                    except Exception:
+                        logger.debug(
+                            "market_parse_skipped",
+                            market_id=m.get("conditionId", m.get("id", "unknown")),
+                            question=str(m.get("question", ""))[:80],
+                        )
 
-            log.info("markets_fetched", count=len(normalized))
+            log.info("markets_fetched", events=len(events), markets=len(normalized))
             return normalized
 
         except httpx.HTTPStatusError as e:

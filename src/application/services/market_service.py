@@ -1,6 +1,7 @@
 # src/application/services/market_service.py
 
-from datetime import datetime
+import re as _re
+from datetime import datetime, timezone
 
 import structlog
 
@@ -53,49 +54,61 @@ class MarketService:
         Consulta Polymarket, filtra por BTC/ETH y ventanas 5m/15m,
         persiste en DB y cachea en Redis.
         Llamado al arranque y cada 60 minutos por el scheduler.
+
+        Optimización: hace UNA sola llamada a la API (no 4) y luego
+        filtra los mercados por asset y window.
         """
         log = logger.bind(action="discover_markets")
         log.info("starting_market_discovery")
 
         discovered: list[Market] = []
 
-        for asset in Asset:
-            for window in Window:
-                try:
-                    # 1. Obtiene mercados raw de Polymarket API
-                    raw_markets = await self._market_data.get_active_markets(
-                        asset=asset.value,
-                        window=window.value,
-                    )
+        try:
+            # 1. Obtiene TODOS los mercados crypto en UNA sola llamada API
+            #    (los parámetros asset/window son ignorados por el endpoint /events,
+            #     el filtrado se hace localmente para evitar 4 llamadas redundantes)
+            raw_markets = await self._market_data.get_active_markets(
+                asset="all",
+                window="all",
+            )
 
-                    # 2. Filtra y convierte a entidades de dominio
-                    markets = self._filter_and_parse(raw_markets, asset, window)
+            if not raw_markets:
+                log.warning("no_markets_fetched_from_api")
+                return []
 
-                    # 3. Persiste cada mercado en DB
-                    for market in markets:
-                        await self._repo.save_market(market)
-                        # 4. Cachea en Redis con TTL de 65 minutos
-                        await self._redis.set_market(market, ttl_seconds=3900)
-                        discovered.append(market)
+            log.info("raw_markets_fetched", count=len(raw_markets))
 
-                    log.info(
-                        "markets_discovered",
-                        asset=asset.value,
-                        window=window.value,
-                        count=len(markets),
-                    )
-                    # Métrica Prometheus
-                    MARKETS_DISCOVERED.labels(
-                        asset=asset.value, window=window.value
-                    ).inc(len(markets))
+            # 2. Itera sobre cada combinación asset×window y filtra
+            for asset in Asset:
+                for window in Window:
+                    try:
+                        markets = self._filter_and_parse(raw_markets, asset, window)
 
-                except Exception as e:
-                    log.error(
-                        "discovery_failed",
-                        asset=asset.value,
-                        window=window.value,
-                        error=str(e),
-                    )
+                        for market in markets:
+                            await self._repo.save_market(market)
+                            await self._redis.set_market(market, ttl_seconds=3900)
+                            discovered.append(market)
+
+                        log.info(
+                            "markets_discovered",
+                            asset=asset.value,
+                            window=window.value,
+                            count=len(markets),
+                        )
+                        MARKETS_DISCOVERED.labels(
+                            asset=asset.value, window=window.value
+                        ).inc(len(markets))
+
+                    except Exception as e:
+                        log.error(
+                            "discovery_filter_failed",
+                            asset=asset.value,
+                            window=window.value,
+                            error=str(e),
+                        )
+
+        except Exception as e:
+            log.error("discovery_fetch_failed", error=str(e))
 
         log.info("discovery_complete", total=len(discovered))
         return discovered
@@ -207,28 +220,98 @@ class MarketService:
 
     def _matches_window(self, raw: dict, window: Window) -> bool:
         """
-        Verifica si la duración del mercado corresponde a la ventana.
-        Calcula segundos entre start_time y end_time del mercado.
+        Verifica si la ventana temporal del mercado corresponde a la esperada.
+
+        Estrategia en 2 niveles:
+          1. Slug: busca "5m" o "15m" en el slug del mercado (más fiable).
+          2. Question: parsea el rango horario (ej: "9:30AM-9:35AM") para
+             calcular la duración y comparar con la ventana esperada.
+          3. Fallback: intenta usar start_date_iso/end_date_iso (solo para
+             mercados que no son "Up or Down", donde las fechas sí reflejan
+             la ventana real).
         """
+        slug = raw.get("slug", "")
+        question = raw.get("question", "")
+
+        # ── Nivel 1: Slug contiene el timeframe explícito ──────────────
+        if window == Window.M5 and "-5m-" in slug:
+            return True
+        if window == Window.M15 and "-15m-" in slug:
+            return True
+
+        # ── Nivel 2: Parsear rango horario en la pregunta ──────────────
+        # Formato: "9:30AM-9:35AM ET" o "9:30-9:35"
+        time_range_pattern = _re.compile(
+            r"(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(?:AM|PM)?"
+        )
+        match = time_range_pattern.search(question)
+        if match:
+            h1, m1, h2, m2 = int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4))
+            start_mins = h1 * 60 + m1
+            end_mins = h2 * 60 + m2
+            if end_mins <= start_mins:
+                end_mins += 12 * 60
+            duration_mins = end_mins - start_mins
+
+            if window == Window.M5 and 2 <= duration_mins <= 7:
+                return True
+            if window == Window.M15 and 12 <= duration_mins <= 18:
+                return True
+
+        # ── Nivel 3: Fallback con fechas del mercado ────────────────────
         try:
-            start = datetime.fromisoformat(raw["start_date_iso"])
-            end   = datetime.fromisoformat(raw["end_date_iso"])
+            start = self._parse_datetime_safe(raw.get("start_date_iso", ""))
+            end   = self._parse_datetime_safe(raw.get("end_date_iso", ""))
+            if start is None or end is None:
+                return False
             duration_secs = (end - start).total_seconds()
 
             min_secs, max_secs = WINDOW_DURATION[window]
             return min_secs <= duration_secs <= max_secs
 
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, TypeError):
             return False
+
+    @staticmethod
+    def _parse_datetime_safe(date_str: str) -> datetime | None:
+        """
+        Parsea una fecha ISO de forma segura, normalizando siempre a UTC naive.
+        Evita errores de resta entre offset-aware y offset-naive datetimes.
+        """
+        if not date_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(date_str)
+            # Normalizar a UTC naive para comparaciones consistentes
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except (ValueError, TypeError):
+            return None
 
     def _parse_market(self, raw: dict, asset: Asset, window: Window) -> Market:
         """
         Convierte el dict raw de la API de Polymarket en una entidad Market.
-        Puede lanzar KeyError/ValueError si el formato es inesperado.
+
+        Soporta tanto outcomes "Yes"/"No" (mercados tradicionales) como
+        "Up"/"Down" (mercados up-down de Polymarket).
         """
         tokens = raw.get("tokens", [])
-        yes_token = next((t for t in tokens if t["outcome"] == "Yes"), {})
-        no_token  = next((t for t in tokens if t["outcome"] == "No"),  {})
+        # Busca el token "positivo": Yes o Up
+        yes_token = next(
+            (t for t in tokens if t.get("outcome") in ("Yes", "Up")), {}
+        )
+        # Busca el token "negativo": No o Down
+        no_token = next(
+            (t for t in tokens if t.get("outcome") in ("No", "Down")), {}
+        )
+
+        # Si no encontramos por nombre, asumimos índice 0 = positivo, índice 1 = negativo
+        if not yes_token and not no_token and len(tokens) >= 2:
+            yes_token = tokens[0]
+            no_token  = tokens[1]
+
+        expiry = self._parse_datetime_safe(raw.get("end_date_iso", ""))
 
         return Market(
             id           = raw["condition_id"],
@@ -241,5 +324,5 @@ class MarketService:
             yes_price    = float(yes_token.get("price", 0.5)),
             no_price     = float(no_token.get("price",  0.5)),
             volume_24h   = float(raw.get("volume24hr", 0.0)),
-            expiry       = datetime.fromisoformat(raw["end_date_iso"]),
+            expiry       = expiry or datetime.now(timezone.utc).replace(tzinfo=None),
         )

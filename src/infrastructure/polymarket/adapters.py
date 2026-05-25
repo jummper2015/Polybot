@@ -1,5 +1,6 @@
 # src/infrastructure/polymarket/adapters.py
 
+import json as _json
 from datetime import datetime
 
 import structlog
@@ -89,16 +90,60 @@ class PolymarketAdapter:
     @staticmethod
     def parse_rest_market(raw: dict) -> dict:
         """
-        Normaliza la respuesta REST de /markets a un formato
+        Normaliza la respuesta REST de /events (markets anidados) a un formato
         consistente para MarketService._parse_market().
-        Convierte campos de la API al formato esperado por el dominio.
+
+        El endpoint /events devuelve markets con:
+          - conditionId (camelCase, no condition_id)
+          - clobTokenIds (array de strings, no objetos token)
+          - outcomes / outcomePrices (JSON strings de arrays)
+          - startDateIso / endDateIso
+          - slug (contiene el timeframe: "5m", "15m")
         """
+        # --- Construir lista de tokens a partir de clobTokenIds + outcomes + outcomePrices ---
+        tokens: list[dict] = []
+        clob_ids = raw.get("clobTokenIds") or []
+        outcomes_raw = raw.get("outcomes", "[]")
+        prices_raw = raw.get("outcomePrices", "[]")
+
+        try:
+            outcomes = _json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
+        except (_json.JSONDecodeError, TypeError):
+            outcomes = []
+        try:
+            prices = _json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+        except (_json.JSONDecodeError, TypeError):
+            prices = []
+
+        for i, token_id in enumerate(clob_ids):
+            token_entry: dict = {"token_id": str(token_id)}
+            if i < len(outcomes):
+                token_entry["outcome"] = outcomes[i]
+            else:
+                # Fallback: sin outcomes, asumir "Yes"/"No" por posición
+                token_entry["outcome"] = "Yes" if i == 0 else "No"
+            if i < len(prices):
+                token_entry["price"] = prices[i]
+            tokens.append(token_entry)
+
+        # --- Volumen: probar volume24hr primero, luego liquidity como proxy ---
+        try:
+            volume = float(raw.get("volume24hr", 0) or 0)
+        except (ValueError, TypeError):
+            volume = 0.0
+        if volume == 0.0:
+            try:
+                volume = float(raw.get("liquidity", 0) or 0)
+            except (ValueError, TypeError):
+                volume = 0.0
+
         return {
-            "condition_id":  raw.get("condition_id", raw.get("id", "")),
-            "question":      raw.get("question", ""),
-            "active":        raw.get("active", False),
-            "tokens":        raw.get("tokens", []),
-            "volume24hr":    float(raw.get("volume24hr", raw.get("volume", 0))),
-            "start_date_iso": raw.get("startDateIso", raw.get("start_date_iso", "")),
-            "end_date_iso":   raw.get("endDateIso",   raw.get("end_date_iso",   "")),
+            "condition_id":   raw.get("conditionId", raw.get("condition_id", raw.get("id", ""))),
+            "question":       raw.get("question", ""),
+            "slug":           raw.get("slug", ""),
+            "active":         raw.get("active", False),
+            "tokens":         tokens,
+            "volume24hr":     volume,
+            "start_date_iso": raw.get("startDateIso", raw.get("start_date_iso", raw.get("startDate", ""))),
+            "end_date_iso":   raw.get("endDateIso",   raw.get("end_date_iso",   raw.get("endDate",   ""))),
         }

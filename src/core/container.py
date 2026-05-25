@@ -186,7 +186,13 @@ class Container:
             )
             log.info("telegram_initialized")
         except Exception as e:
-            log.warning("telegram_init_skipped", reason=str(e))
+            # TokenValidationError (token inválido/placeholder) → warning
+            # Otros errores (import, network) → error, pero el sistema sigue
+            from aiogram.utils.token import TokenValidationError
+            if isinstance(e, TokenValidationError):
+                log.warning("telegram_init_skipped", reason="Token is invalid")
+            else:
+                log.error("telegram_init_failed", error=str(e))
             self.telegram_bot = None
             self.telegram_dp  = None
             self.notifier     = None

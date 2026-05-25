@@ -91,7 +91,9 @@ class RedisClient:
                 market_ids = await self._redis.smembers(list_key)
 
                 for mid in market_ids:
-                    market = await self.get_market(mid.decode())
+                    # redis-py >= 4.0 devuelve str; versiones antiguas devuelven bytes
+                    mid_str = mid.decode() if isinstance(mid, bytes) else mid
+                    market = await self.get_market(mid_str)
                     if market:
                         markets.append(market)
 

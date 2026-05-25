@@ -184,7 +184,10 @@ class TradingService:
             cycle_span.set_attribute("market.window", market.window.value)
 
             try:
-                with CYCLE_DURATION.labels(market_id=market.id).time():
+                with CYCLE_DURATION.labels(
+                    asset=market.asset.value,
+                    window=market.window.value,
+                ).time():
                     # ── 1. Inicio de ciclo ────────────────────────────
                     await self._strategy.on_cycle_start(market)
 
