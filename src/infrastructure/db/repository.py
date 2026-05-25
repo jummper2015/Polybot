@@ -16,7 +16,13 @@ from src.domain.enums.order_side import OrderSide
 from src.domain.enums.order_status import OrderStatus
 from src.domain.enums.trading_mode import TradingMode
 from src.domain.enums.window import Window
-from src.infrastructure.db.models import AuditLogModel, MarketModel, OrderModel, PositionModel
+from src.infrastructure.db.models import (
+    AuditLogModel,
+    BotSettingsModel,
+    MarketModel,
+    OrderModel,
+    PositionModel,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -244,6 +250,36 @@ class SQLAlchemyRepository(IRepositoryPort):
                     },
                 )
                 session.add(model)
+
+    # ------------------------------------------------------------------
+    # BOT SETTINGS
+    # ------------------------------------------------------------------
+
+    async def get_bot_setting(self, key: str) -> str | None:
+        """Obtiene un valor de configuración por su key."""
+        async with self._session_factory() as session:
+            model = await session.get(BotSettingsModel, key)
+            return model.value if model else None
+
+    async def set_bot_setting(self, key: str, value: str) -> None:
+        """Upsert de configuración clave-valor."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                existing = await session.get(BotSettingsModel, key)
+                if existing:
+                    existing.value = value
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    model = BotSettingsModel(key=key, value=value)
+                    session.add(model)
+
+    async def get_all_bot_settings(self) -> dict[str, str]:
+        """Devuelve todas las configuraciones como diccionario."""
+        async with self._session_factory() as session:
+            stmt = select(BotSettingsModel)
+            result = await session.execute(stmt)
+            models = result.scalars().all()
+            return {m.key: m.value for m in models}
 
     # ------------------------------------------------------------------
     # MAPPERS: Domain ↔ ORM

@@ -155,13 +155,14 @@ class PaperTradingHandler(IExecutionHandler):
         )
 
         # ── Notifica al usuario ───────────────────────────────────────
-        await self._notifier.send_trade_alert(
-            market_id=market_id,
-            side=order.side.value,
-            amount=amount,
-            price=fill_price,
-            mode="paper",
-        )
+        if self._notifier is not None:
+            await self._notifier.send_trade_alert(
+                market_id=market_id,
+                side=order.side.value,
+                amount=amount,
+                price=fill_price,
+                mode="paper",
+            )
 
         return TradeResult(
             order_id     = order.id,
@@ -253,12 +254,13 @@ class PaperTradingHandler(IExecutionHandler):
         )
 
         # ── Notifica al usuario ───────────────────────────────────────
-        await self._notifier.send_exit_alert(
-            market_id=position.market_id,
-            reason=reason,
-            pnl=position.pnl,
-            pnl_pct=position.pnl_pct,
-        )
+        if self._notifier is not None:
+            await self._notifier.send_exit_alert(
+                market_id=position.market_id,
+                reason=reason,
+                pnl=position.pnl,
+                pnl_pct=position.pnl_pct,
+            )
 
         return TradeResult(
             order_id     = exit_order.id,

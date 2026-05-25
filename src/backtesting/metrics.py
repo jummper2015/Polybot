@@ -268,15 +268,17 @@ class BacktestMetrics:
             m = cls(result)
             metrics = m.compute_all()
             comparisons.append({
-                "threshold":     result.config.threshold,
-                "stop_loss_pct": result.config.stop_loss_pct,
-                "target_price":  result.config.target_price,
-                "sharpe_ratio":  metrics["risk"]["sharpe_ratio"],
-                "win_rate":      metrics["performance"]["win_rate"],
-                "profit_factor": metrics["performance"]["profit_factor"],
-                "total_pnl":     metrics["pnl"]["total_pnl_usdc"],
-                "max_drawdown":  metrics["risk"]["max_drawdown_pct"],
-                "total_trades":  metrics["summary"]["closed_positions"],
+                "threshold":          result.config.threshold,
+                "stop_loss_pct":      result.config.stop_loss_pct,
+                "target_price":       result.config.target_price,
+                "required_ticks":     result.config.required_ticks,
+                "position_size_usdc": result.config.position_size_usdc,
+                "sharpe_ratio":       metrics["risk"]["sharpe_ratio"],
+                "win_rate":           metrics["performance"]["win_rate"],
+                "profit_factor":      metrics["performance"]["profit_factor"],
+                "total_pnl":          metrics["pnl"]["total_pnl_usdc"],
+                "max_drawdown":       metrics["risk"]["max_drawdown_pct"],
+                "total_trades":       metrics["summary"]["closed_positions"],
             })
 
         # Ordena por Sharpe ratio descendente

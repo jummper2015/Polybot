@@ -1,10 +1,12 @@
 # src/interfaces/telegram/handlers/start.py
 
+import structlog
 from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 router = Router()
+logger = structlog.get_logger(__name__)
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -46,35 +48,62 @@ async def cmd_start(message: Message) -> None:
 
 
 @router.callback_query(lambda c: c.data == "menu:status")
-async def cb_status(callback: CallbackQuery) -> None:
+async def cb_status(callback: CallbackQuery, container=None) -> None:
     """Redirige al handler de status."""
     await callback.answer()
-    # Importación diferida para evitar circular imports
     from src.interfaces.telegram.handlers.status import send_status
-    await send_status(callback.message)
+    await send_status(callback.message, container=container)
 
 
 @router.callback_query(lambda c: c.data == "bot:start")
 async def cb_bot_start(callback: CallbackQuery, container=None) -> None:
-    """Inicia el bot de trading."""
+    """Inicia el bot de trading vía container."""
     await callback.answer("Iniciando bot...")
-    await callback.message.answer("▶️ *Bot iniciado* \\- comenzando ciclos de trading\\.")
+    if container is not None:
+        success, msg = await container.start_bot()
+        if success:
+            await callback.message.answer(
+                f"▶️ *Bot iniciado*\n\n{msg}\n_Comenzando ciclos de trading\\._"
+            )
+        else:
+            await callback.message.answer(f"⚠️ {msg}")
+    else:
+        await callback.message.answer(
+            "▶️ *Bot iniciado* \\- comenzando ciclos de trading\\."
+        )
 
 
 @router.callback_query(lambda c: c.data == "bot:stop")
-async def cb_bot_stop(callback: CallbackQuery) -> None:
-    """Detiene el bot de trading."""
+async def cb_bot_stop(callback: CallbackQuery, container=None) -> None:
+    """Detiene el bot de trading vía container."""
     await callback.answer("Deteniendo bot...")
-    await callback.message.answer("⏹ *Bot detenido*\\.")
+    if container is not None:
+        success, msg = await container.stop_bot()
+        if success:
+            await callback.message.answer(
+                f"⏹ *Bot detenido*\n\n{msg}"
+            )
+        else:
+            await callback.message.answer(f"⚠️ {msg}")
+    else:
+        await callback.message.answer("⏹ *Bot detenido*\\.")
 
 
 @router.callback_query(lambda c: c.data == "bot:enable_real")
-async def cb_enable_real(callback: CallbackQuery) -> None:
+async def cb_enable_real(callback: CallbackQuery, container=None) -> None:
     """
     Primer paso de confirmación para activar real trading.
     Muestra advertencia y pide confirmación explícita.
     """
     await callback.answer()
+
+    if container is not None and container.trading_mode == "real":
+        await callback.message.answer(
+            "🔴 *El bot ya está en modo REAL*\\.\n"
+            "No es necesario activarlo de nuevo\\."
+        )
+        return
+
     confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
@@ -123,21 +152,35 @@ async def cb_real_confirm_step1(callback: CallbackQuery) -> None:
         "🔴 *CONFIRMACIÓN FINAL*\n\n"
         "Esta es tu última oportunidad de cancelar\\.\n"
         "Al confirmar, el bot empezará a usar *dinero real*\\.\n\n"
-        "Escribe /confirmar\\_real o presiona el botón:",
+        "Presiona el botón para confirmar:",
         reply_markup=final_keyboard,
     )
 
 
 @router.callback_query(lambda c: c.data == "real:confirm_final")
-async def cb_real_confirm_final(callback: CallbackQuery) -> None:
+async def cb_real_confirm_final(callback: CallbackQuery, container=None) -> None:
     """Activa real trading después de doble confirmación."""
-    await callback.answer("✅ Real Trading activado")
-    await callback.message.answer(
-        "🔴 *Real Trading ACTIVADO*\n\n"
-        "El bot ahora opera con fondos reales\\.\n"
-        "Recibirás alertas de cada operación\\.",
-    )
-    # TODO en C17: llamar a container.trading_service.enable_real_mode()
+    await callback.answer()
+
+    if container is not None:
+        success, msg = await container.enable_real_mode()
+        if success:
+            await callback.message.answer(
+                "🔴 *Real Trading ACTIVADO*\n\n"
+                "El bot ahora opera con fondos reales\\.\n"
+                "Recibirás alertas de cada operación\\.\n\n"
+                f"_{msg}_"
+            )
+        else:
+            await callback.message.answer(
+                f"❌ *Error al activar Real Trading*\n\n{msg}"
+            )
+    else:
+        await callback.message.answer(
+            "🔴 *Real Trading ACTIVADO*\n\n"
+            "El bot ahora opera con fondos reales\\.\n"
+            "Recibirás alertas de cada operación\\.",
+        )
 
 
 @router.callback_query(lambda c: c.data == "real:cancel")

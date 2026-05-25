@@ -1,0 +1,230 @@
+{
+  "generated_at": "2026-05-25T13:04:19.904348+00:00",
+  "mode": "quick",
+  "n_ticks": 3000,
+  "balance": 1000.0,
+  "top_config": {
+    "threshold": 0.65,
+    "stop_loss_pct": 0.1,
+    "target_price": 0.95,
+    "required_ticks": 3,
+    "position_size_usdc": 5
+  },
+  "top_3": [
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "avg_sharpe": -1.187,
+      "avg_win_rate": 0.0237,
+      "avg_profit_factor": 0.4673,
+      "robustness_score": 0.2747
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "avg_sharpe": -1.187,
+      "avg_win_rate": 0.0237,
+      "avg_profit_factor": 0.4673,
+      "robustness_score": 0.2723
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "avg_sharpe": -1.1342,
+      "avg_win_rate": 0.0244,
+      "avg_profit_factor": 0.4617,
+      "robustness_score": 0.2722
+    }
+  ],
+  "full_ranking": [
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2747,
+      "avg_sharpe": -1.187
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2723,
+      "avg_sharpe": -1.187
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2722,
+      "avg_sharpe": -1.1342
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2698,
+      "avg_sharpe": -1.1342
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.15,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2632,
+      "avg_sharpe": -1.2459
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.15,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2609,
+      "avg_sharpe": -1.2459
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2258,
+      "avg_sharpe": -1.465
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2254,
+      "avg_sharpe": -1.5346
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2235,
+      "avg_sharpe": -1.465
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2232,
+      "avg_sharpe": -1.5346
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.15,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2162,
+      "avg_sharpe": -1.5696
+    },
+    {
+      "threshold": 0.65,
+      "stop_loss_pct": 0.15,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2142,
+      "avg_sharpe": -1.5696
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "robustness_score": 0.211,
+      "avg_sharpe": -1.467
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2089,
+      "avg_sharpe": -1.467
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2031,
+      "avg_sharpe": -1.6024
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.15,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 5,
+      "robustness_score": 0.2021,
+      "avg_sharpe": -1.5793
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.1,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "robustness_score": 0.2009,
+      "avg_sharpe": -1.6024
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.15,
+      "target_price": 0.95,
+      "required_ticks": 3,
+      "position_size_usdc": 10,
+      "robustness_score": 0.1999,
+      "avg_sharpe": -1.5793
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 5,
+      "robustness_score": 0.1552,
+      "avg_sharpe": -1.8587
+    },
+    {
+      "threshold": 0.7,
+      "stop_loss_pct": 0.2,
+      "target_price": 0.95,
+      "required_ticks": 2,
+      "position_size_usdc": 10,
+      "robustness_score": 0.153,
+      "avg_sharpe": -1.8587
+    }
+  ]
+}

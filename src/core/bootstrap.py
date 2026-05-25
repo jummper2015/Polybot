@@ -133,12 +133,19 @@ async def bootstrap() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _signal_handler, sig)
 
-    # ── Paso 7: Lanza los tres servicios en paralelo ──────────────────
+    # ── Paso 7: Lanza los servicios en paralelo ──────────────────
     tasks = [
         asyncio.create_task(run_fastapi(container),  name="fastapi"),
-        asyncio.create_task(run_telegram(container), name="telegram"),
         asyncio.create_task(run_trading(container),  name="trading"),
     ]
+
+    # Telegram: solo si el bot se inicializó correctamente
+    if container.telegram_bot is not None and container.telegram_dp is not None:
+        tasks.append(
+            asyncio.create_task(run_telegram(container), name="telegram")
+        )
+    else:
+        logger.warning("telegram_skipped", reason="bot_token_missing_or_invalid")
 
     logger.info(
         "all_services_started",

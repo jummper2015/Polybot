@@ -1,5 +1,6 @@
 # src/interfaces/telegram/handlers/settings.py
 
+import structlog
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -12,6 +13,7 @@ from aiogram.types import (
 )
 
 router = Router()
+logger = structlog.get_logger(__name__)
 
 
 class SettingsStates(StatesGroup):
@@ -26,27 +28,51 @@ class SettingsStates(StatesGroup):
     waiting_required_ticks  = State()
 
 
-def settings_keyboard() -> InlineKeyboardMarkup:
+def settings_keyboard(container=None) -> InlineKeyboardMarkup:
     """Menú de settings con botones por parámetro configurable."""
+    # Intenta leer valores actuales desde la config real
+    threshold = "0.75"
+    stop_loss = "15%"
+    target = "0.90"
+    pos_size = "10 USDC"
+    ticks = "3"
+
+    if container is not None:
+        try:
+            from src.strategies.buy_above_threshold.strategy import (
+                BuyAboveThresholdStrategy,
+            )
+            for s in container.strategy_engine._strategies:
+                if isinstance(s, BuyAboveThresholdStrategy):
+                    cfg = s._config
+                    threshold = str(cfg.threshold)
+                    stop_loss = f"{cfg.stop_loss_pct:.0%}"
+                    target = str(cfg.target_price)
+                    pos_size = f"{cfg.position_size_usdc:.0f} USDC"
+                    ticks = str(cfg.required_ticks)
+                    break
+        except Exception:
+            pass
+
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🎯 Threshold (actual: 0.75)",
+            text=f"🎯 Threshold (actual: {threshold})",
             callback_data="settings:threshold"
         )],
         [InlineKeyboardButton(
-            text="🛑 Stop Loss (actual: 15%)",
+            text=f"🛑 Stop Loss (actual: {stop_loss})",
             callback_data="settings:stop_loss"
         )],
         [InlineKeyboardButton(
-            text="🏆 Target Price (actual: 0.90)",
+            text=f"🏆 Target Price (actual: {target})",
             callback_data="settings:target"
         )],
         [InlineKeyboardButton(
-            text="💰 Position Size (actual: 10 USDC)",
+            text=f"💰 Position Size (actual: {pos_size})",
             callback_data="settings:position_size"
         )],
         [InlineKeyboardButton(
-            text="🔢 Required Ticks (actual: 3)",
+            text=f"🔢 Required Ticks (actual: {ticks})",
             callback_data="settings:ticks"
         )],
         [InlineKeyboardButton(
@@ -57,24 +83,24 @@ def settings_keyboard() -> InlineKeyboardMarkup:
 
 
 @router.message(Command("settings"))
-async def cmd_settings(message: Message) -> None:
+async def cmd_settings(message: Message, container=None) -> None:
     """Muestra el menú de configuración."""
     await message.answer(
         "⚙️ *Configuración de la Estrategia*\n\n"
         "Selecciona el parámetro a modificar\\.\n"
         "_Los cambios se aplican inmediatamente sin reiniciar el bot\\._",
-        reply_markup=settings_keyboard(),
+        reply_markup=settings_keyboard(container),
     )
 
 
 @router.callback_query(lambda c: c.data == "menu:settings")
-async def cb_settings_menu(callback: CallbackQuery) -> None:
+async def cb_settings_menu(callback: CallbackQuery, container=None) -> None:
     """Handler del botón settings en el menú principal."""
     await callback.answer()
     await callback.message.answer(
         "⚙️ *Configuración de la Estrategia*\n\n"
         "Selecciona el parámetro a modificar:",
-        reply_markup=settings_keyboard(),
+        reply_markup=settings_keyboard(container),
     )
 
 
@@ -96,17 +122,26 @@ async def cb_set_threshold(
 
 
 @router.message(SettingsStates.waiting_threshold)
-async def process_threshold(message: Message, state: FSMContext) -> None:
+async def process_threshold(
+    message: Message, state: FSMContext, container=None
+) -> None:
     """
     Procesa el nuevo threshold enviado por el usuario.
-    Valida el rango y aplica el cambio en caliente.
+    Valida el rango y aplica el cambio en caliente vía container.
     """
     try:
         value = float(message.text.strip())
         if not 0.50 <= value <= 0.95:
             raise ValueError("Fuera de rango")
 
-        # TODO en C17: container.strategy.update_config(threshold=value)
+        if container is not None:
+            success, msg = await container.update_bat_setting(
+                "threshold", value
+            )
+            if not success:
+                await message.answer(f"❌ {msg}")
+                return
+
         await state.clear()
         await message.answer(
             f"✅ *Threshold actualizado*\n\n"
@@ -139,12 +174,22 @@ async def cb_set_stop_loss(
 
 
 @router.message(SettingsStates.waiting_stop_loss)
-async def process_stop_loss(message: Message, state: FSMContext) -> None:
-    """Procesa el nuevo stop loss."""
+async def process_stop_loss(
+    message: Message, state: FSMContext, container=None
+) -> None:
+    """Procesa el nuevo stop loss y lo aplica en caliente."""
     try:
         value = float(message.text.strip()) / 100
         if not 0.05 <= value <= 0.50:
             raise ValueError("Fuera de rango")
+
+        if container is not None:
+            success, msg = await container.update_bat_setting(
+                "stop_loss", value
+            )
+            if not success:
+                await message.answer(f"❌ {msg}")
+                return
 
         await state.clear()
         await message.answer(
@@ -175,12 +220,22 @@ async def cb_set_target(
 
 
 @router.message(SettingsStates.waiting_target_price)
-async def process_target(message: Message, state: FSMContext) -> None:
-    """Procesa el nuevo target price."""
+async def process_target(
+    message: Message, state: FSMContext, container=None
+) -> None:
+    """Procesa el nuevo target price y lo aplica en caliente."""
     try:
         value = float(message.text.strip())
         if not 0.76 <= value <= 0.99:
             raise ValueError("Fuera de rango")
+
+        if container is not None:
+            success, msg = await container.update_bat_setting(
+                "target_price", value
+            )
+            if not success:
+                await message.answer(f"❌ {msg}")
+                return
 
         await state.clear()
         await message.answer(
@@ -212,12 +267,22 @@ async def cb_set_position_size(
 
 
 @router.message(SettingsStates.waiting_position_size)
-async def process_position_size(message: Message, state: FSMContext) -> None:
-    """Procesa el nuevo tamaño de posición."""
+async def process_position_size(
+    message: Message, state: FSMContext, container=None
+) -> None:
+    """Procesa el nuevo tamaño de posición y lo aplica en caliente."""
     try:
         value = float(message.text.strip())
         if not 1.0 <= value <= 500.0:
             raise ValueError("Fuera de rango")
+
+        if container is not None:
+            success, msg = await container.update_bat_setting(
+                "position_size", value
+            )
+            if not success:
+                await message.answer(f"❌ {msg}")
+                return
 
         await state.clear()
         await message.answer(

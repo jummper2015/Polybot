@@ -8,6 +8,16 @@ import structlog
 from src.infrastructure.security.log_sanitizer import LogSanitizer
 
 
+def _safe_add_logger_name(logger, method_name, event_dict):
+    """
+    Safe logger name processor compatible with PrintLoggerFactory.
+    structlog.stdlib.add_logger_name requires a stdlib Logger with .name,
+    but PrintLogger (used in dev) doesn't have it.
+    """
+    event_dict["logger"] = getattr(logger, "name", "polybot")
+    return event_dict
+
+
 def configure_logging(log_level: str = "INFO") -> None:
     """
     Configura structlog con:
@@ -24,7 +34,7 @@ def configure_logging(log_level: str = "INFO") -> None:
 
         # 2. Añade nombre del logger y nivel
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
+        _safe_add_logger_name,
 
         # 3. Sanitiza datos sensibles (ANTES de serializar)
         LogSanitizer.structlog_processor,

@@ -1,0 +1,254 @@
+{
+  "generated_at": "2026-05-25T13:24:45.128325+00:00",
+  "mode": "full",
+  "n_ticks": 3000,
+  "balance": 1000.0,
+  "top_config": {
+    "ma_window": 20,
+    "entry_zscore": -3.0,
+    "exit_zscore": 1.0,
+    "stop_loss_pct": 0.15,
+    "timeout_minutes": 30,
+    "position_size_usdc": 5
+  },
+  "top_3": [
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 5,
+      "avg_sharpe": -0.112,
+      "avg_win_rate": 0.2958,
+      "avg_profit_factor": 1.3053,
+      "robustness_score": 0.3592
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 10,
+      "avg_sharpe": -0.112,
+      "avg_win_rate": 0.2958,
+      "avg_profit_factor": 1.3053,
+      "robustness_score": 0.3592
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 15,
+      "avg_sharpe": -0.112,
+      "avg_win_rate": 0.2958,
+      "avg_profit_factor": 1.3053,
+      "robustness_score": 0.3589
+    }
+  ],
+  "full_ranking": [
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3592,
+      "avg_sharpe": -0.112
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3592,
+      "avg_sharpe": -0.112
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 15,
+      "robustness_score": 0.3589,
+      "avg_sharpe": -0.112
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 45,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3576,
+      "avg_sharpe": -0.1288
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 45,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3576,
+      "avg_sharpe": -0.1288
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 60,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3576,
+      "avg_sharpe": -0.1293
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 60,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3576,
+      "avg_sharpe": -0.1293
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 60,
+      "position_size_usdc": 15,
+      "robustness_score": 0.3576,
+      "avg_sharpe": -0.1293
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 45,
+      "position_size_usdc": 15,
+      "robustness_score": 0.3575,
+      "avg_sharpe": -0.1288
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 90,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3569,
+      "avg_sharpe": -0.1306
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 90,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3568,
+      "avg_sharpe": -0.1306
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 90,
+      "position_size_usdc": 15,
+      "robustness_score": 0.3567,
+      "avg_sharpe": -0.1306
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3564,
+      "avg_sharpe": -0.1275
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3564,
+      "avg_sharpe": -0.1275
+    },
+    {
+      "ma_window": 40,
+      "entry_zscore": -2.5,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 30,
+      "position_size_usdc": 15,
+      "robustness_score": 0.3561,
+      "avg_sharpe": -0.1275
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.12,
+      "timeout_minutes": 30,
+      "position_size_usdc": 15,
+      "robustness_score": 0.3554,
+      "avg_sharpe": -0.0957
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 45,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3554,
+      "avg_sharpe": -0.1286
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.15,
+      "timeout_minutes": 45,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3554,
+      "avg_sharpe": -0.1286
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.12,
+      "timeout_minutes": 30,
+      "position_size_usdc": 5,
+      "robustness_score": 0.3553,
+      "avg_sharpe": -0.0957
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -3.0,
+      "exit_zscore": 1.0,
+      "stop_loss_pct": 0.12,
+      "timeout_minutes": 30,
+      "position_size_usdc": 10,
+      "robustness_score": 0.3553,
+      "avg_sharpe": -0.0957
+    }
+  ]
+}

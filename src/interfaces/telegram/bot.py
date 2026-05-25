@@ -11,7 +11,7 @@ from src.interfaces.telegram.handlers.positions import router as positions_route
 from src.interfaces.telegram.handlers.settings import router as settings_router
 from src.interfaces.telegram.handlers.start import router as start_router
 from src.interfaces.telegram.handlers.status import router as status_router
-from src.interfaces.telegram.middleware import AuthMiddleware
+from src.interfaces.telegram.middleware import AuthMiddleware, ContainerMiddleware
 
 logger = structlog.get_logger(__name__)
 
@@ -26,11 +26,14 @@ def create_bot(token: str) -> Bot:
     )
 
 
-def create_dispatcher(redis: Redis) -> Dispatcher:
+def create_dispatcher(redis: Redis, container=None) -> Dispatcher:
     """
     Crea el Dispatcher con FSM storage en Redis.
     FSM en Redis permite que los estados de conversación
     sobrevivan reinicios del bot.
+
+    Si se provee un container, se instala ContainerMiddleware
+    para que los handlers puedan acceder a los servicios del bot.
     """
     storage = RedisStorage(redis=redis)
     dp      = Dispatcher(storage=storage)
@@ -38,6 +41,12 @@ def create_dispatcher(redis: Redis) -> Dispatcher:
     # Middleware de autorización — aplica a TODOS los handlers
     dp.message.middleware(AuthMiddleware())
     dp.callback_query.middleware(AuthMiddleware())
+
+    # Middleware de inyección del container (después de auth)
+    if container is not None:
+        dp.message.middleware(ContainerMiddleware(container))
+        dp.callback_query.middleware(ContainerMiddleware(container))
+        logger.info("container_middleware_installed")
 
     # Registra todos los routers
     dp.include_router(start_router)

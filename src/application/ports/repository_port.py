@@ -54,3 +54,13 @@ class IRepositoryPort(ABC):
 
     @abstractmethod
     async def get_total_pnl(self, mode: str | None = None) -> float: ...
+
+    # --- Bot Settings ---
+    @abstractmethod
+    async def get_bot_setting(self, key: str) -> str | None: ...
+
+    @abstractmethod
+    async def set_bot_setting(self, key: str, value: str) -> None: ...
+
+    @abstractmethod
+    async def get_all_bot_settings(self) -> dict[str, str]: ...

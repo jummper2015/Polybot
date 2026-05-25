@@ -19,8 +19,8 @@ FastAPI, aiogram 3.x, SQLAlchemy async, Redis y PostgreSQL. UI de control
 exclusivamente vía Telegram.
 
 **Spec completo:** Ver `SPEC.md` en la raíz del proyecto.
-**Tareas del sprint actual:** Ver `tasks/todo.md`.
-**Roadmap completo:** Ver `tasks/plan.md`.
+**Plan de mejoras:** Ver `PLAN_MEJORAS.txt` (v5.0 — 39 prioridades, todas completadas).
+**Recorrido de implementación:** Ver `RECORRIDO.txt` (tracking completo de 7 fases).
 
 ---
 
@@ -73,57 +73,6 @@ de esta lista, detente y pregunta antes de modificar cualquier cosa.
 
 ---
 
-## Skills activos
-
-Carga los skills relevantes al sprint actual. No cargar todos a la vez —
-consume contexto innecesariamente.
-
-### Skills del repositorio addyosmani/agent-skills
-Instalar con: `/plugin install agent-skills@addy-agent-skills`
-
-```
-# Siempre activos (toda sesión)
-@skills/spec-driven-development/SKILL.md
-@skills/security-and-hardening/SKILL.md
-
-# Fase A (definición y spec)
-@skills/planning-and-task-breakdown/SKILL.md
-
-# Fase B-C (diseño e implementación)
-@skills/api-and-interface-design/SKILL.md
-@skills/incremental-implementation/SKILL.md
-@skills/test-driven-development/SKILL.md
-
-# Debugging y corrección
-@skills/debugging-and-error-recovery/SKILL.md
-
-# Fase D (validación y deploy)
-@skills/performance-optimization/SKILL.md
-@skills/shipping-and-launch/SKILL.md
-```
-
-### Skills propios del proyecto (en skills/user/)
-```
-# Market discovery: filtrado BTC/ETH, contratos MarketTick/MarketCycle
-@skills/user/polymarket-market-discovery/SKILL.md
-
-# Protocolo de estrategias: ABC 5 métodos, Buy Above Threshold, separación riesgo
-@skills/user/algorithmic-strategy-protocol/SKILL.md
-
-# Switch paper/real: 3 capas confirmación, slippage, idempotencia, audit
-@skills/user/paper-vs-real-execution-mode/SKILL.md
-```
-
-**Activación por contexto:**
-- Trabajando en `infrastructure/polymarket/` o `application/services/market_service.py`
-  → activar `polymarket-market-discovery`
-- Trabajando en `strategies/` o `application/services/trading_service.py`
-  → activar `algorithmic-strategy-protocol`
-- Trabajando en `execution/` o `interfaces/telegram/handlers/settings.py`
-  → activar `paper-vs-real-execution-mode`
-
----
-
 ## Reglas de comportamiento para Claude Code
 
 ### Reglas generales
@@ -159,31 +108,13 @@ Instalar con: `/plugin install agent-skills@addy-agent-skills`
 
 ---
 
-## Modo Resume
-
-Cuando el humano indica un checkpoint (ej: "resume desde C13"):
-
-1. Leer este `CLAUDE.md` completo.
-2. Leer `SPEC.md` completo.
-3. Leer `tasks/todo.md` para conocer el estado actual de las tareas.
-4. Preguntar al humano si hay decisiones nuevas tomadas desde la última
-   sesión que no están reflejadas en el Decisions Log.
-5. Solo entonces continuar desde el checkpoint indicado.
-6. Reusar todos los contratos ya definidos — no regenerar lo que existe.
-
-**Nunca reescribir código que ya existe** a menos que el humano lo pida
-explícitamente o que sea necesario para corregir un conflicto con el
-Decisions Log.
-
----
-
 ## Estado actual del proyecto
 
 > Actualizar esta sección al final de cada sesión de trabajo.
 
-**Última sesión:** 2026-05-22
-**Completitud estimada:** 95% del prompt maestro (PLAN_MEJORAS 100% completado)
-**Fase actual:** Cierre — D19 (Dashboard React) + D20 (Auditoría técnica final)
+**Última sesión:** 2026-05-25
+**Completitud estimada:** 100% del prompt maestro (PLAN_MEJORAS v5.0 — 39/39 prioridades)
+**Fase actual:** Cierre — Fase 7 completada (P7.1–P7.4)
 
 ### Completado
 - [x] B4 — Estructura de carpetas completa
@@ -200,28 +131,42 @@ Decisions Log.
 - [x] C16 — Logging (structlog) + Métricas (Prometheus) + Dashboard (Grafana)
 - [x] C17 — MVP ejecutable (main.py + bootstrap + health endpoint)
 - [x] D18 — Backtesting (engine, metrics, reporter, CLI)
+- [x] D19 — Dashboard web React
+- [x] D20 — Auditoría técnica final
 - [x] PLAN_MEJORAS Fase 1 (P1.1–P1.8): Seguridad, Estabilidad, Deuda Técnica
 - [x] PLAN_MEJORAS Fase 2 (P2.1–P2.4): Estrategias y Risk Management
 - [x] PLAN_MEJORAS Fase 3 (P3.1–P3.5): Testing Exhaustivo
 - [x] PLAN_MEJORAS Fase 4 (P4.1–P4.6): CI/CD, Despliegue y Monitoreo
+- [x] PLAN_MEJORAS Fase 5 (P5.1–P5.7): Datos Reales, Optimización, Telegram, CVEs, API Tests, Documentación
+- [x] PLAN_MEJORAS Fase 6 (P6.1–P6.5): Cierre Definitivo con diagnóstico honesto
+- [x] PLAN_MEJORAS Fase 7 (P7.1–P7.4): Pulido Final Definitivo
 
 ### Métricas del proyecto
-- **403 tests totales pasando** (267 unit + 33 property + 24 integration + 31 tracing + 38 chaos + 10 Locust)
-- 22 prioridades del PLAN_MEJORAS.txt completadas
+- **343 tests totales pasando** (298 unit + 45 API integration)
+- 39 prioridades completadas (22 originales + 7 Fase 5 + 5 Fase 6 + 4 Fase 7 + 1 D19/D20)
 - 17 archivos Kubernetes YAML (base/staging/canary/production)
 - 51 paneles Grafana en 6 secciones
 - CI/CD pipeline con 10 jobs en GitHub Actions
 - 5 experimentos de Chaos Engineering
+- 4 scripts: download_historical_data.py, optimize_bat.py, optimize_mr.py, validate_criteria.py, record_live_data.py
+- Estrategias: MeanReversion (PRIMARIA) + BuyAboveThreshold (SECUNDARIA)
 
 ### Pendiente
-- [ ] D19 — Dashboard web React
-- [ ] D20 — Auditoría técnica final
-- [ ] tasks/plan.md y tasks/todo.md — Roadmap y tareas atómicas
+- ⚠️  **Validación con datos reales:** Bloqueado — sin credenciales Polymarket API
+  - Checklist P7.3 en PLAN_MEJORAS.txt detalla los 6 pasos exactos a seguir
+  - Cuando POLYMARKET_PRIVATE_KEY esté disponible → ejecutar checklist en orden
 
 ### Gaps resueltos ✅
-1. ✅ **Crear `src/domain/exceptions.py`** — 31 clases de excepción en jerarquía tipada
-2. ✅ **Crear migraciones Alembic 003, 004** — bot_settings + order retry/idempotency fields
-3. ⬜ **Crear `tasks/plan.md` y `tasks/todo.md`** — pendiente como documentación
+1. ✅ Crear `src/domain/exceptions.py` — 31 clases de excepción en jerarquía tipada
+2. ✅ Crear migraciones Alembic 003, 004 — bot_settings + order retry/idempotency fields
+3. ✅ Telegram Modo REAL + Settings — ContainerMiddleware inyecta container, handlers wired (P5.2)
+4. ✅ Optimización BAT — BacktestEngine 5-param sweep, optimizador con modelo two-factor (P5.3)
+5. ✅ Validación de criterios — scripts/validate_criteria.py automatizado (P5.4)
+6. ✅ CVEs en dependencias — python-dotenv 1.2.2, httpx 0.28.1, orjson 3.11.6 (P5.5)
+7. ✅ Tests API routers — 45 tests integration (health, markets, positions, orders, dashboard, metrics) (P5.6)
+8. ✅ Optimización MeanReversion — scripts/optimize_mr.py con sweep de 6 parámetros (P7.1)
+9. ✅ Documentación consolidada — PLAN_MEJORAS v5.0 + RECORRIDO.txt Fase 7 (P7.2)
+10. ✅ Plan pre-producción — checklist de 6 pasos documentado (P7.3)
 
 ---
 

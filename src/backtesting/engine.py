@@ -271,18 +271,24 @@ class BacktestEngine:
         thresholds:  list[float] | None = None,
         stop_losses: list[float] | None = None,
         targets:     list[float] | None = None,
+        ticks_list:  list[int] | None = None,
+        pos_sizes:   list[float] | None = None,
     ) -> list[BacktestResult]:
         """
         Corre múltiples backtests variando parámetros.
         Útil para encontrar la configuración óptima.
         Retorna lista de resultados ordenada por Sharpe ratio.
+
+        Barre: thresholds × stop_losses × targets × ticks_list × pos_sizes
         """
         thresholds  = thresholds  or [0.70, 0.75, 0.80, 0.85]
         stop_losses = stop_losses or [0.10, 0.15, 0.20]
         targets     = targets     or [0.85, 0.90, 0.95]
+        ticks_list  = ticks_list  or [self._strategy_config.required_ticks]
+        pos_sizes   = pos_sizes   or [self._strategy_config.position_size_usdc]
 
         results = []
-        total   = len(thresholds) * len(stop_losses) * len(targets)
+        total   = len(thresholds) * len(stop_losses) * len(targets) * len(ticks_list) * len(pos_sizes)
         count   = 0
 
         logger.info(
@@ -291,48 +297,54 @@ class BacktestEngine:
             thresholds=thresholds,
             stop_losses=stop_losses,
             targets=targets,
+            ticks_list=ticks_list,
+            pos_sizes=pos_sizes,
         )
 
         for threshold in thresholds:
             for stop_loss in stop_losses:
                 for target in targets:
-                    count += 1
+                    for ticks in ticks_list:
+                        for pos_size in pos_sizes:
+                            count += 1
 
-                    # Valida coherencia antes de correr
-                    if target <= threshold:
-                        continue
-                    if threshold <= 0.55:  # stop_drop_floor default
-                        continue
+                            # Valida coherencia antes de correr
+                            if target <= threshold:
+                                continue
+                            if threshold <= 0.55:  # stop_drop_floor default
+                                continue
 
-                    try:
-                        config = BuyAboveThresholdConfig(
-                            threshold      = threshold,
-                            stop_loss_pct  = stop_loss,
-                            target_price   = target,
-                            # Resto de parámetros desde la config base
-                            required_ticks = self._strategy_config.required_ticks,
-                            max_spread     = self._strategy_config.max_spread,
-                            min_volume_usdc = self._strategy_config.min_volume_usdc,
-                            position_size_usdc = self._strategy_config.position_size_usdc,
-                        )
+                            try:
+                                config = BuyAboveThresholdConfig(
+                                    threshold      = threshold,
+                                    stop_loss_pct  = stop_loss,
+                                    target_price   = target,
+                                    required_ticks = ticks,
+                                    position_size_usdc = pos_size,
+                                    # Resto de parámetros desde la config base
+                                    max_spread     = self._strategy_config.max_spread,
+                                    min_volume_usdc = self._strategy_config.min_volume_usdc,
+                                )
 
-                        engine = BacktestEngine(
-                            strategy_config=config,
-                            risk_config=self._risk_config,
-                            initial_balance=self._initial_balance,
-                            verbose=False,
-                        )
-                        result = engine.run(dataset)
-                        results.append(result)
+                                engine = BacktestEngine(
+                                    strategy_config=config,
+                                    risk_config=self._risk_config,
+                                    initial_balance=self._initial_balance,
+                                    verbose=False,
+                                )
+                                result = engine.run(dataset)
+                                results.append(result)
 
-                    except Exception as e:
-                        logger.warning(
-                            "sweep_combination_failed",
-                            threshold=threshold,
-                            stop_loss=stop_loss,
-                            target=target,
-                            error=str(e),
-                        )
+                            except Exception as e:
+                                logger.warning(
+                                    "sweep_combination_failed",
+                                    threshold=threshold,
+                                    stop_loss=stop_loss,
+                                    target=target,
+                                    ticks=ticks,
+                                    pos_size=pos_size,
+                                    error=str(e),
+                                )
 
         logger.info(
             "parameter_sweep_complete",

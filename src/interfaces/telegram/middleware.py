@@ -44,3 +44,29 @@ class AuthMiddleware(BaseMiddleware):
 
         # Usuario autorizado → continúa con el handler
         return await handler(event, data)
+
+
+class ContainerMiddleware(BaseMiddleware):
+    """
+    Middleware que inyecta el Container en el diccionario 'data' de aiogram.
+    Esto permite que los handlers reciban el container vía parámetro:
+
+        @router.message(Command("status"))
+        async def cmd_status(message: Message, container=None) -> None:
+            ...
+
+    El container se instala DESPUÉS del AuthMiddleware en la cadena.
+    """
+
+    def __init__(self, container):
+        super().__init__()
+        self._container = container
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event:   TelegramObject,
+        data:    dict[str, Any],
+    ) -> Any:
+        data["container"] = self._container
+        return await handler(event, data)

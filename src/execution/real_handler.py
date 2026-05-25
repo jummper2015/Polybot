@@ -279,13 +279,14 @@ class RealTradingHandler(IExecutionHandler):
         )
 
         # ── Notifica al usuario ───────────────────────────────────────
-        await self._notifier.send_trade_alert(
-            market_id=market_id,
-            side=order.side.value,
-            amount=safe_amount,
-            price=fill_price,
-            mode="real",
-        )
+        if self._notifier is not None:
+            await self._notifier.send_trade_alert(
+                market_id=market_id,
+                side=order.side.value,
+                amount=safe_amount,
+                price=fill_price,
+                mode="real",
+            )
 
         return TradeResult(
             order_id     = order_id,
@@ -412,12 +413,13 @@ class RealTradingHandler(IExecutionHandler):
             pnl_pct=f"{position.pnl_pct:.2%}",
         )
 
-        await self._notifier.send_exit_alert(
-            market_id=position.market_id,
-            reason=reason,
-            pnl=position.pnl,
-            pnl_pct=position.pnl_pct,
-        )
+        if self._notifier is not None:
+            await self._notifier.send_exit_alert(
+                market_id=position.market_id,
+                reason=reason,
+                pnl=position.pnl,
+                pnl_pct=position.pnl_pct,
+            )
 
         return TradeResult(
             order_id     = order_id,

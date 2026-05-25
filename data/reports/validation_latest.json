@@ -1,0 +1,173 @@
+{
+  "generated_at": "2026-05-25T13:06:38.803165+00:00",
+  "config": {
+    "threshold": 0.65,
+    "stop_loss_pct": 0.1,
+    "target_price": 0.95,
+    "required_ticks": 3,
+    "position_size_usdc": 5
+  },
+  "args": {
+    "n_ticks": 2000,
+    "balance": 1000.0,
+    "quick": true
+  },
+  "elapsed_seconds": 1.86,
+  "results": {
+    "BTC_5m": {
+      "dataset": "BTC_5m",
+      "asset": "BTC",
+      "window": "5m",
+      "ticks": 2000,
+      "duration_hours": 16.7,
+      "sharpe_ratio": 0.0,
+      "sortino_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "total_pnl": 0.0,
+      "total_pnl_pct": 0.0,
+      "total_trades": 0,
+      "winners": 0,
+      "losers": 0,
+      "avg_pnl_per_trade": 0.0,
+      "best_trade": 0,
+      "worst_trade": 0,
+      "calmar_ratio": 0.0,
+      "exit_reasons": {}
+    },
+    "ETH_5m": {
+      "dataset": "ETH_5m",
+      "asset": "ETH",
+      "window": "5m",
+      "ticks": 2000,
+      "duration_hours": 16.7,
+      "sharpe_ratio": 0.0,
+      "sortino_ratio": 0.0,
+      "max_drawdown": 0.0,
+      "win_rate": 0.0,
+      "profit_factor": 0.0,
+      "total_pnl": 0.0,
+      "total_pnl_pct": 0.0,
+      "total_trades": 0,
+      "winners": 0,
+      "losers": 0,
+      "avg_pnl_per_trade": 0.0,
+      "best_trade": 0,
+      "worst_trade": 0,
+      "calmar_ratio": 0.0,
+      "exit_reasons": {}
+    }
+  },
+  "evaluations": [
+    {
+      "id": "C01",
+      "name": "Sharpe BTC 5m",
+      "target": "> 1.0",
+      "weight": "critical",
+      "passed": false,
+      "details": [
+        {
+          "dataset": "BTC_5m",
+          "passed": false,
+          "actual": 0.0
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "name": "Sharpe BTC 15m",
+      "target": "> 1.0",
+      "weight": "critical",
+      "passed": true,
+      "details": []
+    },
+    {
+      "id": "C03",
+      "name": "Sharpe ETH 5m",
+      "target": "> 0.8",
+      "weight": "critical",
+      "passed": false,
+      "details": [
+        {
+          "dataset": "ETH_5m",
+          "passed": false,
+          "actual": 0.0
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "name": "Sharpe ETH 15m",
+      "target": "> 0.8",
+      "weight": "critical",
+      "passed": true,
+      "details": []
+    },
+    {
+      "id": "C05",
+      "name": "Profit Factor > 1.3",
+      "target": "> 1.3",
+      "weight": "critical",
+      "passed": false,
+      "details": [
+        {
+          "dataset": "BTC_5m",
+          "passed": false,
+          "actual": 0.0
+        },
+        {
+          "dataset": "ETH_5m",
+          "passed": false,
+          "actual": 0.0
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "name": "Win Rate > 45%",
+      "target": "> 45%",
+      "weight": "critical",
+      "passed": false,
+      "details": [
+        {
+          "dataset": "BTC_5m",
+          "passed": false,
+          "actual": 0.0
+        },
+        {
+          "dataset": "ETH_5m",
+          "passed": false,
+          "actual": 0.0
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "name": "Max Drawdown < 15%",
+      "target": "< 15%",
+      "weight": "critical",
+      "passed": true,
+      "details": [
+        {
+          "dataset": "BTC_5m",
+          "passed": true,
+          "actual": 0.0
+        },
+        {
+          "dataset": "ETH_5m",
+          "passed": true,
+          "actual": 0.0
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_criteria": 7,
+    "passed": 3,
+    "failed": 4,
+    "critical_passed": 3,
+    "critical_failed": 4,
+    "exit_code": 1
+  }
+}

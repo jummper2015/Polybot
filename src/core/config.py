@@ -19,7 +19,7 @@ def load_config() -> SecureConfig:
     # Carga .env si existe (en producción las vars vienen del entorno directamente)
     env_file = os.path.join(os.getcwd(), ".env")
     if os.path.exists(env_file):
-        load_dotenv(env_file, override=False)  # No sobreescribe vars ya presentes
+        load_dotenv(env_file, override=True)   # .env es fuente de verdad en dev local
         logger.info("env_file_loaded", path=env_file)
     else:
         logger.info("no_env_file_found", note="usando variables de entorno del sistema")

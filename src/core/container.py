@@ -15,9 +15,8 @@ from src.execution.real_handler import RealTradingHandler
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.db.repository import SQLAlchemyRepository
 from src.infrastructure.db.session import create_engine, create_session_factory
-from src.infrastructure.observability.metrics import (
-    ServiceStatusEnum,
-)
+# ServiceStatusEnum imported locally in health_check_all() to avoid
+# circular import with API schemas loaded at FastAPI startup.
 from src.infrastructure.polymarket.http_client import PolymarketHTTPClient
 from src.infrastructure.polymarket.ws_client import PolymarketWSClient
 from src.infrastructure.security.audit_log import AuditLogger
@@ -57,6 +56,10 @@ class Container:
         self.config    = config
         self._started_at = time.monotonic()
 
+        # Modo de trading en runtime (puede cambiar vía Telegram)
+        # SecureConfig es frozen, así que guardamos el modo por separado
+        self._runtime_mode = config.trading_mode
+
         # Todos los componentes se inicializan en None
         # y se asignan en init() en orden
         self.engine            = None
@@ -79,6 +82,11 @@ class Container:
         self.market_service    = None
         self.portfolio_service = None
         self.trading_service   = None
+
+    @property
+    def trading_mode(self) -> str:
+        """Modo de trading actual: 'paper' o 'real'."""
+        return self._runtime_mode
 
     async def init(self) -> None:
         """
@@ -166,12 +174,22 @@ class Container:
         # ── 7. Telegram Bot (necesario antes de notifier) ─────────────
         log.info("init_step", step="telegram")
         import os
-        self.telegram_bot = create_bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
-        self.telegram_dp  = create_dispatcher(redis=self.redis_raw)
-        self.notifier     = TelegramNotifier(
-            bot=self.telegram_bot,
-            chat_id=self.config.telegram_chat_id,
-        )
+        try:
+            self.telegram_bot = create_bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+            self.telegram_dp  = create_dispatcher(
+                redis=self.redis_raw,
+                container=self,  # Inyecta el container en los handlers vía middleware
+            )
+            self.notifier     = TelegramNotifier(
+                bot=self.telegram_bot,
+                chat_id=self.config.telegram_chat_id,
+            )
+            log.info("telegram_initialized")
+        except Exception as e:
+            log.warning("telegram_init_skipped", reason=str(e))
+            self.telegram_bot = None
+            self.telegram_dp  = None
+            self.notifier     = None
 
         # ── 8. Execution Handler ──────────────────────────────────────
         log.info("init_step", step="execution_handler")
@@ -369,13 +387,16 @@ class Container:
             results["polymarket"] = ServiceStatusEnum.DOWN
 
         # Telegram
-        try:
-            me = await self.telegram_bot.get_me()
-            results["telegram"] = (
-                ServiceStatusEnum.OK if me.id else ServiceStatusEnum.DEGRADED
-            )
-        except Exception:
-            results["telegram"] = ServiceStatusEnum.DOWN
+        if self.telegram_bot is None:
+            results["telegram"] = ServiceStatusEnum.DEGRADED
+        else:
+            try:
+                me = await self.telegram_bot.get_me()
+                results["telegram"] = (
+                    ServiceStatusEnum.OK if me.id else ServiceStatusEnum.DEGRADED
+                )
+            except Exception:
+                results["telegram"] = ServiceStatusEnum.DOWN
 
         # WebSocket
         if self.ws_client and self.ws_client._subscriptions:
@@ -395,3 +416,273 @@ class Container:
     def uptime_seconds(self) -> float:
         """Segundos desde que el container fue inicializado."""
         return time.monotonic() - self._started_at
+
+    # ------------------------------------------------------------------
+    # MÉTODOS PARA TELEGRAM HANDLERS
+    # ------------------------------------------------------------------
+
+    async def get_bot_status(self) -> dict:
+        """
+        Devuelve el estado real del bot para el comando /status.
+        Usa el container para obtener datos reales de todos los servicios.
+        """
+        try:
+            markets = await self.market_service.get_active_markets()
+        except Exception:
+            markets = []
+
+        try:
+            open_positions = await self.repository.get_positions(open_only=True)
+        except Exception:
+            open_positions = []
+
+        try:
+            balance = await self.portfolio_service.get_balance()
+        except Exception:
+            balance = 0.0
+
+        try:
+            total_pnl = await self.repository.get_total_pnl(
+                mode=self._runtime_mode
+            )
+        except Exception:
+            total_pnl = 0.0
+
+        is_running = (
+            self.trading_service is not None
+            and self.trading_service._running
+        )
+
+        return {
+            "running": is_running,
+            "mode": self._runtime_mode,
+            "active_markets": len(markets),
+            "open_positions": len(open_positions),
+            "balance": round(balance, 2),
+            "pnl": round(total_pnl, 4),
+            "uptime_seconds": self.uptime_seconds(),
+        }
+
+    async def update_bat_setting(
+        self, key: str, value: float
+    ) -> tuple[bool, str]:
+        """
+        Actualiza un parámetro de la estrategia BAT en caliente.
+        Valida el valor y persiste en bot_settings para sobrevivir reinicios.
+
+        Retorna (success, message).
+        """
+        try:
+            from src.strategies.buy_above_threshold.strategy import (
+                BuyAboveThresholdStrategy,
+            )
+
+            # Encuentra la estrategia BAT en el engine
+            bat = None
+            for s in self.strategy_engine._strategies:
+                if isinstance(s, BuyAboveThresholdStrategy):
+                    bat = s
+                    break
+
+            if bat is None:
+                return False, "Estrategia BAT no encontrada"
+
+            current = bat._config
+            updates = {}
+
+            if key == "threshold":
+                if not 0.50 <= value <= 0.95:
+                    return False, f"Threshold debe estar entre 0.50 y 0.95"
+                updates["threshold"] = value
+                if value >= current.target_price:
+                    updates["target_price"] = min(value + 0.05, 0.99)
+                if value <= current.stop_drop_floor:
+                    updates["stop_drop_floor"] = value - 0.10
+
+            elif key == "stop_loss":
+                if not 0.05 <= value <= 0.50:
+                    return False, f"Stop loss debe estar entre 5% y 50%"
+                updates["stop_loss_pct"] = value
+
+            elif key == "target_price":
+                if not 0.76 <= value <= 0.99:
+                    return False, f"Target price debe estar entre 0.76 y 0.99"
+                if value <= current.threshold:
+                    return False, f"Target price debe ser > threshold ({current.threshold})"
+                updates["target_price"] = value
+
+            elif key == "position_size":
+                if not 1.0 <= value <= 500.0:
+                    return False, f"Position size debe estar entre 1 y 500 USDC"
+                updates["position_size_usdc"] = value
+                # También actualiza el trading service
+                self.trading_service._position_size = value
+
+            elif key == "required_ticks":
+                if not 1 <= value <= 20:
+                    return False, f"Required ticks debe estar entre 1 y 20"
+                updates["required_ticks"] = int(value)
+
+            else:
+                return False, f"Parámetro desconocido: {key}"
+
+            if not updates:
+                return False, "No hay cambios que aplicar"
+
+            # Crea nueva config con los updates
+            from src.strategies.buy_above_threshold.config import (
+                BuyAboveThresholdConfig,
+            )
+            new_config_dict = {
+                "threshold": current.threshold,
+                "required_ticks": current.required_ticks,
+                "max_spread": current.max_spread,
+                "min_volume_usdc": current.min_volume_usdc,
+                "blocked_hours": current.blocked_hours,
+                "stop_loss_pct": current.stop_loss_pct,
+                "stop_drop_floor": current.stop_drop_floor,
+                "timeout_minutes": current.timeout_minutes,
+                "target_price": current.target_price,
+                "hedge_drop_pct": current.hedge_drop_pct,
+                "hedge_enabled": current.hedge_enabled,
+                "position_size_usdc": current.position_size_usdc,
+            }
+            new_config_dict.update(updates)
+            new_config = BuyAboveThresholdConfig(**new_config_dict)
+
+            # Aplica en caliente
+            bat.update_config(new_config)
+
+            # Persiste en DB para sobrevivir reinicios
+            for k, v in updates.items():
+                await self.repository.set_bot_setting(
+                    f"bat_{k}", str(v)
+                )
+
+            # Si cambió el threshold, actualizar también el filtro MTF
+            if "threshold" in updates:
+                await self._wire_mtf_filter()
+
+            logger.info(
+                "bat_setting_updated",
+                key=key,
+                value=str(value),
+                updates=str(updates),
+            )
+
+            return True, f"{key} actualizado a {value}"
+
+        except ValueError as e:
+            return False, f"Valor inválido: {e}"
+        except Exception as e:
+            logger.error("update_bat_setting_error", error=str(e))
+            return False, f"Error interno: {e}"
+
+    async def enable_real_mode(self) -> tuple[bool, str]:
+        """
+        Activa el modo de trading REAL después de doble confirmación Telegram.
+        Detiene el trading service, recrea el handler real y rearranca.
+        """
+        if self.config.trading_mode == "real":
+            return False, "El bot ya está en modo REAL"
+
+        try:
+            was_running = (
+                self.trading_service is not None
+                and self.trading_service._running
+            )
+
+            # 1. Detener ciclos de trading
+            if self.trading_service:
+                await self.trading_service.stop()
+
+            # 2. Crear handler real (requiere KeyManager)
+            if self.key_manager is None:
+                self.key_manager = KeyManager()
+
+            from src.infrastructure.polymarket.clob_client import (
+                PolymarketCLOBClient,
+            )
+            clob = PolymarketCLOBClient(key_manager=self.key_manager)
+
+            circuit_breaker = CLOBCircuitBreaker(
+                config=CircuitBreakerConfig(
+                    failure_threshold=5,
+                    recovery_timeout=60.0,
+                    window_seconds=60.0,
+                )
+            )
+
+            # 3. Crear nuevo RealTradingHandler
+            self.execution_handler = RealTradingHandler(
+                clob_client=clob,
+                repository=self.repository,
+                redis=self.redis,
+                notifier=self.notifier,
+                audit_logger=self.audit_logger,
+                security_guard=self.security_guard,
+                circuit_breaker=circuit_breaker,
+            )
+
+            # 4. Recrear PortfolioService con el handler real
+            self.portfolio_service = PortfolioService(
+                repository=self.repository,
+                paper_handler=None,  # Ya no es paper
+                redis=self.redis,
+            )
+
+            # 5. Recrear TradingService en modo real
+            self.trading_service = TradingService(
+                market_service=self.market_service,
+                strategy_engine=self.strategy_engine,
+                risk_engine=self.risk_engine,
+                execution_handler=self.execution_handler,
+                repository=self.repository,
+                notifier=self.notifier,
+                portfolio_service=self.portfolio_service,
+                position_size_usdc=self.config.bat_position_size_usdc,
+                trading_mode="real",
+            )
+
+            # 6. Actualizar modo de trading en runtime
+            self._runtime_mode = "real"
+
+            # 7. Persistir modo en DB
+            await self.repository.set_bot_setting("trading_mode", "real")
+
+            # 8. Rearrancar si estaba corriendo
+            if was_running:
+                await self.trading_service.start()
+
+            logger.info(
+                "real_mode_activated",
+                was_running=was_running,
+            )
+
+            return True, "Modo REAL activado correctamente"
+
+        except Exception as e:
+            logger.error("enable_real_mode_error", error=str(e))
+            return False, f"Error al activar modo REAL: {e}"
+
+    async def start_bot(self) -> tuple[bool, str]:
+        """Arranca el bot de trading desde Telegram."""
+        try:
+            if self.trading_service._running:
+                return False, "El bot ya está corriendo"
+            await self.trading_service.start()
+            return True, "Bot iniciado correctamente"
+        except Exception as e:
+            logger.error("start_bot_error", error=str(e))
+            return False, f"Error al iniciar: {e}"
+
+    async def stop_bot(self) -> tuple[bool, str]:
+        """Detiene el bot de trading desde Telegram."""
+        try:
+            if not self.trading_service._running:
+                return False, "El bot ya está detenido"
+            await self.trading_service.stop()
+            return True, "Bot detenido correctamente"
+        except Exception as e:
+            logger.error("stop_bot_error", error=str(e))
+            return False, f"Error al detener: {e}"
