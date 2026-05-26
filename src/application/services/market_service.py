@@ -125,6 +125,7 @@ class MarketService:
         """
         Devuelve mercados activos.
         Primero intenta Redis (rápido), si falla cae a DB.
+        Cuando cae a DB, repopula Redis para futuras consultas.
         """
         # Intenta desde caché primero
         cached = await self._redis.get_active_markets(asset=asset, window=window)
@@ -132,7 +133,19 @@ class MarketService:
             return cached
 
         # Fallback a DB
-        return await self._repo.get_active_markets(asset=asset, window=window)
+        db_markets = await self._repo.get_active_markets(asset=asset, window=window)
+
+        # Repopula Redis desde DB para que subsistemas (WS, orderbook)
+        # que solo consultan Redis tengan los datos disponibles
+        if db_markets:
+            for market in db_markets:
+                await self._redis.set_market(market, ttl_seconds=3900)
+            logger.debug(
+                "markets_synced_db_to_redis",
+                count=len(db_markets),
+            )
+
+        return db_markets
 
     async def get_market_by_id(self, market_id: str) -> Market | None:
         """Busca un mercado por ID. Redis primero, DB como fallback."""
@@ -147,6 +160,28 @@ class MarketService:
         Thin wrapper para que TradingService no acceda a atributos privados.
         """
         return await self._market_data.get_market_tick(market_id)
+
+    # ------------------------------------------------------------------
+    # WEBSOCKET SUBSCRIPTIONS
+    # ------------------------------------------------------------------
+
+    async def subscribe_all_to_orderbook(
+        self, callback
+    ) -> None:
+        """
+        Subscribe todos los mercados activos al order book via WebSocket.
+        El callback recibe MarketTick en cada actualización.
+        Llamado desde TradingService.start() después del discovery.
+        """
+        markets = await self.get_active_markets()
+        for market in markets:
+            await self._market_data.subscribe_order_book(
+                market.id, callback
+            )
+        logger.info(
+            "ws_subscriptions_started",
+            count=len(markets),
+        )
 
     async def update_market_prices(
         self,
@@ -319,8 +354,8 @@ class MarketService:
             window       = window,
             question     = raw["question"],
             status       = MarketStatus.ACTIVE,
-            yes_token_id = yes_token.get("token_id", ""),
-            no_token_id  = no_token.get("token_id",  ""),
+            yes_token_id = str(yes_token.get("token_id", "")),
+            no_token_id  = str(no_token.get("token_id",  "")),
             yes_price    = float(yes_token.get("price", 0.5)),
             no_price     = float(no_token.get("price",  0.5)),
             volume_24h   = float(raw.get("volume24hr", 0.0)),

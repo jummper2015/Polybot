@@ -79,6 +79,9 @@ class TradingService:
         # Discovery inicial antes de empezar a operar
         await self._market_svc.discover_markets()
 
+        # Subscribe WebSockets para recibir orderbook en tiempo real
+        await self._market_svc.subscribe_all_to_orderbook(self._on_ws_tick)
+
         # Lanza las dos tareas en paralelo
         self._tasks = [
             asyncio.create_task(self._market_cycle_loop(),   name="market_cycle"),
@@ -113,6 +116,30 @@ class TradingService:
             "tasks_running":   sum(1 for t in self._tasks if not t.done()),
             "timestamp":       datetime.utcnow().isoformat(),
         }
+
+    # ------------------------------------------------------------------
+    # WEBSOCKET CALLBACK
+    # ------------------------------------------------------------------
+
+    async def _on_ws_tick(self, tick: MarketTick) -> None:
+        """
+        Callback invocado por el WebSocket en cada tick recibido.
+        Actualiza los precios en DB/Redis para que el dashboard
+        muestre datos en tiempo real sin esperar al ciclo de trading.
+        """
+        try:
+            await self._market_svc.update_market_prices(
+                market_id=tick.market_id,
+                yes_price=tick.yes_price,
+                no_price=tick.no_price,
+                volume=tick.volume_24h,
+            )
+        except Exception as e:
+            logger.debug(
+                "ws_tick_update_failed",
+                market_id=tick.market_id,
+                error=str(e),
+            )
 
     # ------------------------------------------------------------------
     # LOOPS INTERNOS

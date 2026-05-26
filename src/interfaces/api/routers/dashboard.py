@@ -40,16 +40,26 @@ class DashboardSummary(BaseModel):
     updated_at:           str
 
 
+class OrderbookLevel(BaseModel):
+    """Un nivel del order book (precio + tamaño)."""
+    price: float
+    size:  float
+
+
 class MarketOverview(BaseModel):
-    """Estado de un mercado activo."""
+    """Estado de un mercado activo con order book en tiempo real."""
     market_id:     str
     asset:         str
     window:        str
     yes_price:     float
+    best_bid:      float
+    best_ask:      float
     spread:        float
     volume_24h:    float
     ws_connected:  bool
     consecutive_ticks: int
+    orderbook_bids: list[OrderbookLevel]
+    orderbook_asks: list[OrderbookLevel]
 
 
 class RecentTrade(BaseModel):
@@ -208,15 +218,37 @@ async def get_markets_overview(request: Request) -> list[MarketOverview]:
             strategy_state.consecutive_ticks if strategy_state else 0
         )
 
+        # Obtiene orderbook desde Redis (lleno por el WS)
+        orderbook = await container.redis.get_orderbook(market.id)
+        bids_raw = orderbook.get("bids", []) if orderbook else []
+        asks_raw = orderbook.get("asks", []) if orderbook else []
+
+        orderbook_bids = [
+            OrderbookLevel(price=round(float(b["price"]), 4), size=round(float(b["size"]), 2))
+            for b in bids_raw
+        ]
+        orderbook_asks = [
+            OrderbookLevel(price=round(float(a["price"]), 4), size=round(float(a["size"]), 2))
+            for a in asks_raw
+        ]
+
+        # Extrae best_bid / best_ask del orderbook si está disponible
+        best_bid = orderbook_bids[0].price if orderbook_bids else 0.0
+        best_ask = orderbook_asks[0].price if orderbook_asks else 0.0
+
         overview.append(MarketOverview(
             market_id=market.id,
             asset=market.asset.value,
             window=market.window.value,
             yes_price=market.yes_price,
+            best_bid=round(best_bid, 4),
+            best_ask=round(best_ask, 4),
             spread=round(market.yes_price - market.no_price, 4),
             volume_24h=market.volume_24h,
             ws_connected=ws_connected,
             consecutive_ticks=consecutive_ticks,
+            orderbook_bids=orderbook_bids,
+            orderbook_asks=orderbook_asks,
         ))
 
     return overview

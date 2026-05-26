@@ -239,6 +239,12 @@ class PolymarketWSClient:
             if tick is None:
                 return  # Mensaje ignorado (tipo no relevante o datos inválidos)
 
+            # Guarda orderbook crudo (bids/asks) en Redis para el dashboard
+            bids_raw = data.get("bids", [])
+            asks_raw = data.get("asks", [])
+            if bids_raw or asks_raw:
+                await self._redis.set_orderbook(market_id, bids_raw, asks_raw)
+
             # Filtra ticks sin cambio significativo (evita ruido)
             if state.last_tick and not self._is_significant_change(
                 state.last_tick, tick

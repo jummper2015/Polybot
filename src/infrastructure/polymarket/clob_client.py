@@ -19,8 +19,8 @@ import asyncio
 
 import httpx
 import structlog
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import (
+from py_clob_client_v2.client import ClobClient
+from py_clob_client_v2.clob_types import (
     ApiCreds,
     CreateOrderOptions,
     OrderArgs,

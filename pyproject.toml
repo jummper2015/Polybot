@@ -63,6 +63,7 @@ dev = [
     "locust==2.44.0",      # Performance testing (P3.4)
     "bandit==1.9.4",       # Security SAST (P3.5)
     "pip-audit==2.10.0",   # Dependency CVE scanning (P3.5)
+    "hypothesis>=6.100.0", # Property-based testing (P3.2)
 ]
 
 [tool.hatch.build.targets.wheel]

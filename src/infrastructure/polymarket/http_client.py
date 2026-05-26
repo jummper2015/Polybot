@@ -7,6 +7,8 @@ import structlog
 
 from src.application.ports.market_data_port import IMarketDataPort
 from src.domain.value_objects.market_tick import MarketTick
+from src.domain.value_objects.token_utils import normalize_token_id
+from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.observability.metrics import (
     HTTP_REQUEST_DURATION,
     MARKET_DATA_SOURCE,
@@ -37,8 +39,9 @@ class PolymarketHTTPClient(IMarketDataPort):
       - Métrica MARKET_DATA_SOURCE rastrea el origen por mercado
     """
 
-    def __init__(self, ws_client: PolymarketWSClient):
+    def __init__(self, ws_client: PolymarketWSClient, redis: RedisClient | None = None):
         self._ws      = ws_client
+        self._redis   = redis
         self._adapter = PolymarketAdapter()
         # Cliente HTTP async con timeout configurado
         self._http    = httpx.AsyncClient(
@@ -240,13 +243,38 @@ class PolymarketHTTPClient(IMarketDataPort):
         Llama al endpoint REST /book del CLOB y parsea la respuesta.
         Encapsula la lógica REST para reutilizar desde get_market_tick
         y _get_tick_degraded.
+
+        Usa el yes_token_id real del mercado (no el condition_id) para
+        el parámetro token_id del endpoint /book. El condition_id y el
+        token_id son diferentes en la API de Polymarket.
         """
+        # ── Resolver token_id real (no el condition_id) ──────────────
+        token_id = market_id  # fallback: condition_id
+        if self._redis:
+            try:
+                market = await self._redis.get_market(market_id)
+                if market:
+                    yt = normalize_token_id(market.yes_token_id)
+                    if yt:
+                        token_id = yt
+                        logger.debug(
+                            "resolved_token_id",
+                            market_id=market_id,
+                            token_id=token_id[:20] + "...",
+                        )
+            except Exception as e:
+                logger.debug(
+                    "token_resolution_failed",
+                    market_id=market_id,
+                    error=str(e),
+                )
+
         with HTTP_REQUEST_DURATION.labels(
             endpoint="get_market_tick"
         ).time():
             response = await self._http.get(
                 f"{CLOB_BASE_URL}/book",
-                params={"token_id": market_id},
+                params={"token_id": token_id},
             )
             response.raise_for_status()
 
@@ -256,6 +284,19 @@ class PolymarketHTTPClient(IMarketDataPort):
         tick = PolymarketAdapter.parse_orderbook_message(market_id, raw)
         if not tick:
             raise ValueError(f"No se pudo parsear tick para {market_id}")
+
+        # Guarda orderbook en Redis para el dashboard (REST fallback)
+        if self._redis:
+            bids_raw = raw.get("bids", [])
+            asks_raw = raw.get("asks", [])
+            if bids_raw or asks_raw:
+                await self._redis.set_orderbook(market_id, bids_raw, asks_raw)
+                logger.debug(
+                    "orderbook_cached_rest",
+                    market_id=market_id,
+                    bids=len(bids_raw),
+                    asks=len(asks_raw),
+                )
 
         return tick
 

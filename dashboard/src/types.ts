@@ -26,16 +26,26 @@ export interface EquityPoint {
   exit_reason: string;
 }
 
+// ── Orderbook Level ───────────────────────────────────────────────────
+export interface OrderbookLevel {
+  price: number;
+  size: number;
+}
+
 // ── Market Overview ───────────────────────────────────────────────────
 export interface MarketOverview {
   market_id: string;
   asset: string;
   window: string;
   yes_price: number;
+  best_bid: number;
+  best_ask: number;
   spread: number;
   volume_24h: number;
   ws_connected: boolean;
   consecutive_ticks: number;
+  orderbook_bids: OrderbookLevel[];
+  orderbook_asks: OrderbookLevel[];
 }
 
 // ── Recent Trade ──────────────────────────────────────────────────────

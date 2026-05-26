@@ -128,7 +128,7 @@ class Container:
         # ── 4. Polymarket API (HTTP + WS) ─────────────────────────────
         log.info("init_step", step="polymarket")
         self.ws_client   = PolymarketWSClient(redis=self.redis)
-        self.http_client = PolymarketHTTPClient(ws_client=self.ws_client)
+        self.http_client = PolymarketHTTPClient(ws_client=self.ws_client, redis=self.redis)
 
         # ── 5. Strategy Engine ────────────────────────────────────────
         log.info("init_step", step="strategy_engine")

@@ -10,6 +10,7 @@ from src.domain.entities.market import Market
 from src.domain.enums.asset import Asset
 from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.window import Window
+from src.domain.value_objects.token_utils import normalize_token_id
 
 logger = structlog.get_logger(__name__)
 
@@ -19,6 +20,7 @@ KEY_ACTIVE_LIST  = "markets:active:{asset}:{window}"
 KEY_WS_STATE     = "ws:state:{market_id}"
 KEY_PAPER_BALANCE = "paper:balance"
 KEY_WS_LAST_PRICE = "ws:price:{market_id}"
+KEY_ORDERBOOK     = "orderbook:{market_id}"
 
 
 class RedisClient:
@@ -107,8 +109,8 @@ class RedisClient:
             window        = Window(data["window"]),
             question      = data["question"],
             status        = MarketStatus(data["status"]),
-            yes_token_id  = data["yes_token_id"],
-            no_token_id   = data["no_token_id"],
+            yes_token_id  = normalize_token_id(data["yes_token_id"]),
+            no_token_id   = normalize_token_id(data["no_token_id"]),
             yes_price     = data["yes_price"],
             no_price      = data["no_price"],
             volume_24h    = data["volume_24h"],
@@ -190,3 +192,36 @@ class RedisClient:
         }
         await self._redis.hset(key, mapping=data)
         await self._redis.expire(key, 300)  # 5 minutos
+
+    # ──────────────────────────────────────────────────────────────────
+    # Order Book (para dashboard en tiempo real)
+    # ──────────────────────────────────────────────────────────────────
+
+    async def set_orderbook(
+        self,
+        market_id: str,
+        bids:      list[dict],
+        asks:      list[dict],
+        ttl_seconds: int = 120,
+    ) -> None:
+        """
+        Guarda el order book completo (bids + asks) en Redis.
+        Cada entry es {"price": str, "size": str} tal como viene del WS.
+        TTL corto (2 min) — el dashboard lo refresca cada 10s.
+        """
+        key  = KEY_ORDERBOOK.format(market_id=market_id)
+        data = {
+            "bids": bids,
+            "asks": asks,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        await self._redis.setex(key, ttl_seconds, orjson.dumps(data).decode())
+
+    async def get_orderbook(self, market_id: str) -> dict | None:
+        """
+        Recupera el order book de un mercado desde Redis.
+        Devuelve dict con bids, asks, updated_at o None si no hay datos.
+        """
+        key  = KEY_ORDERBOOK.format(market_id=market_id)
+        data = await self._redis.get(key)
+        return orjson.loads(data) if data else None
