@@ -317,7 +317,7 @@
 
 
   ──────────────────────────────────────────────────────────────────────────
-  FASE 8 — DATA & RESEARCH FOUNDATION (ACTIVE)
+  FASE 8 — DATA & RESEARCH FOUNDATION (COMPLETADA ✅)
   Prioridad: CRÍTICA  |  Dependencias: NINGUNA (WS público + Gamma API pública)
   ⚠️  NO requiere credenciales Polymarket API para P8.1 (recording).
       Las credenciales solo son necesarias para Fase 9+ (Real Trading).
@@ -1001,7 +1001,7 @@
     39/39 prioridades | 343 tests | 100% técnico
 
   RUTA ESTRATÉGICA FUTURA (ROADMAP):
-    FASE 8:  🔄 ACTIVE    — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
+    FASE 8:  ✅ COMPLETADA — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
     FASE 9:  ✅ COMPLETADA — Execution Realism              (P9.1: 100%, P9.2: 100%, P9.3: 100%, P9.4: 100%)
     FASE 10: 🔄 ACTIVE    — Quantitative Validation        (0/4)
     FASE 11: ⏳ PLANNED   — Advanced Strategies            (0/4)
