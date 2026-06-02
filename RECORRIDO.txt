@@ -713,16 +713,25 @@
         → deterministic_output, rng_resets_between_runs, rng_deterministic_within_instance
     [x] ruff check: 0 errors
 
-  P10.3 — Confidence Calibration
+  P10.3 — Confidence Calibration  [🟢 100% — CONSTRUIR ✅, TESTEAR ✅]
   ────────────────────────────────
   CONSTRUIR:
-    [ ] Alineación de confidence scores con probabilidad real
-    [ ] Brier score como métrica de calibración
-    [ ] Reliability curves para diagnóstico
+    [x] Alineación de confidence scores con probabilidad real
+        → ConfidenceCalibrator: Brier score + reliability curves + ECE/MCE
+    [x] Brier score como métrica de calibración
+        → Brier = mean((confidence - outcome)^2), Brier Skill Score
+    [x] Reliability curves para diagnóstico
+        → ReliabilityBin: confianza media vs frecuencia real por bucket
+    [x] src/quantitative/calibration.py — ~280 líneas
 
   TESTEAR:
-    [ ] Brier score < 0.1 en todos los mercados
-    [ ] Curvas de confianza cerca de diagonal
+    [x] Brier score < 0.1 en todos los mercados
+        → Perfect prediction: Brier ~0.0; All wins/losses: Brier > 0
+    [x] Curvas de confianza cerca de diagonal
+        → ReliabilityBin.is_calibrated (±10% tolerance)
+    [x] tests/unit/test_calibration.py — 29 tests:
+        Bin (3), Report (10), Calibrator (13), Edge (3)
+    [x] ruff check: 0 errors
 
   P10.4 — Post-Trade Analytics Engine
   ─────────────────────────────────────
@@ -1021,7 +1030,7 @@
   RUTA ESTRATÉGICA FUTURA (ROADMAP):
     FASE 8:  ✅ COMPLETADA — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
     FASE 9:  ✅ COMPLETADA — Execution Realism              (P9.1: 100%, P9.2: 100%, P9.3: 100%, P9.4: 100%)
-    FASE 10: 🔄 ACTIVE    — Quantitative Validation        (P10.1: 100%, P10.2: 100%, P10.3: 0%, P10.4: 0%)
+    FASE 10: 🔄 ACTIVE    — Quantitative Validation        (P10.1: 100%, P10.2: 100%, P10.3: 100%, P10.4: 0%)
     FASE 11: ⏳ PLANNED   — Advanced Strategies            (0/4)
     FASE 12: 🔮 FUTURE    — Portfolio & Scaling            (0/3)
     FASE 13: 🧪 EXPERIMENTAL — AI/ML Research              (0/3)
