@@ -18,6 +18,7 @@ from src.domain.value_objects.signal import Signal, SignalType
 from src.domain.value_objects.trade_result import TradeResult
 from src.execution.base import IExecutionHandler
 from src.execution.slippage_engine import SlippageEngine
+from src.execution.smart_router import SmartRouter
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.observability.metrics import (
     ORDERS_EXECUTED,
@@ -70,6 +71,9 @@ class PaperTradingHandler(IExecutionHandler):
 
         # P9.3: Execution mode — "taker" (default), "maker", or "auto"
         self._execution_mode = execution_mode
+
+        # P9.4: Smart routing (optional) — orchestrates P9.1-P9.3
+        self._router = SmartRouter(slippage_engine=self._slippage)
 
         logger.info(
             "paper_handler_initialized",
@@ -483,6 +487,9 @@ class PaperTradingHandler(IExecutionHandler):
         fills at mid_price with zero spread crossing (but risks partial
         fill based on P(fill)).
 
+        P9.4: When mode is "auto", delegates to SmartRouter for
+        adaptive thresholds + order splitting.
+
         Args:
             tick_data: Orderbook tick dict.
             order_size: Order size in USDC.
@@ -504,7 +511,44 @@ class PaperTradingHandler(IExecutionHandler):
                 None,
             )
 
-        # ── Maker / Auto: estimate maker fill ──────────────────────
+        # ── P9.4: Smart Router (auto mode) ─────────────────────────
+        if mode == "auto":
+            routing = self._router.route(
+                tick_data=tick_data,
+                order_size=order_size,
+                side=side,
+                volatility=None,
+                regime=None,
+            )
+            # For now, use first chunk's mode and fill
+            # (split handling in paper trading is simplified)
+            chunk = routing.chunks[0]
+            if chunk.mode == "maker":
+                mid = (tick_data["best_bid"] + tick_data["best_ask"]) / 2
+                fill_ratio = max(0.1, routing.maker_p_fill)
+                unfilled = 1.0 - fill_ratio
+                maker_fill_price = (
+                    fill_ratio * mid + unfilled * taker_estimate.fill_price
+                )
+                maker_fill_price = max(0.001, min(0.999, maker_fill_price))
+                maker_slippage = round(maker_fill_price - mid, 6)
+                return (
+                    round(maker_fill_price, 6),
+                    maker_slippage,
+                    "maker",
+                    None,  # maker_est not cached from router
+                    None,  # decision not cached from router
+                )
+            else:
+                return (
+                    taker_estimate.fill_price,
+                    taker_estimate.slippage,
+                    "taker",
+                    None,
+                    None,
+                )
+
+        # ── P9.3: Maker mode ───────────────────────────────────────
         maker = self._slippage.estimate_maker(
             tick_data=tick_data,
             order_size=order_size,
@@ -518,11 +562,8 @@ class PaperTradingHandler(IExecutionHandler):
             maker_estimate=maker,
         )
 
-        if mode == "maker" or decision.prefer_maker:
+        if decision.prefer_maker:
             mid = (tick_data["best_bid"] + tick_data["best_ask"]) / 2
-            # Maker fills at mid (no spread crossing, no price impact).
-            # Partial fill risk: scale by P(fill). The unfilled portion
-            # executes at the taker price, creating effective slippage.
             fill_ratio = max(0.1, maker.p_fill)
             unfilled = 1.0 - fill_ratio
             maker_fill_price = (
@@ -538,7 +579,7 @@ class PaperTradingHandler(IExecutionHandler):
                 decision,
             )
 
-        # Auto mode: maker not preferred → use taker
+        # Maker mode but maker not preferred -> fallback to taker
         return (
             taker_estimate.fill_price,
             taker_estimate.slippage,
