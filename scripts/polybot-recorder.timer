@@ -1,0 +1,16 @@
+# systemd timer — Ensures PolyBot Recorder runs continuously
+#
+# This timer starts the service on boot and keeps it running.
+# The service's Restart=always handles crashes; this timer handles
+# boot-time startup and any edge cases where the service stops.
+
+[Unit]
+Description=PolyBot Recorder — ensure continuous 24/7 operation
+Requires=polybot-recorder.service
+
+[Timer]
+OnBootSec=30s
+Unit=polybot-recorder.service
+
+[Install]
+WantedBy=timers.target

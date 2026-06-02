@@ -99,6 +99,23 @@ SLIPPAGE_OBSERVED = Histogram(
     ["mode"],
     buckets=[0.0, 0.001, 0.005, 0.01, 0.02, 0.05],
 )
+SLIPPAGE_ESTIMATED = Histogram(
+    "polybot_slippage_estimated",
+    "Slippage estimated by SlippageEngine before execution",
+    ["mode", "side"],
+    buckets=[0.0, 0.001, 0.005, 0.01, 0.02, 0.05, 0.10],
+)
+SLIPPAGE_ACTUAL_VS_ESTIMATED = Histogram(
+    "polybot_slippage_ratio_actual_estimated",
+    "Ratio of actual slippage to estimated slippage (1.0 = perfect)",
+    ["mode", "side"],
+    buckets=[0.1, 0.5, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 5.0],
+)
+SLIPPAGE_CALIBRATION = Gauge(
+    "polybot_slippage_calibration_multiplier",
+    "Current SlippageTracker calibration multiplier (1.0 = model accurate)",
+    ["mode"],
+)
 
 # ══════════════════════════════════════════════════════════════
 # PAPER TRADING
@@ -255,4 +272,30 @@ REDIS_OPERATION_DURATION = Histogram(
 BOT_UPTIME = Gauge(
     "polymarket_bot_uptime_seconds",
     "Seconds since the bot started",
+)
+
+# ══════════════════════════════════════════════════════════════
+# DATA RECORDING (P8.1)
+# ══════════════════════════════════════════════════════════════
+RECORDING_TICKS_TOTAL = Counter(
+    "polybot_recording_ticks_total",
+    "Total ticks recorded per asset during live data recording",
+    ["asset"],
+)
+RECORDING_WS_RECONNECTS = Counter(
+    "polybot_recording_ws_reconnects_total",
+    "WebSocket reconnection attempts during live data recording per asset",
+    ["asset"],
+)
+RECORDING_STORAGE_SIZE_BYTES = Gauge(
+    "polybot_recording_storage_size_bytes",
+    "Total size of Parquet data files on disk (all assets)",
+)
+RECORDING_UPTIME_SECONDS = Gauge(
+    "polybot_recording_uptime_seconds",
+    "Seconds since the data recording process started",
+)
+RECORDING_MARKETS_ACTIVE = Gauge(
+    "polybot_recording_markets_active",
+    "Number of markets currently being recorded",
 )

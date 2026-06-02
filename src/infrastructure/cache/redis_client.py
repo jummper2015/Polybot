@@ -1,6 +1,7 @@
 # src/infrastructure/cache/redis_client.py
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import orjson
 import structlog
@@ -11,6 +12,9 @@ from src.domain.enums.asset import Asset
 from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.window import Window
 from src.domain.value_objects.token_utils import normalize_token_id
+
+if TYPE_CHECKING:
+    from src.domain.value_objects.ws_state import WSMarketState
 
 logger = structlog.get_logger(__name__)
 
@@ -179,6 +183,9 @@ class RedisClient:
         market_id: str,
         yes_price: float,
         spread:    float,
+        best_bid:  float = 0.0,
+        best_ask:  float = 0.0,
+        volume_24h: float = 0.0,
     ) -> None:
         """
         Guarda el último precio conocido de un mercado.
@@ -190,8 +197,29 @@ class RedisClient:
             "last_yes_price": str(yes_price),
             "last_spread":    str(spread),
         }
+        if best_bid > 0:
+            data["best_bid"] = str(best_bid)
+        if best_ask > 0:
+            data["best_ask"] = str(best_ask)
+        if volume_24h > 0:
+            data["volume_24h"] = str(volume_24h)
         await self._redis.hset(key, mapping=data)
         await self._redis.expire(key, 300)  # 5 minutos
+
+    async def get_last_tick_price(self, market_id: str) -> dict | None:
+        """
+        Recupera el último precio/spread de un mercado desde Redis.
+
+        Returns dict with last_yes_price, last_spread, and optionally
+        best_bid, best_ask, volume_24h. None if no data or expired.
+        """
+        key  = KEY_WS_LAST_PRICE.format(market_id=market_id)
+        data = await self._redis.hgetall(key)
+        return {
+            k.decode() if isinstance(k, bytes) else k:
+            float(v.decode() if isinstance(v, bytes) else v)
+            for k, v in data.items()
+        } if data else None
 
     # ──────────────────────────────────────────────────────────────────
     # Order Book (para dashboard en tiempo real)

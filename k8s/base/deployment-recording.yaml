@@ -1,0 +1,134 @@
+# k8s/base/deployment-recording.yaml
+# PolyBot — Continuous Market Data Recording (P8.1)
+#
+# Runs 24/7 to collect live market data via public WebSocket + Gamma API.
+# NO Polymarket API credentials required (uses public endpoints).
+#
+# Metrics exposed on port 9091 for Prometheus scraping.
+# Parquet data written to a PersistentVolumeClaim for durability.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: polybot-recording-data
+  namespace: staging
+  labels:
+    app: polybot
+    component: data-recording
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi       # ~30 days of BTC+ETH tick data
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polybot-data-recorder
+  namespace: staging
+  labels:
+    app: polybot
+    component: data-recording
+    environment: staging
+spec:
+  replicas: 1               # Single instance — no sharding needed yet
+  strategy:
+    type: Recreate           # Cannot have 2 writers on same PVC
+  selector:
+    matchLabels:
+      app: polybot
+      component: data-recording
+  template:
+    metadata:
+      labels:
+        app: polybot
+        component: data-recording
+        environment: staging
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: polybot
+      restartPolicy: Always
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+      containers:
+        - name: recorder
+          image: ghcr.io/polymarket-bot/polymarket-bot:stable
+          imagePullPolicy: IfNotPresent
+          command: ["python", "scripts/record_live_headless.py"]
+          args:
+            - "--all"
+            - "--duration-hours"
+            - "0"                 # Indefinite recording
+            - "--output-dir"
+            - "/data/parquet"
+            - "--batch-size"
+            - "8192"
+            - "--metrics-port"
+            - "9091"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: LOG_LEVEL
+              value: "INFO"
+          ports:
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+          volumeMounts:
+            - name: recording-data
+              mountPath: /data/parquet
+              readOnly: false
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9091
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9091
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: recording-data
+          persistentVolumeClaim:
+            claimName: polybot-recording-data
+---
+# Service for Prometheus scraping
+apiVersion: v1
+kind: Service
+metadata:
+  name: polybot-data-recorder
+  namespace: staging
+  labels:
+    app: polybot
+    component: data-recording
+spec:
+  selector:
+    app: polybot
+    component: data-recording
+  ports:
+    - name: metrics
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
+  type: ClusterIP

@@ -70,10 +70,20 @@ def make_mock_repo():
 
 def make_mock_redis():
     redis = AsyncMock()
+    # Legacy (kept for backward compat with other tests)
     redis.get_ws_state = AsyncMock(return_value={
         "last_yes_price": "0.65",
         "last_spread": "0.02",
     })
+    # P9.1 FillSimulator integration — new methods
+    redis.get_last_tick_price = AsyncMock(return_value={
+        "last_yes_price": 0.65,
+        "last_spread": 0.02,
+        "best_bid": 0.64,
+        "best_ask": 0.66,
+        "volume_24h": 5000.0,
+    })
+    redis.get_orderbook = AsyncMock(return_value=None)  # falls through to tick price
     redis.get_market = AsyncMock(return_value=MagicMock(
         asset=MagicMock(value="BTC"),
         window=MagicMock(value="5m"),

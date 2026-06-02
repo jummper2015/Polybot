@@ -1,0 +1,66 @@
+# systemd service — PolyBot Continuous Market Data Recorder
+#
+# Installation:
+#   sudo cp scripts/polybot-recorder.service /etc/systemd/system/
+#   sudo cp scripts/polybot-recorder.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable polybot-recorder.timer
+#   sudo systemctl start polybot-recorder.timer
+#
+# Manual start (no timer):
+#   sudo systemctl start polybot-recorder
+#
+# Check status:
+#   sudo systemctl status polybot-recorder
+#   journalctl -u polybot-recorder -f
+#
+# Prometheus metrics: http://localhost:9091/metrics
+#
+# Requirements:
+#   - Python 3.12 with virtualenv at /opt/polybot/venv
+#   - Project source at /opt/polybot
+#   - Working directory: /opt/polybot/data/parquet
+
+[Unit]
+Description=PolyBot Continuous Market Data Recorder (P8.1)
+Documentation=https://github.com/polymarket-bot/polymarket-bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polybot
+Group=polybot
+WorkingDirectory=/opt/polybot
+Environment=PYTHONUNBUFFERED=1
+Environment=LOG_LEVEL=INFO
+ExecStart=/opt/polybot/venv/bin/python scripts/record_live_headless.py \
+    --all \
+    --duration-hours 0 \
+    --output-dir data/parquet \
+    --batch-size 8192 \
+    --metrics-port 9091
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/polybot/data/parquet
+ReadOnlyPaths=/opt/polybot/src /opt/polybot/scripts
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polybot-recorder
+
+[Install]
+WantedBy=multi-user.target

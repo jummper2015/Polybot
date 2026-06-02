@@ -16,12 +16,16 @@ from src.domain.enums.trading_mode import TradingMode
 from src.domain.value_objects.signal import Signal, SignalType
 from src.domain.value_objects.trade_result import TradeResult
 from src.execution.base import IExecutionHandler
+from src.execution.slippage_engine import SlippageEngine
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.observability.metrics import (
     ORDERS_EXECUTED,
     PAPER_BALANCE_GAUGE,
     PAPER_POSITIONS_OPEN,
     PNL_GAUGE,
+    SLIPPAGE_ACTUAL_VS_ESTIMATED,
+    SLIPPAGE_CALIBRATION,
+    SLIPPAGE_ESTIMATED,
 )
 from src.infrastructure.observability.tracing import get_tracer
 
@@ -48,6 +52,7 @@ class PaperTradingHandler(IExecutionHandler):
         self._repo     = repository
         self._redis    = redis
         self._notifier = notifier
+        self._slippage = SlippageEngine()
 
         # Balance virtual — empieza con el inicial y se actualiza en cada trade
         self._balance  = initial_balance
@@ -56,6 +61,8 @@ class PaperTradingHandler(IExecutionHandler):
         logger.info(
             "paper_handler_initialized",
             initial_balance=initial_balance,
+            fill_model="P9.2 SlippageEngine",
+            tracker_calibration=self._slippage.calibration_multiplier,
         )
 
     # ------------------------------------------------------------------
@@ -87,13 +94,21 @@ class PaperTradingHandler(IExecutionHandler):
 
         # Obtiene el tick actual para calcular slippage
         target_price = await self._get_target_price(signal, market_id)
-        spread       = await self._get_current_spread(market_id)
+        tick_data = await self._build_tick_data(market_id)
 
-        # ── Modelo de slippage ────────────────────────────────────────
-        # Slippage = 50% del spread (costo de cruzar el book)
-        slippage   = spread * 0.5
-        fill_price = round(target_price + slippage, 4)  # Compramos al ask estimado
-        fill_price = min(fill_price, 0.999)              # Cap: nunca > 0.999
+        # ── Modelo de slippage (P9.2 SlippageEngine) ───────────────────
+        # TODO(P9.2): compute realized volatility from Redis tick history
+        # TODO(P9.2): query RegimeClassifier (P8.4) for current regime
+        estimate = self._slippage.estimate(
+            tick_data=tick_data,
+            order_size=amount,
+            asset=self._get_asset_for_market(market_id),
+            side="entry",
+            volatility=None,
+            regime=None,
+        )
+        fill_price = estimate.fill_price
+        slippage = estimate.slippage
 
         # ── Verificación de balance ───────────────────────────────────
         if amount > self._balance:
@@ -135,6 +150,9 @@ class PaperTradingHandler(IExecutionHandler):
         self._balance -= amount
         await self._redis.set_paper_balance(self._balance)
 
+        # ── Calibrar tracker de slippage con el fill real ─────────────
+        self._slippage.record_actual(estimate, actual_fill_price=fill_price)
+
         # ── Persiste en DB ────────────────────────────────────────────
         await self._repo.save_order(order)
         await self._repo.save_position(position)
@@ -143,13 +161,29 @@ class PaperTradingHandler(IExecutionHandler):
         ORDERS_EXECUTED.labels(mode="paper", side=order.side.value).inc()
         PAPER_BALANCE_GAUGE.set(self._balance)
         PAPER_POSITIONS_OPEN.inc()
+        SLIPPAGE_ESTIMATED.labels(mode="paper", side="entry").observe(
+            abs(estimate.adjusted_slippage)
+        )
+        # Note: in paper trading, estimated == actual (same model).
+        # The ratio will always be ~1.0. This metric becomes meaningful
+        # in real trading where actual fill differs from estimate.
+        mid = (tick_data["best_bid"] + tick_data["best_ask"]) / 2
+        actual_slip = abs(fill_price - mid)
+        if abs(estimate.adjusted_slippage) > 0:
+            SLIPPAGE_ACTUAL_VS_ESTIMATED.labels(
+                mode="paper", side="entry"
+            ).observe(actual_slip / abs(estimate.adjusted_slippage))
+        SLIPPAGE_CALIBRATION.labels(mode="paper").set(
+            self._slippage.calibration_multiplier
+        )
 
         log.info(
             "paper_order_filled",
             order_id=order.id,
             side=order.side.value,
             fill_price=fill_price,
-            slippage=slippage,
+            slippage=round(slippage, 6),
+            fill_ratio=estimate.fill_ratio,
             shares=round(shares, 4),
             balance_after=round(self._balance, 2),
         )
@@ -197,14 +231,23 @@ class PaperTradingHandler(IExecutionHandler):
         get_tracer()
         trace.get_current_span()
 
-        # Precio actual y spread para calcular exit price
+        # Precio actual y tick data para calcular exit slippage
         current_price = await self._get_current_yes_price(position.market_id)
-        spread        = await self._get_current_spread(position.market_id)
+        tick_data = await self._build_tick_data(position.market_id)
+        position_value = position.shares * current_price
 
-        # Al vender: obtenemos bid estimado (precio - 50% spread)
-        slippage   = spread * 0.5
-        exit_price = round(current_price - slippage, 4)
-        exit_price = max(exit_price, 0.001)  # Floor: nunca < 0.001
+        # ── Modelo de slippage (P9.2 SlippageEngine) ───────────────────
+        asset = position.asset if position.asset != "UNKNOWN" else "DEFAULT"
+        estimate = self._slippage.estimate(
+            tick_data=tick_data,
+            order_size=position_value,
+            asset=asset,
+            side="exit",
+            volatility=None,
+            regime=None,
+        )
+        exit_price = estimate.fill_price
+        slippage = estimate.slippage
 
         # ── Cierra la posición y calcula PnL ─────────────────────────
         position.close(exit_price=exit_price, reason=reason)
@@ -214,6 +257,9 @@ class PaperTradingHandler(IExecutionHandler):
         return_value  = position.shares * exit_price
         self._balance += return_value
         await self._redis.set_paper_balance(self._balance)
+
+        # ── Calibrar tracker de slippage con el fill real ─────────────
+        self._slippage.record_actual(estimate, actual_fill_price=exit_price)
 
         # ── Persiste posición cerrada ─────────────────────────────────
         await self._repo.save_position(position)
@@ -226,7 +272,7 @@ class PaperTradingHandler(IExecutionHandler):
             amount       = return_value,
             target_price = current_price,
             fill_price   = exit_price,
-            slippage     = -slippage,   # Negativo porque lo perdemos al vender
+            slippage     = slippage,
             status       = OrderStatus.FILLED,
             mode         = TRADING_MODE,
             strategy     = position.strategy,
@@ -242,11 +288,26 @@ class PaperTradingHandler(IExecutionHandler):
         PNL_GAUGE.labels(mode="paper").set(
             self._balance - self._initial_balance
         )
+        SLIPPAGE_ESTIMATED.labels(mode="paper", side="exit").observe(
+            abs(estimate.adjusted_slippage)
+        )
+        # Note: in paper trading, estimated == actual (same model).
+        mid_exit = (tick_data["best_bid"] + tick_data["best_ask"]) / 2
+        actual_slip_exit = abs(exit_price - mid_exit)
+        if abs(estimate.adjusted_slippage) > 0:
+            SLIPPAGE_ACTUAL_VS_ESTIMATED.labels(
+                mode="paper", side="exit"
+            ).observe(actual_slip_exit / abs(estimate.adjusted_slippage))
+        SLIPPAGE_CALIBRATION.labels(mode="paper").set(
+            self._slippage.calibration_multiplier
+        )
 
         log.info(
             "paper_position_closed",
             position_id=position.id,
             exit_price=exit_price,
+            slippage=round(slippage, 6),
+            fill_ratio=estimate.fill_ratio,
             pnl=round(position.pnl, 4),
             pnl_pct=f"{position.pnl_pct:.2%}",
             balance_after=round(self._balance, 2),
@@ -269,7 +330,7 @@ class PaperTradingHandler(IExecutionHandler):
             amount       = return_value,
             target_price = current_price,
             fill_price   = exit_price,
-            slippage     = -slippage,
+            slippage     = slippage,
             pnl          = position.pnl,
             success      = True,
             mode         = "paper",
@@ -282,7 +343,7 @@ class PaperTradingHandler(IExecutionHandler):
         hedge_amount: float,
     ) -> TradeResult:
         """
-        Simula la compra de NO como cobertura parcial de una posición YES.
+        Simula la compra de NO como cobertura parcial de una posicion YES.
         Trata el hedge como una entrada nueva en el lado opuesto.
         """
         log = logger.bind(
@@ -294,10 +355,24 @@ class PaperTradingHandler(IExecutionHandler):
 
         current_price = await self._get_current_yes_price(position.market_id)
         no_price      = 1.0 - current_price   # Precio NO = 1 - precio YES
-        spread        = await self._get_current_spread(position.market_id)
-        slippage      = spread * 0.5
-        fill_price    = round(no_price + slippage, 4)
-        fill_price    = min(fill_price, 0.999)
+
+        # ── Slippage via SlippageEngine (P9.2) ─────────────────────────
+        tick_data = await self._build_tick_data(position.market_id)
+        asset = position.asset if position.asset != "UNKNOWN" else "DEFAULT"
+        estimate = self._slippage.estimate(
+            tick_data=tick_data,
+            order_size=hedge_amount,
+            asset=asset,
+            side="entry",
+            volatility=None,
+            regime=None,
+        )
+        # Hedge buys NO, which is the complement of YES.
+        # SlippageEngine gives us the YES-side fill price; NO fill = 1 - YES fill.
+        # For simplicity, use the NO price + entry slippage as before.
+        slippage   = estimate.slippage
+        fill_price = round(no_price + slippage, 4)
+        fill_price = min(fill_price, 0.999)
 
         if hedge_amount > self._balance:
             hedge_amount = self._balance * 0.5  # Reduce al 50% del balance disponible
@@ -355,29 +430,97 @@ class PaperTradingHandler(IExecutionHandler):
     ) -> float:
         """
         Obtiene el precio objetivo desde Redis (último tick conocido).
-        Fallback a 0.5 si no hay datos (no debería ocurrir en operación normal).
+        Fallback a 0.5 si no hay datos.
         """
-        state = await self._redis.get_ws_state(market_id)
-        if state and state.get("last_yes_price"):
-            return float(state["last_yes_price"])
+        tick = await self._redis.get_last_tick_price(market_id)
+        if tick and tick.get("last_yes_price"):
+            return float(tick["last_yes_price"])
 
-        # Fallback: usa el mid price como aproximación
         logger.warning("no_price_in_redis", market_id=market_id)
         return 0.5
 
     async def _get_current_yes_price(self, market_id: str) -> float:
         """Precio YES actual desde Redis."""
-        state = await self._redis.get_ws_state(market_id)
-        if state and state.get("last_yes_price"):
-            return float(state["last_yes_price"])
+        tick = await self._redis.get_last_tick_price(market_id)
+        if tick and tick.get("last_yes_price"):
+            return float(tick["last_yes_price"])
         return 0.5
 
-    async def _get_current_spread(self, market_id: str) -> float:
-        """Spread actual desde Redis. Fallback conservador de 0.02 (2%)."""
-        state = await self._redis.get_ws_state(market_id)
-        if state and state.get("last_spread"):
-            return float(state["last_spread"])
-        return 0.02  # 2% como estimación conservadora
+    async def _build_tick_data(self, market_id: str) -> dict:
+        """
+        Build a FillSimulator-compatible tick dict from Redis data.
+
+        Priority:
+        1. Orderbook data (bids/asks with depth via get_orderbook)
+        2. Last tick price (yes_price, spread, best_bid/best_ask)
+        3. Sensible defaults
+        """
+        # Try orderbook first (has real depth data)
+        ob = await self._redis.get_orderbook(market_id)
+        if ob:
+            bids = ob.get("bids", [])
+            asks = ob.get("asks", [])
+            if bids and asks:
+                best_bid = max(float(b["price"]) for b in bids)
+                best_ask = min(float(a["price"]) for a in asks)
+                spread = best_ask - best_bid
+
+                # Top-3 bid volumes
+                bids_sorted = sorted(bids, key=lambda b: float(b["price"]), reverse=True)
+                asks_sorted = sorted(asks, key=lambda a: float(a["price"]))
+
+                def _vol(items, idx):
+                    return float(items[idx].get("size", 0)) if idx < len(items) else 0.0
+
+                return {
+                    "best_bid": best_bid,
+                    "best_ask": best_ask,
+                    "spread": spread,
+                    "bids_vol_1": _vol(bids_sorted, 0),
+                    "bids_vol_2": _vol(bids_sorted, 1),
+                    "bids_vol_3": _vol(bids_sorted, 2),
+                    "asks_vol_1": _vol(asks_sorted, 0),
+                    "asks_vol_2": _vol(asks_sorted, 1),
+                    "asks_vol_3": _vol(asks_sorted, 2),
+                    "volume_24h": 0.0,
+                }
+
+        # Fallback: last tick price (computes bid/ask from yes_price ± spread/2)
+        tick = await self._redis.get_last_tick_price(market_id)
+        if tick:
+            yes_price = float(tick.get("last_yes_price", 0.5))
+            spread = float(tick.get("last_spread", 0.02))
+            best_bid = float(tick.get("best_bid", yes_price - spread / 2))
+            best_ask = float(tick.get("best_ask", yes_price + spread / 2))
+            vol = float(tick.get("volume_24h", 0))
+            return {
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "spread": spread,
+                "bids_vol_1": 0.0, "bids_vol_2": 0.0, "bids_vol_3": 0.0,
+                "asks_vol_1": 0.0, "asks_vol_2": 0.0, "asks_vol_3": 0.0,
+                "volume_24h": vol,
+            }
+
+        # Ultimate fallback
+        return {
+            "best_bid": 0.49, "best_ask": 0.51, "spread": 0.02,
+            "bids_vol_1": 0.0, "bids_vol_2": 0.0, "bids_vol_3": 0.0,
+            "asks_vol_1": 0.0, "asks_vol_2": 0.0, "asks_vol_3": 0.0,
+            "volume_24h": 0.0,
+        }
+
+    @staticmethod
+    def _get_asset_for_market(market_id: str) -> str:
+        """Infer asset from market context.
+
+        The market_id alone doesn't encode the asset.
+        Returns DEFAULT profile (safe BTC/ETH middle-ground).
+
+        TODO: pass asset from Signal or Market context once available
+              in the entry path (exit path already has position.asset).
+        """
+        return "DEFAULT"
 
     async def _create_position(
         self,

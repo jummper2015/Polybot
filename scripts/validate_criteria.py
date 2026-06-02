@@ -29,8 +29,6 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
-
 # Ensure project root is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -156,6 +154,14 @@ def parse_args() -> argparse.Namespace:
         "--output", type=str, default=None,
         help="Output JSON path (default: data/reports/validation_<timestamp>.json)"
     )
+    parser.add_argument(
+        "--check-data", action="store_true",
+        help="Check data integrity of recorded Parquet files (P8.1 DESPLEGAR)"
+    )
+    parser.add_argument(
+        "--data-dir", type=str, default="data/parquet",
+        help="Parquet data directory for integrity check (default: data/parquet)"
+    )
     return parser.parse_args()
 
 
@@ -197,7 +203,7 @@ def generate_dataset(
         )
     except ImportError:
         # Fallback: use DataLoader.generate_synthetic with realistic params
-        print(f"     ⚠️  optimize_bat not importable, using DataLoader.generate_synthetic()")
+        print("     ⚠️  optimize_bat not importable, using DataLoader.generate_synthetic()")
         return DataLoader.generate_synthetic(
             asset=ds_info["asset"],
             window=ds_info["window"],
@@ -294,6 +300,14 @@ def _extract_value(result: dict, criterion_name: str) -> float:
     return 0.0
 
 
+_GREEN = "\033[92m"
+_RED = "\033[91m"
+_YELLOW = "\033[93m"
+_CYAN = "\033[96m"
+_BOLD = "\033[1m"
+_RESET = "\033[0m"
+
+
 def print_results(
     results: dict[str, dict],
     evaluations: list[dict],
@@ -301,18 +315,11 @@ def print_results(
     elapsed: float,
 ) -> None:
     """Pretty-print results with ANSI colors."""
-    GREEN = "\033[92m"
-    RED = "\033[91m"
-    YELLOW = "\033[93m"
-    CYAN = "\033[96m"
-    BOLD = "\033[1m"
-    RESET = "\033[0m"
-
     print()
     print("═" * 70)
-    print(f"  {BOLD}POLYBOT — CRITERIA VALIDATION REPORT{RESET}")
+    print(f"  {_BOLD}POLYBOT — CRITERIA VALIDATION REPORT{_RESET}")
     print("═" * 70)
-    print(f"  Generated: {datetime.now(timezone.utc).isoformat()}")
+    print("  Generated: " + datetime.now(timezone.utc).isoformat())
     print(f"  Elapsed:   {elapsed:.1f}s")
     print(f"  Config:    threshold={config['threshold']:.2f} "
           f"stop_loss={config['stop_loss_pct']:.0%} "
@@ -322,19 +329,22 @@ def print_results(
     print()
 
     # ── Per-dataset summary ──────────────────────────────────────────
-    print(f"  {BOLD}BACKTEST RESULTS PER DATASET:{RESET}")
-    print(f"  {'Dataset':<10} {'Sharpe':>8} {'WR':>7} {'PF':>7} "
-          f"{'PnL':>10} {'MaxDD':>7} {'Trades':>7}")
+    print(f"  {_BOLD}BACKTEST RESULTS PER DATASET:{_RESET}")
+    hdr_cols = (
+        f"  {'Dataset':<10} {'Sharpe':>8} {'WR':>7} {'PF':>7} "
+        f"{'PnL':>10} {'MaxDD':>7} {'Trades':>7}"
+    )
+    print(hdr_cols)
     print("  " + "-" * 60)
     for ds_name in ["BTC_5m", "BTC_15m", "ETH_5m", "ETH_15m"]:
         if ds_name in results:
             r = results[ds_name]
-            sharpe_color = GREEN if r["sharpe_ratio"] > 1.0 else (
-                YELLOW if r["sharpe_ratio"] > 0.5 else RED
+            sharpe_color = _GREEN if r["sharpe_ratio"] > 1.0 else (
+                _YELLOW if r["sharpe_ratio"] > 0.5 else _RED
             )
             print(
                 f"  {ds_name:<10} "
-                f"{sharpe_color}{r['sharpe_ratio']:>8.3f}{RESET} "
+                f"{sharpe_color}{r['sharpe_ratio']:>8.3f}{_RESET} "
                 f"{r['win_rate']:>7.1%} "
                 f"{r['profit_factor']:>7.2f} "
                 f"{r['total_pnl']:>+10.4f} "
@@ -349,13 +359,17 @@ def print_results(
     warning_pass = 0
     warning_fail = 0
 
-    print(f"  {BOLD}CRITERIA EVALUATION:{RESET}")
-    print(f"  {'ID':<5} {'Criterion':<28} {'Target':<10} {'Result':<10} {'Status':<8}")
+    print(f"  {_BOLD}CRITERIA EVALUATION:{_RESET}")
+    eval_hdr = (
+        f"  {'ID':<5} {'Criterion':<28} {'Target':<10} "
+        f"{'Result':<10} {'Status':<8}"
+    )
+    print(eval_hdr)
     print("  " + "-" * 65)
 
     for ev in evaluations:
         status = "✅ PASS" if ev["passed"] else "❌ FAIL"
-        color = GREEN if ev["passed"] else RED
+        color = _GREEN if ev["passed"] else _RED
 
         # Show worst dataset result
         actuals = [d["actual"] for d in ev["details"]]
@@ -366,14 +380,14 @@ def print_results(
 
         print(
             f"  {color}{ev['id']:<5} {ev['name']:<28} {ev['target']:<10} "
-            f"{result_str:<10} {status}{RESET}"
+            f"{result_str:<10} {status}{_RESET}"
         )
 
         # Show per-dataset details for failures
         if not ev["passed"]:
             for d in ev["details"]:
                 if not d["passed"]:
-                    print(f"       ↳ {RED}{d['dataset']}: {d['actual']:.3f}{RESET}")
+                    print(f"       ↳ {_RED}{d['dataset']}: {d['actual']:.3f}{_RESET}")
 
         if ev["weight"] == "critical":
             if ev["passed"]:
@@ -393,20 +407,20 @@ def print_results(
     total_fail = critical_fail + warning_fail
     total = total_pass + total_fail
 
-    print(f"  {BOLD}SUMMARY:{RESET}")
-    print(f"  Critical: {GREEN}{critical_pass} passed{RESET}, "
-          f"{RED}{critical_fail} failed{RESET}")
+    print(f"  {_BOLD}SUMMARY:{_RESET}")
+    print(f"  Critical: {_GREEN}{critical_pass} passed{_RESET}, "
+          f"{_RED}{critical_fail} failed{_RESET}")
     print(f"  Total:    {total_pass}/{total} passed "
           f"({total_pass / max(total, 1) * 100:.0f}%)")
     print()
 
     if critical_fail == 0:
-        print(f"  {GREEN}{BOLD}✅ ALL CRITICAL CRITERIA PASSED{RESET}")
-        print(f"  The strategy meets the minimum requirements for paper trading.")
+        print(f"  {_GREEN}{_BOLD}✅ ALL CRITICAL CRITERIA PASSED{_RESET}")
+        print("  The strategy meets the minimum requirements for paper trading.")
     else:
-        print(f"  {RED}{BOLD}❌ {critical_fail} CRITICAL CRITERIA FAILED{RESET}")
-        print(f"  The strategy does NOT yet meet the requirements for production.")
-        print(f"  Consider: adjusting parameters, more data, or strategy refinement.")
+        print(f"  {_RED}{_BOLD}❌ {critical_fail} CRITICAL CRITERIA FAILED{_RESET}")
+        print("  The strategy does NOT yet meet the requirements for production.")
+        print("  Consider: adjusting parameters, more data, or strategy refinement.")
 
     print()
     print("═" * 70)
@@ -464,9 +478,284 @@ def save_report(
     return Path(output_path)
 
 
+def check_data_integrity(data_dir: str) -> tuple[bool, dict]:
+    """Check integrity of recorded Parquet data (P8.1 DESPLEGAR)."""
+    import pyarrow.parquet as pq
+
+    from src.infrastructure.data.schema import TICK_SCHEMA, read_ticks_uniform
+
+    data_path = Path(data_dir)
+    report: dict = {
+        "data_dir": str(data_path.absolute()),
+        "checks": {},
+        "warnings": [],
+        "errors": [],
+    }
+
+    print()
+    print("═" * 70)
+    print(f"  {_BOLD}POLYBOT — DATA INTEGRITY CHECK (P8.1){_RESET}")
+    print("═" * 70)
+    print("  Data dir: " + str(data_path.absolute()))
+
+    # ── Check 1: Parquet files exist ──────────────────────────────────
+    if not data_path.exists():
+        print(f"  {_RED}❌ Data directory does not exist{_RESET}")
+        report["checks"]["directory_exists"] = False
+        return False, report
+
+    parquet_files = sorted(data_path.rglob("*.parquet"))
+    report["checks"]["directory_exists"] = True
+    report["total_files"] = len(parquet_files)
+
+    if not parquet_files:
+        print(f"  {_RED}❌ No Parquet files found in {data_dir}{_RESET}")
+        report["checks"]["files_exist"] = False
+        return False, report
+
+    print(f"  {_GREEN}✅ Found {len(parquet_files)} Parquet files{_RESET}")
+    report["checks"]["files_exist"] = True
+
+    # ── Check 2: All files readable ───────────────────────────────────
+    unreadable = []
+    total_rows = 0
+    total_size = 0
+    for pf in parquet_files:
+        try:
+            meta = pq.read_metadata(pf)
+            total_rows += meta.num_rows
+            total_size += pf.stat().st_size
+        except Exception:
+            unreadable.append(str(pf))
+
+    report["total_rows"] = total_rows
+    report["total_size_bytes"] = total_size
+    report["total_size_mb"] = round(total_size / (1024 * 1024), 2)
+
+    if unreadable:
+        print(f"  {_RED}❌ {len(unreadable)} unreadable files:{_RESET}")
+        for f in unreadable[:5]:
+            print(f"     {f}")
+        report["checks"]["all_readable"] = False
+    else:
+        print(f"  {_GREEN}✅ All files readable — "
+              f"{total_rows:,} rows, {report['total_size_mb']:.2f} MB{_RESET}")
+        report["checks"]["all_readable"] = True
+
+    # ── Check 3: Schema matches canonical ──────────────────────────────
+    missing_fields = []
+    for pf in parquet_files[:10]:  # Sample first 10 files
+        try:
+            file_schema = pq.read_schema(pf)
+            file_fields = {f.name for f in file_schema}
+            canonical_fields = {f.name for f in TICK_SCHEMA}
+            missing = canonical_fields - file_fields
+            if missing:
+                missing_fields.extend(missing)
+        except Exception:
+            pass
+
+    if missing_fields:
+        unique_missing = sorted(set(missing_fields))
+        print(f"  {_RED}❌ Schema mismatch — missing fields: {unique_missing}{_RESET}")
+        report["checks"]["schema_valid"] = False
+    else:
+        print(f"  {_GREEN}✅ Schema matches canonical TICK_SCHEMA (17 fields){_RESET}")
+        report["checks"]["schema_valid"] = True
+
+    # ── Run full data validation on sampled ticks ──────────────────────
+    if total_rows > 0:
+        try:
+            all_paths = [str(pf) for pf in parquet_files]
+            table = read_ticks_uniform(all_paths)
+
+            if table.num_rows == 0:
+                print(f"  {_YELLOW}⚠️  Read returned 0 rows{_RESET}")
+                report["checks"]["data_readable"] = True
+            else:
+                # ── Check 4: Prices in [0, 1] ─────────────────────────────────
+                yes_col = table.column("yes_price")
+                bad_yes = 0
+                for i in range(yes_col.length()):
+                    val = yes_col[i].as_py()
+                    if val is not None and (val < 0 or val > 1):
+                        bad_yes += 1
+
+                if bad_yes > 0:
+                    print(f"  {_RED}❌ {bad_yes} ticks with yes_price outside [0,1]{_RESET}")
+                    report["checks"]["prices_valid"] = False
+                else:
+                    print(f"  {_GREEN}✅ All {table.num_rows:,} yes_prices in range [0,1]{_RESET}")
+                    report["checks"]["prices_valid"] = True
+
+                # ── Check 5: Spread >= 0 (bid <= ask) ─────────────────────────
+                bad_spread = 0
+                for i in range(min(table.num_rows, 10000)):
+                    bid = table.column("best_bid")[i].as_py()
+                    ask = table.column("best_ask")[i].as_py()
+                    spread = table.column("spread")[i].as_py()
+                    if bid is not None and ask is not None:
+                        if bid > ask or (spread is not None and spread < 0):
+                            bad_spread += 1
+
+                if bad_spread > 0:
+                    print(f"  {_RED}❌ {bad_spread} ticks with bad spread{_RESET}")
+                    report["checks"]["spread_valid"] = False
+                else:
+                    print(f"  {_GREEN}✅ All checked ticks have valid spread{_RESET}")
+                    report["checks"]["spread_valid"] = True
+
+                # ── Check 6: Timestamps chronological ─────────────────────────
+                ts_col = table.column("timestamp_ns")
+                out_of_order = 0
+                prev = None
+                for i in range(ts_col.length()):
+                    curr = ts_col[i].as_py()
+                    if prev is not None and curr is not None and curr < prev:
+                        out_of_order += 1
+                    if curr is not None:
+                        prev = curr
+
+                if out_of_order > 0:
+                    print(f"  {_YELLOW}⚠️  {out_of_order} out-of-order timestamps{_RESET}")
+                    report["checks"]["timestamps_sorted"] = True  # Warning, not fail
+                    report["warnings"].append(f"{out_of_order} out-of-order timestamps")
+                else:
+                    print(f"  {_GREEN}✅ All timestamps in chronological order{_RESET}")
+                    report["checks"]["timestamps_sorted"] = True
+
+                # ── Check 7: Timestamp range ──────────────────────────────────
+                if ts_col.length() > 0:
+                    min_ts = ts_col[0].as_py()
+                    max_ts = ts_col[-1].as_py()
+                    if min_ts and max_ts:
+                        from datetime import datetime, timezone
+                        dt_min = datetime.fromtimestamp(min_ts / 1_000_000_000, tz=timezone.utc)
+                        dt_max = datetime.fromtimestamp(max_ts / 1_000_000_000, tz=timezone.utc)
+                        span_hours = (max_ts - min_ts) / (1_000_000_000 * 3600)
+                        print(
+                            f"  {_CYAN}ℹ️  Range: {dt_min.isoformat()[:19]} → "
+                            f"{dt_max.isoformat()[:19]} ({span_hours:.1f}h){_RESET}"
+                        )
+                        report["timestamp_range"] = {
+                            "min": dt_min.isoformat(),
+                            "max": dt_max.isoformat(),
+                            "span_hours": round(span_hours, 2),
+                        }
+
+                # ── Check 8: Asset distribution ──────────────────────────────
+                asset_col = table.column("asset")
+                if asset_col.length() > 0:
+                    from collections import Counter
+                    asset_counts = Counter()
+                    for i in range(asset_col.length()):
+                        asset_counts[asset_col[i].as_py()] += 1
+                    print(f"  {_CYAN}ℹ️  Asset distribution: {dict(asset_counts)}{_RESET}")
+                    report["asset_distribution"] = dict(asset_counts)
+
+        except Exception as e:
+            print(f"  {_RED}❌ Error reading Parquet data: {e}{_RESET}")
+            report["checks"]["data_readable"] = False
+            report["errors"].append(f"Parquet read error: {e}")
+    else:
+        print(f"  {_YELLOW}⚠️  No ticks to validate (0 rows total){_RESET}")
+        report["checks"]["data_readable"] = True  # Not an error, just empty
+
+    # ── Check 9: Manifest consistency ───────────────────────────────────
+    manifest_path = data_path / "manifest.json"
+    if manifest_path.exists():
+        import json
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            manifest_ticks = manifest.get("total_ticks", 0)
+            sessions = manifest.get("sessions", [])
+            print(f"  {_CYAN}ℹ️  Manifest: {manifest_ticks} ticks, {len(sessions)} sessions{_RESET}")
+
+            # Compare manifest ticks vs actual row count
+            if manifest_ticks > 0 and total_rows > 0:
+                # Manifest may be from a shorter test run
+                if total_rows >= manifest_ticks:
+                    print(f"  {_GREEN}✅ Actual rows >= manifest{_RESET}")
+                    report["checks"]["manifest_consistent"] = True
+                else:
+                    diff_pct = (manifest_ticks - total_rows) / max(manifest_ticks, 1) * 100
+                    if diff_pct > 5.0:
+                        print(f"  {_RED}❌ {diff_pct:.1f}% row gap vs manifest{_RESET}")
+                        report["checks"]["manifest_consistent"] = False
+                    else:
+                        print(f"  {_YELLOW}⚠️  {diff_pct:.1f}% row gap vs manifest (tolerable){_RESET}")
+                        report["checks"]["manifest_consistent"] = True
+                        report["warnings"].append(f"{diff_pct:.1f}% row count gap vs manifest")
+            else:
+                report["checks"]["manifest_consistent"] = True
+
+            report["manifest"] = {
+                "ticks": manifest_ticks,
+                "sessions": len(sessions),
+                "recorded_at": manifest.get("recorded_at", ""),
+            }
+        except Exception as e:
+            print(f"  {_YELLOW}⚠️  Manifest parse error{_RESET}")
+            report["checks"]["manifest_consistent"] = False
+    else:
+        print(f"  {_YELLOW}⚠️  No manifest.json found{_RESET}")
+        report["checks"]["manifest_consistent"] = True  # Not required for integrity
+
+    # ── Data loss rate estimation ────────────────────────────────────────
+    if "manifest" in report and report["manifest"]["ticks"] > 0 \
+            and total_rows > 0:
+        manifest_ticks = report["manifest"]["ticks"]
+        loss_pct = max(0, (1.0 - (total_rows / max(manifest_ticks, 1)))) * 100
+        report["data_loss_rate_pct"] = round(loss_pct, 4)
+
+        if loss_pct < 0.1:
+            print(f"  {_GREEN}✅ Data loss: {loss_pct:.4f}% (< 0.1%){_RESET}")
+            report["checks"]["data_loss_acceptable"] = True
+        else:
+            print(f"  {_RED}❌ Data loss: {loss_pct:.4f}% (> 0.1%){_RESET}")
+            report["checks"]["data_loss_acceptable"] = False
+    else:
+        report["data_loss_rate_pct"] = None
+
+    # ── Overall result ──────────────────────────────────────────────────
+    critical_checks = [
+        "files_exist", "all_readable", "schema_valid",
+        "prices_valid", "spread_valid",
+    ]
+    all_ok = all(
+        report["checks"].get(check, True) for check in critical_checks
+    )
+
+    print()
+    if all_ok:
+        print(f"  {_GREEN}{_BOLD}✅ DATA INTEGRITY: PASS{_RESET}")
+    else:
+        print(f"  {_RED}{_BOLD}❌ DATA INTEGRITY: FAIL{_RESET}")
+    print("═" * 70)
+    print()
+
+    report["overall_pass"] = all_ok
+    return all_ok, report
+
+
 def main() -> int:
     args = parse_args()
 
+    # ── Data integrity check mode (P8.1) ─────────────────────────────
+    if args.check_data:
+        ok, report = check_data_integrity(args.data_dir)
+
+        # Save report
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_path = args.output or str(REPORTS_DIR / f"data_integrity_{timestamp}.json")
+        with open(output_path, "w") as f:
+            json.dump(report, f, indent=2, default=str)
+        print(f"  📁 Report saved to: {output_path}")
+
+        return 0 if ok else 1
+
+    # ── Standard criteria validation ─────────────────────────────────
     print()
     print("═" * 70)
     print("  POLYBOT — CRITERIA VALIDATION")

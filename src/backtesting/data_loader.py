@@ -349,6 +349,53 @@ class DataLoader:
         )
 
     @staticmethod
+    def from_parquet(
+        base_dir: str | Path = "data/parquet",
+        asset: str | None = None,
+        window: str = "5m",
+        market_id: str | None = None,
+    ) -> HistoricalDataset | list[HistoricalDataset]:
+        """
+        Load ticks from Parquet files (P8.2). Delegates to ParquetDataLoader.
+
+        Args:
+            base_dir: Parquet data directory.
+            asset: "BTC", "ETH", or None to load all assets.
+            window: Dataset window label.
+            market_id: Specific market to load. If None, loads all markets.
+
+        Returns:
+            A single HistoricalDataset if market_id is specified,
+            or a list of HistoricalDatasets (one per market) otherwise.
+        """
+        from src.backtesting.parquet_loader import ParquetDataLoader
+
+        loader = ParquetDataLoader(base_dir=base_dir)
+
+        if asset is None:
+            # Load all assets
+            all_datasets = []
+            for a in ("BTC", "ETH"):
+                try:
+                    if market_id:
+                        ds = loader.load(asset=a, market_id=market_id, window=window)
+                        all_datasets.append(ds)
+                    else:
+                        all_datasets.extend(loader.load_all(asset=a, window=window))
+                except FileNotFoundError:
+                    logger.info("parquet_no_data_for_asset", asset=a)
+                    continue
+            if not all_datasets:
+                raise FileNotFoundError(
+                    f"No Parquet data found for any asset in {base_dir}"
+                )
+            return all_datasets
+
+        if market_id:
+            return loader.load(asset=asset, market_id=market_id, window=window)
+        return loader.load_all(asset=asset, window=window)
+
+    @staticmethod
     def _row_to_tick(row: dict, market_id: str) -> MarketTick:
         """Convierte una fila del CSV a un MarketTick."""
         yes_price = float(row["yes_price"])

@@ -1,12 +1,15 @@
 # tests/integration/test_paper_trading.py
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.application.services.market_service import MarketService
+from src.domain.entities.market import Market
 from src.domain.entities.position import Position
 from src.domain.enums.signal_type import SignalType
+from src.domain.enums.window import Window
 from src.domain.value_objects.signal import Signal
 from src.execution.paper_handler import PaperTradingHandler
 
@@ -31,6 +34,13 @@ def mock_redis():
         asset=MagicMock(value="BTC"),
         window=MagicMock(value="5m"),
     ))
+    redis.get_orderbook      = AsyncMock(return_value=None)
+    redis.get_last_tick_price = AsyncMock(return_value={
+        "last_yes_price": "0.80",
+        "last_spread": "0.02",
+        "best_bid": "0.79",
+        "best_ask": "0.81",
+    })
     return redis
 
 
@@ -156,17 +166,6 @@ class TestPaperTradingHandler:
         assert result.slippage < 1.0
 
 
-# tests/integration/test_market_service.py
-
-from datetime import timedelta
-
-import pytest
-
-from src.application.services.market_service import MarketService
-from src.domain.entities.market import Market
-from src.domain.enums.window import Window
-
-
 @pytest.fixture
 def mock_market_data_port():
     port = AsyncMock()
@@ -190,7 +189,7 @@ def mock_market_data_port():
 
 
 @pytest.fixture
-def mock_repo():
+def mock_repo_ms():
     repo = AsyncMock()
     repo.save_market       = AsyncMock(side_effect=lambda m: m)
     repo.get_active_markets = AsyncMock(return_value=[])
@@ -198,7 +197,7 @@ def mock_repo():
 
 
 @pytest.fixture
-def mock_redis():
+def mock_redis_ms():
     redis = AsyncMock()
     redis.set_market          = AsyncMock()
     redis.get_active_markets  = AsyncMock(return_value=[])
@@ -210,22 +209,22 @@ class TestMarketService:
 
     @pytest.mark.asyncio
     async def test_discover_markets_saves_to_db_and_redis(
-        self, mock_market_data_port, mock_repo, mock_redis
+        self, mock_market_data_port, mock_repo_ms, mock_redis_ms
     ):
         """El discovery guarda mercados en DB y Redis."""
-        service = MarketService(mock_market_data_port, mock_repo, mock_redis)
+        service = MarketService(mock_market_data_port, mock_repo_ms, mock_redis_ms)
         await service.discover_markets()
 
         # Debe haber guardado en ambos
-        mock_repo.save_market.assert_called()
-        mock_redis.set_market.assert_called()
+        mock_repo_ms.save_market.assert_called()
+        mock_redis_ms.set_market.assert_called()
 
     @pytest.mark.asyncio
     async def test_discover_filters_by_window_duration(
-        self, mock_market_data_port, mock_repo, mock_redis
+        self, mock_market_data_port, mock_repo_ms, mock_redis_ms
     ):
         """Solo acepta mercados cuya duración corresponde a 5m o 15m."""
-        service = MarketService(mock_market_data_port, mock_repo, mock_redis)
+        service = MarketService(mock_market_data_port, mock_repo_ms, mock_redis_ms)
         markets = await service.discover_markets()
 
         # El mercado de 5 minutos debe ser aceptado
@@ -234,16 +233,16 @@ class TestMarketService:
 
     @pytest.mark.asyncio
     async def test_get_active_markets_uses_redis_cache(
-        self, mock_market_data_port, mock_repo, mock_redis
+        self, mock_market_data_port, mock_repo_ms, mock_redis_ms
     ):
         """Usa Redis como caché antes de ir a la DB."""
         cached_market = MagicMock(spec=Market)
-        mock_redis.get_active_markets = AsyncMock(return_value=[cached_market])
+        mock_redis_ms.get_active_markets = AsyncMock(return_value=[cached_market])
 
-        service = MarketService(mock_market_data_port, mock_repo, mock_redis)
+        service = MarketService(mock_market_data_port, mock_repo_ms, mock_redis_ms)
         markets = await service.get_active_markets()
 
         # Debe usar el caché de Redis
-        mock_redis.get_active_markets.assert_called_once()
-        mock_repo.get_active_markets.assert_not_called()
+        mock_redis_ms.get_active_markets.assert_called_once()
+        mock_repo_ms.get_active_markets.assert_not_called()
         assert markets == [cached_market]

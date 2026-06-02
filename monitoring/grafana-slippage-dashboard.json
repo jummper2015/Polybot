@@ -1,0 +1,340 @@
+{
+  "dashboard": {
+    "title": "PolyBot — Slippage Engine (P9.2)",
+    "uid": "polybot-slippage",
+    "tags": ["polybot", "slippage", "execution", "p9.2"],
+    "timezone": "utc",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 100,
+        "title": "Calibration Multiplier",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "polybot_slippage_calibration_multiplier{mode=\"paper\"}",
+            "legendFormat": "Calibration"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.75 },
+                { "color": "red", "value": 0.5 },
+                { "color": "red", "value": 1.5 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "background", "graphMode": "area" }
+      },
+      {
+        "id": 101,
+        "title": "Estimated Slippage (P50)",
+        "type": "stat",
+        "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polybot_slippage_estimated_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "P50"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 4,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.02 },
+                { "color": "red", "value": 0.05 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area" }
+      },
+      {
+        "id": 102,
+        "title": "Actual/Estimated Ratio",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polybot_slippage_ratio_actual_estimated_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "Ratio"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 0.8 },
+                { "color": "green", "value": 0.9 },
+                { "color": "yellow", "value": 1.1 },
+                { "color": "red", "value": 1.2 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "background", "graphMode": "area" }
+      },
+      {
+        "id": 103,
+        "title": "Observer Slippage (P50)",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polymarket_slippage_observed_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "Observed"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 4,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.02 },
+                { "color": "red", "value": 0.05 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area" }
+      },
+      {
+        "id": 200,
+        "title": "Estimated vs Observed Slippage (P50, P95)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polybot_slippage_estimated_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "Est P50"
+          },
+          {
+            "refId": "B",
+            "expr": "histogram_quantile(0.95, rate(polybot_slippage_estimated_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "Est P95"
+          },
+          {
+            "refId": "C",
+            "expr": "histogram_quantile(0.50, rate(polymarket_slippage_observed_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "Obs P50"
+          },
+          {
+            "refId": "D",
+            "expr": "histogram_quantile(0.95, rate(polymarket_slippage_observed_bucket{mode=\"paper\"}[5m]))",
+            "legendFormat": "Obs P95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "custom": { "lineInterpolation": "smooth" }
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "bottom" }
+        }
+      },
+      {
+        "id": 201,
+        "title": "Actual/Estimated Ratio by Side",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polybot_slippage_ratio_actual_estimated_bucket{mode=\"paper\",side=\"entry\"}[5m]))",
+            "legendFormat": "Entry P50"
+          },
+          {
+            "refId": "B",
+            "expr": "histogram_quantile(0.50, rate(polybot_slippage_ratio_actual_estimated_bucket{mode=\"paper\",side=\"exit\"}[5m]))",
+            "legendFormat": "Exit P50"
+          },
+          {
+            "refId": "C",
+            "expr": "histogram_quantile(0.95, rate(polybot_slippage_ratio_actual_estimated_bucket{mode=\"paper\",side=\"entry\"}[5m]))",
+            "legendFormat": "Entry P95"
+          },
+          {
+            "refId": "D",
+            "expr": "histogram_quantile(0.95, rate(polybot_slippage_ratio_actual_estimated_bucket{mode=\"paper\",side=\"exit\"}[5m]))",
+            "legendFormat": "Exit P95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "custom": { "lineInterpolation": "smooth" }
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "bottom" }
+        }
+      },
+      {
+        "id": 300,
+        "title": "Calibration Multiplier Trend",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 12, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "polybot_slippage_calibration_multiplier{mode=\"paper\"}",
+            "legendFormat": "Calibration"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "custom": { "lineInterpolation": "stepAfter" },
+            "min": 0.25,
+            "max": 3.25
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "list", "placement": "bottom" },
+          "tooltip": { "mode": "single" }
+        }
+      },
+      {
+        "id": 301,
+        "title": "Slippage Heatmap (Estimated vs Observed)",
+        "type": "heatmap",
+        "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(polybot_slippage_estimated_bucket{mode=\"paper\"}[1h])) by (le)",
+            "legendFormat": "Estimated",
+            "format": "heatmap"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit"
+          }
+        },
+        "options": {
+          "calculate": false,
+          "yAxis": { "unit": "percentunit" }
+        }
+      },
+      {
+        "id": 302,
+        "title": "Slippage Ratio Distribution",
+        "type": "heatmap",
+        "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(polybot_slippage_ratio_actual_estimated_bucket{mode=\"paper\"}[1h])) by (le)",
+            "legendFormat": "Ratio",
+            "format": "heatmap"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none"
+          }
+        },
+        "options": {
+          "calculate": false,
+          "yAxis": { "unit": "none" }
+        }
+      },
+      {
+        "id": 400,
+        "title": "Slippage by Asset (Observed)",
+        "type": "bargauge",
+        "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polymarket_slippage_observed_bucket{mode=\"paper\"}[1h]))",
+            "legendFormat": "P50 Slippage"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 0.05,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.02 },
+                { "color": "red", "value": 0.03 }
+              ]
+            }
+          }
+        },
+        "options": { "orientation": "horizontal", "displayMode": "gradient" }
+      },
+      {
+        "id": 401,
+        "title": "Slippage Accuracy (Ratio 0.8-1.2 = Good)",
+        "type": "bargauge",
+        "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.50, rate(polybot_slippage_ratio_actual_estimated_bucket[1h]))",
+            "legendFormat": "P50 Ratio"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "min": 0.5,
+            "max": 2.0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 0.8 },
+                { "color": "green", "value": 0.9 },
+                { "color": "yellow", "value": 1.1 },
+                { "color": "red", "value": 1.2 }
+              ]
+            }
+          }
+        },
+        "options": { "orientation": "horizontal", "displayMode": "gradient" }
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    }
+  },
+  "folderUid": "",
+  "message": "P9.2 Slippage Engine Dashboard — estimated vs actual slippage, calibration, distributions",
+  "overwrite": true
+}

@@ -12,6 +12,7 @@ from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import SignalType
+from src.execution.fill_simulator import FillSimulator
 from src.risk.engine import RiskEngineConfig
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
@@ -52,9 +53,9 @@ class BacktestPosition:
         self.exit_at     = exit_at
         self.exit_reason = reason
 
-        # Slippage simulado: 0.5% del spread (igual que PaperHandler)
-        exit_with_slippage = exit_price - (exit_price * 0.005)
-        self.pnl     = (exit_with_slippage - self.entry_price) * self.shares
+        # P9.1 FillSimulator: exit_price already includes slippage from the engine.
+        # No additional discount applied here.
+        self.pnl     = (exit_price - self.entry_price) * self.shares
         self.pnl_pct = self.pnl / self.amount if self.amount > 0 else 0.0
 
     @property
@@ -104,7 +105,7 @@ class BacktestEngine:
     Diferencias con producción:
     - Sin asyncio (síncrono para velocidad)
     - Sin DB ni Redis (todo en memoria)
-    - Slippage simplificado (0.5% del spread)
+    - Slippage realista vía FillSimulator (P9.1)
     - Sin conexiones externas
     """
 
@@ -114,11 +115,13 @@ class BacktestEngine:
         risk_config:     RiskEngineConfig | None = None,
         initial_balance: float = 1000.0,
         verbose:         bool  = False,
+        fill_simulator:  FillSimulator | None = None,
     ):
         self._strategy_config = strategy_config or BuyAboveThresholdConfig()
         self._risk_config     = risk_config     or RiskEngineConfig()
         self._initial_balance = initial_balance
         self._verbose         = verbose
+        self._fill_sim        = fill_simulator or FillSimulator()
 
         # Valida config antes de cualquier backtest
         self._strategy_config.validate()
@@ -160,9 +163,15 @@ class BacktestEngine:
                 exit_signal = self._sync_should_exit(strategy, market, tick)
 
                 if exit_signal.type in (SignalType.EXIT, SignalType.BUY_NO):
-                    # Calcula slippage de salida
-                    slippage   = tick.spread * 0.5
-                    exit_price = max(tick.yes_price - slippage, 0.001)
+                    # ── P9.1 FillSimulator slippage ──────────────────
+                    position_value = open_position.shares * tick.yes_price
+                    tick_data = self._tick_to_data(tick)
+                    estimate = self._fill_sim.estimate_exit(
+                        tick_data=tick_data,
+                        position_value=position_value,
+                        asset=dataset.asset,
+                    )
+                    exit_price = estimate.fill_price
 
                     open_position.close(
                         exit_price=exit_price,
@@ -202,9 +211,15 @@ class BacktestEngine:
                     )
 
                     if risk_ok:
-                        amount     = self._strategy_config.position_size_usdc
-                        slippage   = tick.spread * 0.5
-                        fill_price = min(tick.yes_price + slippage, 0.999)
+                        amount = self._strategy_config.position_size_usdc
+                        # ── P9.1 FillSimulator slippage ──────────────
+                        tick_data = self._tick_to_data(tick)
+                        estimate = self._fill_sim.estimate_entry(
+                            tick_data=tick_data,
+                            order_size=amount,
+                            asset=dataset.asset,
+                        )
+                        fill_price = estimate.fill_price
                         shares     = amount / fill_price
 
                         position = BacktestPosition(
@@ -231,8 +246,16 @@ class BacktestEngine:
 
         # ── Cierra posición abierta al final del dataset ──────────────
         if open_position and dataset.ticks:
-            last_tick  = dataset.ticks[-1]
-            exit_price = max(last_tick.yes_price - last_tick.spread * 0.5, 0.001)
+            last_tick = dataset.ticks[-1]
+            # ── P9.1 FillSimulator slippage ──────────────────────────
+            position_value = open_position.shares * last_tick.yes_price
+            tick_data = self._tick_to_data(last_tick)
+            estimate = self._fill_sim.estimate_exit(
+                tick_data=tick_data,
+                position_value=position_value,
+                asset=dataset.asset,
+            )
+            exit_price = estimate.fill_price
             open_position.close(
                 exit_price=exit_price,
                 exit_tick=len(dataset.ticks) - 1,
@@ -288,7 +311,10 @@ class BacktestEngine:
         pos_sizes   = pos_sizes   or [self._strategy_config.position_size_usdc]
 
         results = []
-        total   = len(thresholds) * len(stop_losses) * len(targets) * len(ticks_list) * len(pos_sizes)
+        total   = (
+            len(thresholds) * len(stop_losses) * len(targets)
+            * len(ticks_list) * len(pos_sizes)
+        )
         count   = 0
 
         logger.info(
@@ -331,6 +357,7 @@ class BacktestEngine:
                                     risk_config=self._risk_config,
                                     initial_balance=self._initial_balance,
                                     verbose=False,
+                                    fill_simulator=self._fill_sim,
                                 )
                                 result = engine.run(dataset)
                                 results.append(result)
@@ -421,19 +448,51 @@ class BacktestEngine:
         Aplica solo MinBalance y MaxPositions para velocidad.
         """
         if balance - amount < self._risk_config.min_balance_usdc:
-            return False, f"min_balance: {balance:.2f} - {amount:.2f} < {self._risk_config.min_balance_usdc}"
+            return False, (
+                f"min_balance: {balance:.2f} - {amount:.2f}"
+                f" < {self._risk_config.min_balance_usdc}"
+            )
         if open_count >= self._risk_config.max_open_positions:
             return False, f"max_positions: {open_count} >= {self._risk_config.max_open_positions}"
         return True, "ok"
 
     @staticmethod
+    def _tick_to_data(tick: MarketTick) -> dict:
+        """
+        Build a FillSimulator-compatible tick data dict from a MarketTick.
+
+        MarketTick doesn't carry orderbook depth (bids_vol/asks_vol),
+        so depth is zeroed out. FillSimulator falls back gracefully to
+        spread-cross-only model (equivalent to legacy spread * 0.5).
+        For Parquet data with depth, override this or enrich MarketTick.
+        """
+        return {
+            "best_bid": tick.best_bid,
+            "best_ask": tick.best_ask,
+            "spread": tick.spread,
+            "bids_vol_1": 0.0,
+            "bids_vol_2": 0.0,
+            "bids_vol_3": 0.0,
+            "asks_vol_1": 0.0,
+            "asks_vol_2": 0.0,
+            "asks_vol_3": 0.0,
+            "volume_24h": tick.volume_24h,
+        }
+
+    @staticmethod
     def _make_synthetic_market(dataset: HistoricalDataset) -> Market:
         """Crea un Market sintético para usar en el backtest."""
-        # Usamos una fecha de expiración lejana (2099) para que
-        # minutes_to_expiry() nunca devuelva 0 durante el backtest.
-        # En producción se usa datetime.utcnow(), pero en backtesting
-        # los ticks son históricos y el expiry debe ser futuro.
         far_future = datetime(2099, 12, 31, 23, 59, 59)
+
+        # Handle empty datasets gracefully
+        if dataset.ticks:
+            yes_price  = dataset.ticks[0].yes_price
+            no_price   = dataset.ticks[0].no_price
+            volume_24h = dataset.ticks[0].volume_24h
+        else:
+            yes_price  = 0.50
+            no_price   = 0.50
+            volume_24h = 1000.0
 
         return Market(
             id           = dataset.market_id,
@@ -443,8 +502,8 @@ class BacktestEngine:
             status       = MarketStatus.ACTIVE,
             yes_token_id = "backtest_yes",
             no_token_id  = "backtest_no",
-            yes_price    = dataset.ticks[0].yes_price,
-            no_price     = dataset.ticks[0].no_price,
-            volume_24h   = dataset.ticks[0].volume_24h,
+            yes_price    = yes_price,
+            no_price     = no_price,
+            volume_24h   = volume_24h,
             expiry       = far_future,
         )
