@@ -673,16 +673,25 @@
       - Probabilidades calibradas (Brier score)
       - PnL atribuible a fuentes explicables
 
-  P10.1 — Walk-Forward Validation
+  P10.1 — Walk-Forward Validation  [🟢 100% — PLANEAR ✅, CONSTRUIR ✅, TESTEAR ✅]
   ─────────────────────────────────
   CONSTRUIR:
-    [ ] Framework de walk-forward analysis
-    [ ] División temporal train/validation/test
-    [ ] Métricas de estabilidad temporal
+    [x] Framework de walk-forward analysis
+        → WalkForwardValidator: anchored walk-forward con folds secuenciales
+    [x] División temporal train/validation/test
+        → Split configurable (train_ratio + val_ratio + test_ratio)
+    [x] Métricas de estabilidad temporal
+        → OoS/IS Sharpe ratio, parameter stability (CV), consistent_profitable
+    [x] src/quantitative/walk_forward.py — ~470 líneas
+    [x] Wireado con BacktestEngine.run_parameter_sweep() para optimización
 
   TESTEAR:
-    [ ] Rendimiento OoS consistente con IS
-    [ ] Tests de robustez temporal
+    [x] Rendimiento OoS consistente con IS
+        → tests/unit/test_walk_forward.py — 42 tests:
+        Config (9), FoldResult (6), Report (13), Validator (10), Edge cases (4)
+    [x] Tests de robustez temporal
+        → deterministic_output, fold_windows_non_overlapping, folds_are_sequential
+    [x] ruff check: 0 errors
 
   P10.2 — Monte Carlo Simulation
   ────────────────────────────────
@@ -1003,7 +1012,7 @@
   RUTA ESTRATÉGICA FUTURA (ROADMAP):
     FASE 8:  ✅ COMPLETADA — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
     FASE 9:  ✅ COMPLETADA — Execution Realism              (P9.1: 100%, P9.2: 100%, P9.3: 100%, P9.4: 100%)
-    FASE 10: 🔄 ACTIVE    — Quantitative Validation        (0/4)
+    FASE 10: 🔄 ACTIVE    — Quantitative Validation        (P10.1: 100%, P10.2: 0%, P10.3: 0%, P10.4: 0%)
     FASE 11: ⏳ PLANNED   — Advanced Strategies            (0/4)
     FASE 12: 🔮 FUTURE    — Portfolio & Scaling            (0/3)
     FASE 13: 🧪 EXPERIMENTAL — AI/ML Research              (0/3)

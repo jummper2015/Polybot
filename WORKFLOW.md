@@ -385,7 +385,7 @@ Ninguna fase se considera completada hasta que sus 4 etapas están verificadas.
 
 | Subfase | PLANEAR | CONSTRUIR | TESTEAR | DESPLEGAR |
 |---|---|---|---|---|
-| P10.1 Walk-Forward Validation | ✅ Definido | [ ] | [ ] | [ ] |
+| P10.1 Walk-Forward Validation | ✅ Definido | ✅ | ✅ | [ ] |
 | P10.2 Monte Carlo Simulation | ✅ Definido | [ ] | [ ] | [ ] |
 | P10.3 Confidence Calibration | ✅ Definido | [ ] | [ ] | [ ] |
 | P10.4 Post-Trade Analytics Engine | ✅ Definido | [ ] | [ ] | [ ] |
