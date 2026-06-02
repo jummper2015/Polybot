@@ -693,16 +693,25 @@
         → deterministic_output, fold_windows_non_overlapping, folds_are_sequential
     [x] ruff check: 0 errors
 
-  P10.2 — Monte Carlo Simulation
+  P10.2 — Monte Carlo Simulation  [🟢 100% — CONSTRUIR ✅, TESTEAR ✅]
   ────────────────────────────────
   CONSTRUIR:
-    [ ] Simulaciones de equity bajo incertidumbre
-    [ ] Distribuciones de drawdown
-    [ ] Análisis de tail risk
+    [x] Simulaciones de equity bajo incertidumbre
+        → EquitySimulator: bootstrap + parametric + combined
+    [x] Distribuciones de drawdown
+        → SimulationResult.drawdowns + Report.max_drawdowns + percentiles P50-P99
+    [x] Análisis de tail risk
+        → VaR 95/99, CVaR 95/99, ruin probability
+    [x] src/quantitative/monte_carlo.py — ~470 líneas
 
   TESTEAR:
-    [ ] Escenarios worst-case dentro de tolerancia
-    [ ] Tests de estabilidad de equity
+    [x] Escenarios worst-case dentro de tolerancia
+        → tests/unit/test_monte_carlo.py — 44 tests:
+        Config (5), Gaussian (4), SimulationResult (3), Report (17),
+        Bootstrap (8), Parametric (3), Edge cases (4)
+    [x] Tests de estabilidad de equity
+        → deterministic_output, rng_resets_between_runs, rng_deterministic_within_instance
+    [x] ruff check: 0 errors
 
   P10.3 — Confidence Calibration
   ────────────────────────────────
@@ -1012,7 +1021,7 @@
   RUTA ESTRATÉGICA FUTURA (ROADMAP):
     FASE 8:  ✅ COMPLETADA — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
     FASE 9:  ✅ COMPLETADA — Execution Realism              (P9.1: 100%, P9.2: 100%, P9.3: 100%, P9.4: 100%)
-    FASE 10: 🔄 ACTIVE    — Quantitative Validation        (P10.1: 100%, P10.2: 0%, P10.3: 0%, P10.4: 0%)
+    FASE 10: 🔄 ACTIVE    — Quantitative Validation        (P10.1: 100%, P10.2: 100%, P10.3: 0%, P10.4: 0%)
     FASE 11: ⏳ PLANNED   — Advanced Strategies            (0/4)
     FASE 12: 🔮 FUTURE    — Portfolio & Scaling            (0/3)
     FASE 13: 🧪 EXPERIMENTAL — AI/ML Research              (0/3)

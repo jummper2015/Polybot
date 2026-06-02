@@ -1,6 +1,12 @@
 # src/quantitative/__init__.py
 """Quantitative validation tools for PolyBot — Fase 10."""
 
+from src.quantitative.monte_carlo import (
+    EquitySimulator,
+    MonteCarloConfig,
+    MonteCarloReport,
+    SimulationResult,
+)
 from src.quantitative.walk_forward import (
     FoldResult,
     WalkForwardConfig,
@@ -9,8 +15,12 @@ from src.quantitative.walk_forward import (
 )
 
 __all__ = [
-    "WalkForwardConfig",
+    "EquitySimulator",
     "FoldResult",
+    "MonteCarloConfig",
+    "MonteCarloReport",
+    "SimulationResult",
+    "WalkForwardConfig",
     "WalkForwardReport",
     "WalkForwardValidator",
 ]
