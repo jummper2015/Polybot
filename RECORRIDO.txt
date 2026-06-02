@@ -966,8 +966,12 @@
 
   [x] 1. Verificar credenciales: python scripts/check_env.py
         → Paper OK ✅, Real OK ✅ (2026-06-02: credenciales configuradas)
-  [ ] 2. Grabar datos reales (1 semana):
-        python scripts/record_live_data.py --all --duration-hours 168
+  [🔄] 2. Grabar datos reales (1 semana): ← IN PROGRESS (2026-06-02 04:10 UTC)
+        python scripts/record_live_data.py --all --duration-hours 168 --batch-size 500
+        → PID $(pgrep -f record_live_data.py) | 4 mercados (3 BTC + 1 ETH)
+        → ~518 ticks/h (324 BTC + 194 ETH) | 2 activos, 2 inactivos
+        → Watchdog: PID $(pgrep -f watchdog_recording) | checks cada 10 min
+        → Log: logs/recording_168h.log | Parquets: data/parquet/asset={BTC,ETH}/...
   [ ] 3. Optimizar MeanReversion con datos REALES:
         python scripts/optimize_mr.py --csv data/historical/live_BTC_*.csv
   [ ] 4. Validar criterios de éxito con datos REALES:
