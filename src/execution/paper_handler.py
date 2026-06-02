@@ -1,5 +1,6 @@
 # src/execution/paper_handler.py
 
+import math
 import uuid
 from datetime import datetime
 
@@ -23,6 +24,14 @@ from src.infrastructure.observability.metrics import (
     PAPER_BALANCE_GAUGE,
     PAPER_POSITIONS_OPEN,
     PNL_GAUGE,
+    QUEUE_ADVERSE_SELECTION_BPS,
+    QUEUE_CONFIDENCE,
+    QUEUE_MAKER_COST_RATIO,
+    QUEUE_MAKER_EXPECTED_TIME,
+    QUEUE_MAKER_FILL_PROBABILITY,
+    QUEUE_MAKER_SAVINGS_PCT,
+    QUEUE_MAKER_VS_TAKER_DECISIONS,
+    QUEUE_TURNOVER_VOLUME_SEC,
     SLIPPAGE_ACTUAL_VS_ESTIMATED,
     SLIPPAGE_CALIBRATION,
     SLIPPAGE_ESTIMATED,
@@ -48,6 +57,7 @@ class PaperTradingHandler(IExecutionHandler):
         redis:         RedisClient,
         notifier:      INotificationPort,
         initial_balance: float = 1000.0,
+        execution_mode: str = "taker",
     ):
         self._repo     = repository
         self._redis    = redis
@@ -58,11 +68,15 @@ class PaperTradingHandler(IExecutionHandler):
         self._balance  = initial_balance
         self._initial_balance = initial_balance
 
+        # P9.3: Execution mode — "taker" (default), "maker", or "auto"
+        self._execution_mode = execution_mode
+
         logger.info(
             "paper_handler_initialized",
             initial_balance=initial_balance,
             fill_model="P9.2 SlippageEngine",
             tracker_calibration=self._slippage.calibration_multiplier,
+            execution_mode=execution_mode,
         )
 
     # ------------------------------------------------------------------
@@ -107,8 +121,16 @@ class PaperTradingHandler(IExecutionHandler):
             volatility=None,
             regime=None,
         )
-        fill_price = estimate.fill_price
-        slippage = estimate.slippage
+
+        # ── P9.3: Resolve maker-vs-taker fill ──────────────────────────
+        (
+            fill_price, slippage, exec_mode, maker_est, decision
+        ) = self._resolve_fill(
+            tick_data=tick_data,
+            order_size=amount,
+            side="entry",
+            taker_estimate=estimate,
+        )
 
         # ── Verificación de balance ───────────────────────────────────
         if amount > self._balance:
@@ -175,6 +197,13 @@ class PaperTradingHandler(IExecutionHandler):
             ).observe(actual_slip / abs(estimate.adjusted_slippage))
         SLIPPAGE_CALIBRATION.labels(mode="paper").set(
             self._slippage.calibration_multiplier
+        )
+
+        # ── Queue Position metrics (P9.3) ─────────────────────────────
+        self._observe_queue_metrics(
+            side="entry",
+            maker_estimate=maker_est,
+            decision=decision,
         )
 
         log.info(
@@ -246,8 +275,16 @@ class PaperTradingHandler(IExecutionHandler):
             volatility=None,
             regime=None,
         )
-        exit_price = estimate.fill_price
-        slippage = estimate.slippage
+
+        # ── P9.3: Resolve maker-vs-taker fill ──────────────────────────
+        (
+            exit_price, slippage, exec_mode, maker_est, decision
+        ) = self._resolve_fill(
+            tick_data=tick_data,
+            order_size=position_value,
+            side="exit",
+            taker_estimate=estimate,
+        )
 
         # ── Cierra la posición y calcula PnL ─────────────────────────
         position.close(exit_price=exit_price, reason=reason)
@@ -300,6 +337,13 @@ class PaperTradingHandler(IExecutionHandler):
             ).observe(actual_slip_exit / abs(estimate.adjusted_slippage))
         SLIPPAGE_CALIBRATION.labels(mode="paper").set(
             self._slippage.calibration_multiplier
+        )
+
+        # ── Queue Position metrics (P9.3) ─────────────────────────────
+        self._observe_queue_metrics(
+            side="exit",
+            maker_estimate=maker_est,
+            decision=decision,
         )
 
         log.info(
@@ -424,6 +468,139 @@ class PaperTradingHandler(IExecutionHandler):
     # ------------------------------------------------------------------
     # HELPERS INTERNOS
     # ------------------------------------------------------------------
+
+    def _resolve_fill(
+        self,
+        tick_data: dict,
+        order_size: float,
+        side: str,
+        taker_estimate,
+    ) -> tuple[float, float, str, object | None, object | None]:
+        """Resolve fill price and slippage based on execution_mode.
+
+        P9.3: When mode is "maker" or "auto", estimates the maker fill
+        probability and compares expected costs. If maker is preferred,
+        fills at mid_price with zero spread crossing (but risks partial
+        fill based on P(fill)).
+
+        Args:
+            tick_data: Orderbook tick dict.
+            order_size: Order size in USDC.
+            side: "entry" or "exit".
+            taker_estimate: SlippageEstimate from the taker path.
+
+        Returns:
+            (fill_price, slippage, exec_mode, maker_estimate, decision)
+              maker_estimate and decision are None for taker-only path.
+        """
+        mode = self._execution_mode
+
+        if mode == "taker":
+            return (
+                taker_estimate.fill_price,
+                taker_estimate.slippage,
+                "taker",
+                None,
+                None,
+            )
+
+        # ── Maker / Auto: estimate maker fill ──────────────────────
+        maker = self._slippage.estimate_maker(
+            tick_data=tick_data,
+            order_size=order_size,
+            side=side,
+            volatility=None,
+            regime=None,
+        )
+        taker_cost = abs(taker_estimate.adjusted_slippage)
+        decision = self._slippage.compare_maker_vs_taker(
+            taker_cost=taker_cost,
+            maker_estimate=maker,
+        )
+
+        if mode == "maker" or decision.prefer_maker:
+            mid = (tick_data["best_bid"] + tick_data["best_ask"]) / 2
+            # Maker fills at mid (no spread crossing, no price impact).
+            # Partial fill risk: scale by P(fill). The unfilled portion
+            # executes at the taker price, creating effective slippage.
+            fill_ratio = max(0.1, maker.p_fill)
+            unfilled = 1.0 - fill_ratio
+            maker_fill_price = (
+                fill_ratio * mid + unfilled * taker_estimate.fill_price
+            )
+            maker_fill_price = max(0.001, min(0.999, maker_fill_price))
+            maker_slippage = round(maker_fill_price - mid, 6)
+            return (
+                round(maker_fill_price, 6),
+                maker_slippage,
+                "maker",
+                maker,
+                decision,
+            )
+
+        # Auto mode: maker not preferred → use taker
+        return (
+            taker_estimate.fill_price,
+            taker_estimate.slippage,
+            "taker",
+            maker,
+            decision,
+        )
+
+    def _observe_queue_metrics(
+        self,
+        side: str,
+        maker_estimate,
+        decision,
+        taker_cost: float = 0.0,
+        volatility: float | None = None,
+        regime: str | None = None,
+    ) -> None:
+        """Observe P9.3 Queue Position metrics from pre-computed data.
+
+        Accepts maker estimate and decision objects already computed
+        by _resolve_fill() to avoid duplicate estimation work.
+
+        When called from a taker-only path (maker_estimate/decision are
+        None), computes them once here for metric observation only.
+        """
+        if maker_estimate is None or decision is None:
+            # Taker-only path: compute once for metrics
+            return  # No-op: taker path doesn't need queue metrics
+
+        regime_label = (regime or "UNKNOWN").lower()
+
+        QUEUE_MAKER_FILL_PROBABILITY.labels(
+            side=side, regime=regime_label,
+        ).observe(maker_estimate.p_fill)
+
+        if maker_estimate.expected_time_to_fill != float("inf"):
+            QUEUE_MAKER_EXPECTED_TIME.labels(side=side).observe(
+                maker_estimate.expected_time_to_fill
+            )
+
+        QUEUE_ADVERSE_SELECTION_BPS.labels(
+            side=side, regime=regime_label,
+        ).observe(maker_estimate.adverse_selection_bps)
+
+        QUEUE_MAKER_VS_TAKER_DECISIONS.labels(
+            mode=decision.mode, side=side,
+        ).inc()
+
+        if not math.isinf(decision.cost_ratio):
+            QUEUE_MAKER_COST_RATIO.labels(side=side).observe(
+                decision.cost_ratio
+            )
+
+        QUEUE_MAKER_SAVINGS_PCT.labels(side=side).observe(
+            decision.savings_pct
+        )
+
+        QUEUE_TURNOVER_VOLUME_SEC.labels(asset="DEFAULT").observe(
+            maker_estimate.volume_sec
+        )
+
+        QUEUE_CONFIDENCE.labels(side=side).observe(maker_estimate.confidence)
 
     async def _get_target_price(
         self, signal: Signal, market_id: str
@@ -588,3 +765,17 @@ class PaperTradingHandler(IExecutionHandler):
         if self._initial_balance <= 0:
             return 0.0
         return self.get_total_pnl() / self._initial_balance
+
+    @property
+    def execution_mode(self) -> str:
+        """P9.3: Current execution mode — "taker", "maker", or "auto"."""
+        return self._execution_mode
+
+    @execution_mode.setter
+    def execution_mode(self, value: str) -> None:
+        if value not in ("taker", "maker", "auto"):
+            raise ValueError(
+                f"execution_mode must be 'taker', 'maker', or 'auto', got '{value}'"
+            )
+        self._execution_mode = value
+        logger.info("paper_execution_mode_changed", execution_mode=value)

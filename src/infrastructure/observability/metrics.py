@@ -299,3 +299,54 @@ RECORDING_MARKETS_ACTIVE = Gauge(
     "polybot_recording_markets_active",
     "Number of markets currently being recorded",
 )
+
+# ══════════════════════════════════════════════════════════════
+# QUEUE POSITION MODELING (P9.3)
+# ══════════════════════════════════════════════════════════════
+QUEUE_MAKER_FILL_PROBABILITY = Histogram(
+    "polybot_queue_maker_fill_probability",
+    "Estimated P(fill) for maker orders within wait window",
+    ["side", "regime"],
+    buckets=[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1.0],
+)
+QUEUE_MAKER_EXPECTED_TIME = Histogram(
+    "polybot_queue_maker_expected_time_seconds",
+    "Expected time to fill for maker orders",
+    ["side"],
+    buckets=[1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
+)
+QUEUE_ADVERSE_SELECTION_BPS = Histogram(
+    "polybot_queue_adverse_selection_bps",
+    "Estimated adverse selection cost in basis points",
+    ["side", "regime"],
+    buckets=[0.0, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 200.0],
+)
+QUEUE_MAKER_VS_TAKER_DECISIONS = Counter(
+    "polybot_queue_maker_vs_taker_decisions_total",
+    "Maker-vs-taker decisions by recommended mode",
+    ["mode", "side"],
+)
+QUEUE_MAKER_COST_RATIO = Histogram(
+    "polybot_queue_maker_cost_ratio",
+    "Ratio maker_cost / taker_cost (< 1.0 = maker cheaper)",
+    ["side"],
+    buckets=[0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 1.0, 1.25, 1.5, 2.0, 5.0],
+)
+QUEUE_MAKER_SAVINGS_PCT = Histogram(
+    "polybot_queue_maker_savings_pct",
+    "Estimated savings from choosing MAKER over TAKER (percentage)",
+    ["side"],
+    buckets=[0.0, 1.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0],
+)
+QUEUE_TURNOVER_VOLUME_SEC = Histogram(
+    "polybot_queue_turnover_volume_sec",
+    "Estimated taker volume per second (USDC/sec)",
+    ["asset"],
+    buckets=[0.0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0],
+)
+QUEUE_CONFIDENCE = Histogram(
+    "polybot_queue_confidence",
+    "Confidence in queue position estimate (0.0-1.0)",
+    ["side"],
+    buckets=[0.0, 0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 1.0],
+)
