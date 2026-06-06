@@ -1,6 +1,7 @@
 # .gitignore
 
 # ── CRÍTICO: secretos ─────────────────────────────────────────────────
+.claude/skills/settings.json
 .env
 *.pem
 *.key
