@@ -44,7 +44,7 @@ Usage:
 Refs: WORKFLOW.md P9.3 PLAN, ROADMAP.md Phase 7 (Execution Realism)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import structlog
 

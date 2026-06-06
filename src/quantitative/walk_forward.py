@@ -615,7 +615,7 @@ class WalkForwardValidator:
                 stop_losses=stop_losses,
                 targets=targets,
                 ticks_list=[self._strategy_config.required_ticks],
-                pos_sizes=[self._strategy_config.position_size_usdc],
+                pos_sizes=[self._strategy_config.position_size_pusd],
             )
         except Exception as e:
             logger.warning("walk_forward_sweep_failed",
@@ -645,7 +645,7 @@ class WalkForwardValidator:
             "stop_loss_pct": best_result.config.stop_loss_pct,
             "target_price": best_result.config.target_price,
             "required_ticks": best_result.config.required_ticks,
-            "position_size_usdc": best_result.config.position_size_usdc,
+            "position_size_pusd": best_result.config.position_size_pusd,
         }
 
         return best_result, best_params
@@ -671,11 +671,11 @@ class WalkForwardValidator:
             stop_loss_pct=params.get("stop_loss_pct", self._strategy_config.stop_loss_pct),
             target_price=params.get("target_price", self._strategy_config.target_price),
             required_ticks=params.get("required_ticks", self._strategy_config.required_ticks),
-            position_size_usdc=params.get(
-                "position_size_usdc", self._strategy_config.position_size_usdc
+            position_size_pusd=params.get(
+                "position_size_pusd", self._strategy_config.position_size_pusd
             ),
             max_spread=self._strategy_config.max_spread,
-            min_volume_usdc=self._strategy_config.min_volume_usdc,
+            min_volume_pusd=self._strategy_config.min_volume_pusd,
         )
 
         engine = BacktestEngine(

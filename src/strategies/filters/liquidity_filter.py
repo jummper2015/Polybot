@@ -11,9 +11,9 @@ class LiquidityFilter(IFilter):
     Volumen bajo = riesgo de no poder ejecutar la orden al precio esperado.
     """
 
-    def __init__(self, min_volume_usdc: float = 1000.0):
-        # min_volume_usdc: volumen mínimo en USDC en las últimas 24h
-        self._min_volume = min_volume_usdc
+    def __init__(self, min_volume_pusd: float = 1000.0):
+        # min_volume_pusd: volumen mínimo en pUSD en las últimas 24h
+        self._min_volume = min_volume_pusd
 
     @property
     def name(self) -> str:

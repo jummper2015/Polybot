@@ -1,0 +1,36 @@
+{
+  "config": {
+    "simulations": 2000,
+    "trades_per_sim": 200,
+    "initial_balance": 1000.0,
+    "method": "bootstrap",
+    "ruin_threshold_pct": 0.3,
+    "seed": 42
+  },
+  "summary": {
+    "simulations_run": 2000,
+    "trades_per_sim": 200,
+    "historical_trades": 124,
+    "mean_terminal_balance": 981.48,
+    "median_terminal_balance": 981.35,
+    "mean_terminal_pnl": -18.52,
+    "std_terminal_pnl": 1.69,
+    "profitable_probability": 0.0,
+    "expected_return": -0.0185,
+    "mean_max_drawdown": 0.0186,
+    "median_max_drawdown": 0.0187,
+    "worst_case_drawdown": 0.0227,
+    "var_95": 21.1,
+    "var_99": 21.88,
+    "cvar_95": 21.55,
+    "cvar_99": 22.16,
+    "ruin_probability": 0.0
+  },
+  "drawdown_percentiles": {
+    "p50": 0.0187,
+    "p75": 0.0198,
+    "p90": 0.0206,
+    "p95": 0.0211,
+    "p99": 0.0219
+  }
+}

@@ -1,17 +1,18 @@
 """Backtest Mean Reversion strategy on synthetic data (mean-reverting to 0.75)."""
 import random
+
 random.seed(42)
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from src.backtesting.data_loader import DataLoader
-from src.strategies.mean_reversion.config import MeanReversionConfig
-from src.strategies.mean_reversion.strategy import MeanReversionStrategy, _compute_zscore
 from src.domain.entities.market import Market
 from src.domain.enums.asset import Asset
-from src.domain.enums.window import Window
 from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
 from src.domain.value_objects.signal import SignalType
+from src.strategies.mean_reversion.config import MeanReversionConfig
+from src.strategies.mean_reversion.strategy import MeanReversionStrategy
 
 
 def make_market(dataset):
@@ -77,7 +78,7 @@ def run_mr_backtest(asset, window, n_ticks=5000, config=None, verbose=False):
             else:
                 sig = loop.run_until_complete(strategy.should_enter(market, tick))
                 if sig.type == SignalType.BUY_YES:
-                    amount = config.position_size_usdc
+                    amount = config.position_size_pusd
                     slippage = tick.spread * 0.5
                     fill_price = min(tick.yes_price + slippage, 0.999)
                     shares = amount / fill_price
@@ -189,7 +190,7 @@ if __name__ == "__main__":
         exit_zscore=0.0,
         stop_loss_pct=0.10,
         ma_window=20,
-        position_size_usdc=10.0,
+        position_size_pusd=10.0,
     )
     r = run_mr_backtest(asset, window, n_ticks=5000, config=config)
     print_result(r)

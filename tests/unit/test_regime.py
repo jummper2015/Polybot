@@ -12,7 +12,6 @@ Tests:
 """
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 
@@ -20,11 +19,10 @@ from src.domain.value_objects.market_tick import MarketTick
 from src.infrastructure.data.features import FeaturePipeline
 from src.infrastructure.data.regime import (
     Regime,
-    RegimeConfig,
     RegimeClassifier,
+    RegimeConfig,
     RegimeResult,
 )
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # HELPERS
@@ -336,7 +334,6 @@ class TestFeaturePipelineIntegration:
 
     def test_classify_from_features(self):
         """FeaturePipeline → RegimeClassifier integration."""
-        from src.infrastructure.data.features import FeaturePipeline
 
         pipeline = FeaturePipeline()
         classifier = RegimeClassifier()
@@ -352,7 +349,7 @@ class TestFeaturePipelineIntegration:
 
     def test_streaming_classification(self):
         """Streaming mode produces a label for each tick."""
-        from src.infrastructure.data.features import FeaturePipeline, StreamingState
+        from src.infrastructure.data.features import StreamingState
 
         pipeline = FeaturePipeline(
             feature_names=["spread_percentile", "realized_volatility",
@@ -374,7 +371,7 @@ class TestFeaturePipelineIntegration:
 
     def test_batch_vs_streaming_consistency(self):
         """Batch and streaming should produce compatible results."""
-        from src.infrastructure.data.features import FeaturePipeline, StreamingState
+        from src.infrastructure.data.features import StreamingState
 
         feature_names = ["spread_percentile", "realized_volatility",
                         "momentum_decay"]

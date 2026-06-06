@@ -14,7 +14,9 @@ from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
 
 
-def make_tick(yes_price: float, spread: float = 0.01, volume: float = 5000.0) -> MarketTick:
+def make_tick(yes_price: float, spread: float = 0.01, volume: float = 5000.0, hour: int = 12) -> MarketTick:
+    """Create a tick at the specified hour to avoid blocked-window flakiness."""
+    ts = datetime.utcnow().replace(hour=hour, minute=0, second=0, microsecond=0)
     return MarketTick(
         market_id="test_market",
         yes_price=yes_price,
@@ -23,7 +25,7 @@ def make_tick(yes_price: float, spread: float = 0.01, volume: float = 5000.0) ->
         best_ask=yes_price + spread / 2,
         spread=spread,
         volume_24h=volume,
-        timestamp=datetime.utcnow(),
+        timestamp=ts,
     )
 
 
@@ -382,12 +384,12 @@ class TestFilters:
         assert "SpreadFilter" in result.filter_name
 
     def test_liquidity_filter_passes(self):
-        f      = LiquidityFilter(min_volume_usdc=1000.0)
+        f      = LiquidityFilter(min_volume_pusd=1000.0)
         result = f.apply(make_tick_for_filter(volume=5000.0), make_state())
         assert result.passed
 
     def test_liquidity_filter_fails(self):
-        f      = LiquidityFilter(min_volume_usdc=1000.0)
+        f      = LiquidityFilter(min_volume_pusd=1000.0)
         result = f.apply(make_tick_for_filter(volume=500.0), make_state())
         assert not result.passed
 

@@ -24,7 +24,6 @@ import argparse
 import asyncio
 import csv
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -392,7 +391,7 @@ async def main() -> None:
             print(f"       Q:  {question}")
 
             if not yes_token:
-                print(f"       ⚠️  No token IDs available")
+                print("       ⚠️  No token IDs available")
                 continue
 
             # Use the YES token ID for /prices-history (not condition_id)
@@ -407,12 +406,12 @@ async def main() -> None:
             )
 
             if not prices:
-                print(f"       ⚠️  No price data (market may be too new or API limited)")
+                print("       ⚠️  No price data (market may be too new or API limited)")
                 continue
 
             rows = prices_to_csv_rows(prices, info, asset)
             if not rows:
-                print(f"       ⚠️  Empty dataset after parsing")
+                print("       ⚠️  Empty dataset after parsing")
                 continue
 
             path = save_csv(rows, output_dir, asset, cid)
@@ -436,7 +435,7 @@ async def main() -> None:
 
     # ── Summary ─────────────────────────────────────────────────────
     print(f"\n{'═' * 65}")
-    print(f"  DOWNLOAD SUMMARY")
+    print("  DOWNLOAD SUMMARY")
     print(f"{'═' * 65}")
 
     if all_datasets:

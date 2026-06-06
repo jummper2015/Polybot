@@ -1,5 +1,9 @@
 """Find price prediction markets and test /prices-history with real token IDs."""
-import asyncio, httpx, json
+import asyncio
+import json
+
+import httpx
+
 
 async def main():
     async with httpx.AsyncClient(timeout=30) as c:
@@ -8,7 +12,7 @@ async def main():
         r = await c.get("https://gamma-api.polymarket.com/markets",
                        params={"active": "true", "_limit": "50"})
         markets = r.json()
-        
+
         # Filter by keywords suggesting price predictions
         price_keywords = ["above", "below", "$", "price", "bitcoin", "btc", "ethereum", "eth"]
         price_markets = []
@@ -16,7 +20,7 @@ async def main():
             q = m.get("question", "").lower()
             if any(kw in q for kw in price_keywords):
                 price_markets.append(m)
-        
+
         print(f"Price-related markets: {len(price_markets)}")
         for m in price_markets[:10]:
             q = m.get("question", "")[:120]
@@ -25,7 +29,7 @@ async def main():
             print(f"  Q: {q}")
             print(f"    conditionId: {cid}")
             print(f"    clobTokenIds: {tokens}")
-            
+
             # Test prices-history with first clob token
             if tokens:
                 token_id = tokens[0]
@@ -59,7 +63,7 @@ async def main():
         resolved = r3.json()
         price_resolved = [m for m in resolved if any(kw in m.get("question","").lower() for kw in price_keywords)]
         print(f"Resolved price markets: {len(price_resolved)}")
-        
+
         # Try to find the specific BTC/ETH daily prediction markets
         btc_markets = [m for m in (markets + resolved) if "bitcoin" in m.get("question","").lower() and ("above" in m.get("question","").lower() or "price" in m.get("question","").lower())]
         print(f"\nBTC price markets: {len(btc_markets)}")
@@ -69,7 +73,7 @@ async def main():
             active_flag = m.get("active", False)
             print(f"  [{active_flag}] Q: {q}")
             print(f"    clobTokenIds: {tokens}")
-            
+
             if tokens:
                 token_id = tokens[0]
                 try:

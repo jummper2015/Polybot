@@ -35,7 +35,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Reuse the realistic data generator from optimize_bat.py (canonical source)
 from scripts.optimize_bat import generate_realistic_dataset as _gen_bat_dataset
-
 from src.domain.value_objects.market_tick import MarketTick
 
 OUTPUT_DIR = Path("data/optimization")
@@ -150,7 +149,7 @@ class MRResult:
     ma_window: int
     stop_loss_pct: float
     timeout_minutes: float
-    position_size_usdc: float
+    position_size_pusd: float
     total_trades: int = 0
     winners: int = 0
     losers: int = 0
@@ -172,7 +171,7 @@ def run_mr_backtest(
     ma_window: int,
     stop_loss_pct: float,
     timeout_minutes: float,
-    position_size_usdc: float,
+    position_size_pusd: float,
     initial_balance: float = 1000.0,
     max_spread: float = 0.03,
     min_volume: float = 500.0,
@@ -196,7 +195,7 @@ def run_mr_backtest(
         ma_window=ma_window,
         stop_loss_pct=stop_loss_pct,
         timeout_minutes=timeout_minutes,
-        position_size_usdc=position_size_usdc,
+        position_size_pusd=position_size_pusd,
     )
 
     balance = initial_balance
@@ -256,7 +255,7 @@ def run_mr_backtest(
 
             if z_score < entry_zscore and len(prices_history) >= ma_window:
                 # Enter position
-                amount = position_size_usdc
+                amount = position_size_pusd
                 slippage = tick.spread * 0.5
                 fill_price = min(tick.yes_price + slippage, 0.999)
                 shares = amount / fill_price
@@ -380,7 +379,7 @@ def run_mr_sweep(
                                 ma_window=mw,
                                 stop_loss_pct=sl,
                                 timeout_minutes=tm,
-                                position_size_usdc=ps,
+                                position_size_pusd=ps,
                                 initial_balance=balance,
                             )
                             results.append(r)
@@ -423,7 +422,7 @@ def find_robust_mr_params(all_results: dict[str, list[MRResult]]) -> list[dict]:
                    f"xz={r.exit_zscore:.1f}_"
                    f"sl={r.stop_loss_pct:.2f}_"
                    f"tm={r.timeout_minutes:.0f}_"
-                   f"ps={r.position_size_usdc:.0f}")
+                   f"ps={r.position_size_pusd:.0f}")
 
             if key not in config_stats:
                 config_stats[key] = {
@@ -432,7 +431,7 @@ def find_robust_mr_params(all_results: dict[str, list[MRResult]]) -> list[dict]:
                     "exit_zscore": r.exit_zscore,
                     "stop_loss_pct": r.stop_loss_pct,
                     "timeout_minutes": r.timeout_minutes,
-                    "position_size_usdc": r.position_size_usdc,
+                    "position_size_pusd": r.position_size_pusd,
                     "datasets": {},
                 }
 
@@ -484,7 +483,7 @@ def find_robust_mr_params(all_results: dict[str, list[MRResult]]) -> list[dict]:
             "exit_zscore": cfg["exit_zscore"],
             "stop_loss_pct": cfg["stop_loss_pct"],
             "timeout_minutes": cfg["timeout_minutes"],
-            "position_size_usdc": cfg["position_size_usdc"],
+            "position_size_pusd": cfg["position_size_pusd"],
             "n_datasets": n,
             "avg_sharpe": round(avg_sharpe, 4),
             "avg_win_rate": round(avg_wr, 4),
@@ -515,7 +514,7 @@ def print_robust_mr_results(robust: list[dict], top_n: int = 10) -> None:
             f"{cfg['exit_zscore']:>6.1f} "
             f"{cfg['stop_loss_pct']:>6.0%} "
             f"{cfg['timeout_minutes']:>5.0f} "
-            f"{cfg['position_size_usdc']:>5.0f} "
+            f"{cfg['position_size_pusd']:>5.0f} "
             f"{cfg['avg_sharpe']:>10.3f} "
             f"{cfg['avg_win_rate']:>7.1%} "
             f"{cfg['avg_profit_factor']:>7.2f} "
@@ -523,12 +522,12 @@ def print_robust_mr_results(robust: list[dict], top_n: int = 10) -> None:
             f"{cfg['robustness_score']:>8.3f}"
         )
 
-    print(f"\n  PER-DATASET DETAIL FOR TOP 3:\n")
+    print("\n  PER-DATASET DETAIL FOR TOP 3:\n")
     for i, cfg in enumerate(robust[:3]):
         print(f"  #{i+1}: ma={cfg['ma_window']} entry_z={cfg['entry_zscore']:.1f} "
               f"exit_z={cfg['exit_zscore']:.1f} sl={cfg['stop_loss_pct']:.0%} "
               f"timeout={cfg['timeout_minutes']:.0f}m "
-              f"size={cfg['position_size_usdc']:.0f} USDC")
+              f"size={cfg['position_size_pusd']:.0f} USDC")
         for ds, stats in sorted(cfg["per_dataset"].items()):
             pf_str = f"{stats['profit_factor']:.2f}" if stats['profit_factor'] != float('inf') else "∞"
             print(f"     {ds:<8}  sharpe={stats['sharpe_ratio']:>7.3f}  "
@@ -555,7 +554,7 @@ def save_mr_results(
         path = OUTPUT_DIR / f"sweep_mr_{ds_name}_{timestamp}.csv"
         fieldnames = [
             "ma_window", "entry_zscore", "exit_zscore", "stop_loss_pct",
-            "timeout_minutes", "position_size_usdc", "total_trades",
+            "timeout_minutes", "position_size_pusd", "total_trades",
             "winners", "losers", "total_pnl", "win_rate", "profit_factor",
             "sharpe_ratio", "max_drawdown", "avg_trade_pnl",
             "best_trade", "worst_trade",
@@ -570,7 +569,7 @@ def save_mr_results(
                     "exit_zscore": r.exit_zscore,
                     "stop_loss_pct": r.stop_loss_pct,
                     "timeout_minutes": r.timeout_minutes,
-                    "position_size_usdc": r.position_size_usdc,
+                    "position_size_pusd": r.position_size_pusd,
                     "total_trades": r.total_trades,
                     "winners": r.winners,
                     "losers": r.losers,
@@ -600,7 +599,7 @@ def save_mr_results(
                 "exit_zscore": best["exit_zscore"],
                 "stop_loss_pct": best["stop_loss_pct"],
                 "timeout_minutes": best["timeout_minutes"],
-                "position_size_usdc": best["position_size_usdc"],
+                "position_size_pusd": best["position_size_pusd"],
             },
             "top_3": [
                 {
@@ -609,7 +608,7 @@ def save_mr_results(
                     "exit_zscore": cfg["exit_zscore"],
                     "stop_loss_pct": cfg["stop_loss_pct"],
                     "timeout_minutes": cfg["timeout_minutes"],
-                    "position_size_usdc": cfg["position_size_usdc"],
+                    "position_size_pusd": cfg["position_size_pusd"],
                     "avg_sharpe": cfg["avg_sharpe"],
                     "avg_win_rate": cfg["avg_win_rate"],
                     "avg_profit_factor": cfg["avg_profit_factor"],
@@ -624,7 +623,7 @@ def save_mr_results(
                     "exit_zscore": cfg["exit_zscore"],
                     "stop_loss_pct": cfg["stop_loss_pct"],
                     "timeout_minutes": cfg["timeout_minutes"],
-                    "position_size_usdc": cfg["position_size_usdc"],
+                    "position_size_pusd": cfg["position_size_pusd"],
                     "robustness_score": cfg["robustness_score"],
                     "avg_sharpe": cfg["avg_sharpe"],
                 }
@@ -729,13 +728,13 @@ def main() -> None:
 
     if robust:
         best = robust[0]
-        print(f"\n  ✅ Best robust MR parameters:")
+        print("\n  ✅ Best robust MR parameters:")
         print(f"     ma_window         = {best['ma_window']}")
         print(f"     entry_zscore      = {best['entry_zscore']:.1f}")
         print(f"     exit_zscore       = {best['exit_zscore']:.1f}")
         print(f"     stop_loss_pct     = {best['stop_loss_pct']:.0%}")
         print(f"     timeout_minutes   = {best['timeout_minutes']:.0f}")
-        print(f"     position_size     = {best['position_size_usdc']:.0f} USDC")
+        print(f"     position_size     = {best['position_size_pusd']:.0f} USDC")
         print(f"     avg_sharpe        = {best['avg_sharpe']:.4f}")
         print(f"     avg_win_rate      = {best['avg_win_rate']:.1%}")
         print(f"     avg_profit_factor = {best['avg_profit_factor']:.2f}")
@@ -755,7 +754,7 @@ def main() -> None:
         else:
             criteria_met.append(f"⚠️  PF {best['avg_profit_factor']:.2f} < 1.1 target")
 
-        print(f"\n  Criteria check:")
+        print("\n  Criteria check:")
         for c in criteria_met:
             print(f"     {c}")
 

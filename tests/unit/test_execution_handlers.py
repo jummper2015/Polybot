@@ -89,6 +89,12 @@ def make_mock_redis():
         window=MagicMock(value="5m"),
         yes_token_id="yes_token_001",
     ))
+    redis.get_market_metadata = AsyncMock(return_value={
+        "tick_size": "0.01",
+        "neg_risk": False,
+        "min_order_size": 1.0,
+    })
+    redis.set_market_metadata = AsyncMock()
     redis.set_paper_balance = AsyncMock()
     return redis
 

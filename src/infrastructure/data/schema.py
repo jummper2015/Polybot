@@ -82,7 +82,6 @@ TRADE_SCHEMA: pa.Schema = pa.schema(
 def datetime_to_ns(dt) -> int:
     """Convert a datetime (aware or naive UTC) to nanoseconds since epoch."""
     import calendar
-    from datetime import timezone
 
     if dt.tzinfo is None:
         # Treat naive as UTC
@@ -156,7 +155,6 @@ def tick_to_record_batch_from_market_ticks(
 
 def record_batch_to_tick_dicts(batch: pa.RecordBatch) -> list[dict]:
     """Convert a RecordBatch back to a list of dicts (for CSV export)."""
-    import pyarrow.compute as pc
 
     rows = []
     for i in range(batch.num_rows):

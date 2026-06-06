@@ -44,8 +44,8 @@ import httpx
 import structlog
 import websockets
 
+from src.infrastructure.data.schema import datetime_to_ns
 from src.infrastructure.data.storage import MultiAssetRecorder
-from src.infrastructure.data.schema import TICK_SCHEMA, datetime_to_ns
 
 logger = structlog.get_logger(__name__)
 
@@ -91,7 +91,7 @@ Examples:
     parser.add_argument("--format", choices=["parquet", "csv"], default="parquet",
                         help="Output format (default: parquet)")
     parser.add_argument("--output-dir",
-                        help=f"Output directory (default: parquet=data/parquet, csv=data/historical)")
+                        help="Output directory (default: parquet=data/parquet, csv=data/historical)")
     parser.add_argument("--batch-size", type=int, default=1000,
                         help="Parquet buffer batch size (default: 1000)")
     parser.add_argument("--verbose", action="store_true",
@@ -652,8 +652,8 @@ async def main() -> None:
     # ── Single market mode ──────────────────────────────────────────────
     if args.market_id:
         print(f"\n  Recording market: {args.market_id}")
-        print(f"  ⚠️  Single-market mode requires a token_id (clobTokenId) for WS subscription.")
-        print(f"     Use --asset or --all mode to auto-discover markets with token IDs.")
+        print("  ⚠️  Single-market mode requires a token_id (clobTokenId) for WS subscription.")
+        print("     Use --asset or --all mode to auto-discover markets with token IDs.")
         sys.exit(1)
 
     # ── Asset mode ─────────────────────────────────────────────────────
@@ -689,7 +689,7 @@ async def main() -> None:
             # Get token_id for WS subscription (clobTokenIds from Gamma API)
             ws_token_id = info.get("yes_token_id") or info.get("no_token_id")
             if not ws_token_id:
-                print(f"     ⚠️  No clobTokenIds found — skipping")
+                print("     ⚠️  No clobTokenIds found — skipping")
                 continue
 
             if use_parquet:
@@ -729,7 +729,7 @@ async def main() -> None:
         sys.exit(1)
 
     print(f"\n  📡 Recording {len(all_tasks)} markets...")
-    print(f"  Press Ctrl+C to stop early\n")
+    print("  Press Ctrl+C to stop early\n")
 
     # ── Wait for all tasks ────────────────────────────────────────────
     try:
@@ -739,7 +739,7 @@ async def main() -> None:
 
     # ── Summary ────────────────────────────────────────────────────────
     print(f"\n{'═' * 65}")
-    print(f"  RECORDING SUMMARY")
+    print("  RECORDING SUMMARY")
     print(f"{'═' * 65}")
 
     if use_parquet:

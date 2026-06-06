@@ -2,16 +2,16 @@
 Generate realistic synthetic market data with both trending and mean-reverting regimes,
 plus backtest both strategies to verify PLAN_MEJORAS success criteria.
 """
-import random
 import asyncio
+import random
 from datetime import datetime, timedelta
 
 from src.backtesting.data_loader import HistoricalDataset
-from src.domain.value_objects.market_tick import MarketTick
 from src.domain.entities.market import Market
 from src.domain.enums.asset import Asset
-from src.domain.enums.window import Window
 from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
+from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import SignalType
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
@@ -141,7 +141,7 @@ def run_strategy_backtest(strategy, config, market, dataset, verbose=False):
             else:
                 sig = loop.run_until_complete(strategy.should_enter(market, tick))
                 if sig.type == SignalType.BUY_YES:
-                    amount = config.position_size_usdc
+                    amount = config.position_size_pusd
                     slippage = tick.spread * 0.5
                     fill_price = min(tick.yes_price + slippage, 0.999)
                     shares = amount / fill_price
@@ -216,7 +216,7 @@ def print_verification(name, r, asset, window, criteria):
     print(f"  {name} — {asset} {window}")
     print(f"  {'─' * 70}")
     if r["trades"] == 0:
-        print(f"  ⚠️  0 trades — strategy found no entries")
+        print("  ⚠️  0 trades — strategy found no entries")
         return
 
     checks = {
@@ -241,8 +241,8 @@ if __name__ == "__main__":
     random.seed(42)
 
     print(f"\n{'═' * 72}")
-    print(f"  VERIFICACIÓN DE CRITERIOS PLAN_MEJORAS")
-    print(f"  Datos: régimen-switching (tendencias + reversiones)")
+    print("  VERIFICACIÓN DE CRITERIOS PLAN_MEJORAS")
+    print("  Datos: régimen-switching (tendencias + reversiones)")
     print(f"{'═' * 72}")
 
     # ── Generar datos ─────────────────────────────────────────────────
@@ -253,14 +253,14 @@ if __name__ == "__main__":
     dataset_eth_15m_ticks = [t for i, t in enumerate(dataset_eth_5m.ticks) if i % 2 == 0]
 
     # ── BuyAboveThreshold: barrer parámetros ─────────────────────────
-    print(f"\n  🔍 BUY ABOVE THRESHOLD — Barriendo parámetros...")
+    print("\n  🔍 BUY ABOVE THRESHOLD — Barriendo parámetros...")
 
     bat_configs = [
-        BuyAboveThresholdConfig(threshold=0.70, stop_loss_pct=0.10, target_price=0.85, required_ticks=2, position_size_usdc=10.0),
-        BuyAboveThresholdConfig(threshold=0.70, stop_loss_pct=0.10, target_price=0.90, required_ticks=2, position_size_usdc=10.0),
-        BuyAboveThresholdConfig(threshold=0.72, stop_loss_pct=0.12, target_price=0.88, required_ticks=2, position_size_usdc=10.0),
-        BuyAboveThresholdConfig(threshold=0.68, stop_loss_pct=0.08, target_price=0.82, required_ticks=2, position_size_usdc=10.0),
-        BuyAboveThresholdConfig(threshold=0.70, stop_loss_pct=0.15, target_price=0.95, required_ticks=3, position_size_usdc=10.0),
+        BuyAboveThresholdConfig(threshold=0.70, stop_loss_pct=0.10, target_price=0.85, required_ticks=2, position_size_pusd=10.0),
+        BuyAboveThresholdConfig(threshold=0.70, stop_loss_pct=0.10, target_price=0.90, required_ticks=2, position_size_pusd=10.0),
+        BuyAboveThresholdConfig(threshold=0.72, stop_loss_pct=0.12, target_price=0.88, required_ticks=2, position_size_pusd=10.0),
+        BuyAboveThresholdConfig(threshold=0.68, stop_loss_pct=0.08, target_price=0.82, required_ticks=2, position_size_pusd=10.0),
+        BuyAboveThresholdConfig(threshold=0.70, stop_loss_pct=0.15, target_price=0.95, required_ticks=3, position_size_pusd=10.0),
     ]
 
     best_bat_btc = None
@@ -282,14 +282,14 @@ if __name__ == "__main__":
             best_bat_eth = dict(r, config=f"th={cfg.threshold} sl={cfg.stop_loss_pct} tg={cfg.target_price}")
 
     # ── Mean Reversion: barrer parámetros ────────────────────────────
-    print(f"\n  🔍 MEAN REVERSION — Barriendo parámetros...")
+    print("\n  🔍 MEAN REVERSION — Barriendo parámetros...")
 
     mr_configs = [
-        MeanReversionConfig(entry_zscore=-2.0, exit_zscore=0.5, stop_loss_pct=0.05, ma_window=20, position_size_usdc=10.0),
-        MeanReversionConfig(entry_zscore=-2.0, exit_zscore=0.0, stop_loss_pct=0.03, ma_window=20, position_size_usdc=10.0),
-        MeanReversionConfig(entry_zscore=-2.5, exit_zscore=0.5, stop_loss_pct=0.05, ma_window=20, position_size_usdc=10.0),
-        MeanReversionConfig(entry_zscore=-1.5, exit_zscore=0.0, stop_loss_pct=0.03, ma_window=20, position_size_usdc=10.0),
-        MeanReversionConfig(entry_zscore=-2.0, exit_zscore=1.0, stop_loss_pct=0.05, ma_window=20, position_size_usdc=10.0),
+        MeanReversionConfig(entry_zscore=-2.0, exit_zscore=0.5, stop_loss_pct=0.05, ma_window=20, position_size_pusd=10.0),
+        MeanReversionConfig(entry_zscore=-2.0, exit_zscore=0.0, stop_loss_pct=0.03, ma_window=20, position_size_pusd=10.0),
+        MeanReversionConfig(entry_zscore=-2.5, exit_zscore=0.5, stop_loss_pct=0.05, ma_window=20, position_size_pusd=10.0),
+        MeanReversionConfig(entry_zscore=-1.5, exit_zscore=0.0, stop_loss_pct=0.03, ma_window=20, position_size_pusd=10.0),
+        MeanReversionConfig(entry_zscore=-2.0, exit_zscore=1.0, stop_loss_pct=0.05, ma_window=20, position_size_pusd=10.0),
     ]
 
     best_mr_btc = None
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     eth_criteria = (0.8, 1.3, 0.45)
 
     print(f"\n{'═' * 72}")
-    print(f"  RESULTADOS FINALES")
+    print("  RESULTADOS FINALES")
     print(f"{'═' * 72}")
 
     print_verification("BuyAboveThreshold (BEST)", best_bat_btc, "BTC", "5m", btc_criteria)
@@ -326,7 +326,7 @@ if __name__ == "__main__":
 
     # ── Portfolio combinado ──────────────────────────────────────────
     print(f"\n  {'─' * 70}")
-    print(f"  PORTFOLIO COMBINADO (BAT + MR, 50/50 allocation)")
+    print("  PORTFOLIO COMBINADO (BAT + MR, 50/50 allocation)")
     print(f"  {'─' * 70}")
 
     # Combine PnLs from both strategies on the same data
@@ -337,7 +337,7 @@ if __name__ == "__main__":
     # BAT best
     bat_cfg = BuyAboveThresholdConfig(
         threshold=0.70, stop_loss_pct=0.10, target_price=0.85,
-        required_ticks=2, position_size_usdc=5.0,  # Half size for 50/50
+        required_ticks=2, position_size_pusd=5.0,  # Half size for 50/50
     )
     bat_cfg.validate()
     market = make_market(dataset)
@@ -350,7 +350,7 @@ if __name__ == "__main__":
 
     mr_cfg = MeanReversionConfig(
         entry_zscore=-2.0, exit_zscore=0.5, stop_loss_pct=0.05,
-        ma_window=20, position_size_usdc=5.0,  # Half size for 50/50
+        ma_window=20, position_size_pusd=5.0,  # Half size for 50/50
     )
     mr_cfg.validate()
     market = make_market(dataset)
@@ -385,10 +385,10 @@ if __name__ == "__main__":
     print(f"     Combined Balance: ${combined_balance:.2f}")
 
     print(f"\n{'═' * 72}")
-    print(f"  CONCLUSIÓN")
+    print("  CONCLUSIÓN")
     print(f"{'═' * 72}")
-    print(f"  Los criterios PLAN_MEJORAS se pueden cumplir con datos que")
-    print(f"  contienen patrones de mercado reales (tendencias + reversiones).")
-    print(f"  La validación definitiva requiere datos históricos reales de")
-    print(f"  Polymarket, no datos sintéticos.")
+    print("  Los criterios PLAN_MEJORAS se pueden cumplir con datos que")
+    print("  contienen patrones de mercado reales (tendencias + reversiones).")
+    print("  La validación definitiva requiere datos históricos reales de")
+    print("  Polymarket, no datos sintéticos.")
     print(f"{'═' * 72}\n")

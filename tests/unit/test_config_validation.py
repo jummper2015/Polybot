@@ -93,8 +93,8 @@ class TestBuyAboveThresholdConfig:
         config.validate()  # No debe lanzar
 
     def test_min_volume_validation(self):
-        """min_volume_usdc se acepta con cualquier valor (sin validación explícita)."""
-        config = BuyAboveThresholdConfig(min_volume_usdc=0.0, threshold=0.75, target_price=0.90)
+        """min_volume_pusd se acepta con cualquier valor (sin validación explícita)."""
+        config = BuyAboveThresholdConfig(min_volume_pusd=0.0, threshold=0.75, target_price=0.90)
         config.validate()  # No debe lanzar
 
 
@@ -161,16 +161,16 @@ class TestMeanReversionConfig:
             with pytest.raises(ValueError, match="max_spread"):
                 config.validate()
 
-    def test_min_volume_usdc_zero_or_negative_raises(self):
-        """min_volume_usdc debe ser > 0."""
+    def test_min_volume_pusd_zero_or_negative_raises(self):
+        """min_volume_pusd debe ser > 0."""
         for bad in (0.0, -100.0):
-            config = MeanReversionConfig(min_volume_usdc=bad)
-            with pytest.raises(ValueError, match="min_volume_usdc"):
+            config = MeanReversionConfig(min_volume_pusd=bad)
+            with pytest.raises(ValueError, match="min_volume_pusd"):
                 config.validate()
 
-    def test_position_size_usdc_zero_or_negative_raises(self):
-        """position_size_usdc debe ser > 0."""
+    def test_position_size_pusd_zero_or_negative_raises(self):
+        """position_size_pusd debe ser > 0."""
         for bad in (0.0, -10.0):
-            config = MeanReversionConfig(position_size_usdc=bad)
-            with pytest.raises(ValueError, match="position_size_usdc"):
+            config = MeanReversionConfig(position_size_pusd=bad)
+            with pytest.raises(ValueError, match="position_size_pusd"):
                 config.validate()

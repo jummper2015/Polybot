@@ -350,3 +350,71 @@ QUEUE_CONFIDENCE = Histogram(
     ["side"],
     buckets=[0.0, 0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 1.0],
 )
+
+# ══════════════════════════════════════════════════════════════
+# DATA API — CROSS-VERIFICATION (Real Trading)
+# ══════════════════════════════════════════════════════════════
+POSITION_CROSS_VERIFY_DISCREPANCIES = Gauge(
+    "polybot_position_cross_verify_discrepancies",
+    "Number of position discrepancies between local DB and Data API. -1 = query failed",
+)
+
+# ══════════════════════════════════════════════════════════════
+# REGIME AWARENESS (P11.1)
+# ══════════════════════════════════════════════════════════════
+REGIME_CURRENT = Gauge(
+    "polybot_regime_current",
+    "Current market regime per asset/window (1 = active, 0 = inactive)",
+    ["asset", "window", "regime"],
+)
+REGIME_CONFIDENCE = Gauge(
+    "polybot_regime_confidence",
+    "Confidence of the current regime classification (0.0-1.0)",
+    ["asset", "window", "regime"],
+)
+REGIME_CLASSIFICATIONS = Counter(
+    "polybot_regime_classifications_total",
+    "Total number of regime classifications per regime and asset",
+    ["asset", "window", "regime"],
+)
+STRATEGY_SKIPPED_BY_REGIME = Counter(
+    "polybot_strategy_skipped_by_regime_total",
+    "Times a strategy was skipped due to regime incompatibility",
+    ["strategy", "regime"],
+)
+STRATEGY_ACTIVE_IN_REGIME = Counter(
+    "polybot_strategy_active_in_regime_total",
+    "Times a strategy was evaluated in a compatible regime",
+    ["strategy", "regime"],
+)
+REGIME_ORCHESTRATOR_ENABLED = Gauge(
+    "polybot_regime_orchestrator_enabled",
+    "Whether the RegimeAwareOrchestrator is active (1=enabled, 0=disabled)",
+)
+
+# ══════════════════════════════════════════════════════════════
+# ENSEMBLE SIGNAL ENGINE (P11.2)
+# ══════════════════════════════════════════════════════════════
+ENSEMBLE_SIGNALS = Counter(
+    "polybot_ensemble_signals_total",
+    "Ensemble signal outcomes (buy_yes, conflict_hold, etc.)",
+    ["outcome"],
+)
+ENSEMBLE_CONFLICTS = Counter(
+    "polybot_ensemble_conflicts_total",
+    "Times ensemble detected conflicting signals (BUY vs SELL)",
+)
+ENSEMBLE_AGREEMENT_BONUS = Counter(
+    "polybot_ensemble_agreement_bonus_total",
+    "Times agreement bonus was applied (2+ strategies agreed)",
+)
+ENSEMBLE_CONTRIBUTIONS = Counter(
+    "polybot_ensemble_contributions_total",
+    "Per-strategy contribution count to ensemble signals",
+    ["strategy"],
+)
+ENSEMBLE_WEIGHTS = Gauge(
+    "polybot_ensemble_strategy_weight",
+    "Current ensemble weight per strategy",
+    ["strategy"],
+)

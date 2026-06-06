@@ -96,7 +96,7 @@ class BacktestMetrics:
                 "target_price":       self._result.config.target_price,
                 "required_ticks":     self._result.config.required_ticks,
                 "timeout_minutes":    self._result.config.timeout_minutes,
-                "position_size_usdc": self._result.config.position_size_usdc,
+                "position_size_pusd": self._result.config.position_size_pusd,
             },
         }
 
@@ -272,7 +272,7 @@ class BacktestMetrics:
                 "stop_loss_pct":      result.config.stop_loss_pct,
                 "target_price":       result.config.target_price,
                 "required_ticks":     result.config.required_ticks,
-                "position_size_usdc": result.config.position_size_usdc,
+                "position_size_pusd": result.config.position_size_pusd,
                 "sharpe_ratio":       metrics["risk"]["sharpe_ratio"],
                 "win_rate":           metrics["performance"]["win_rate"],
                 "profit_factor":      metrics["performance"]["profit_factor"],

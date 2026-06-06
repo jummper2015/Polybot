@@ -9,6 +9,7 @@ import structlog
 
 from src.backtesting.engine import BacktestResult
 from src.backtesting.metrics import BacktestMetrics
+from src.quantitative.post_trade import PostTradeAnalyzer
 
 logger = structlog.get_logger(__name__)
 
@@ -29,9 +30,16 @@ class BacktestReporter:
         self,
         result:    BacktestResult,
         prefix:    str | None = None,
+        post_trade: bool = True,
     ) -> dict[str, Path]:
         """
         Guarda el resultado completo en JSON y las posiciones en CSV.
+
+        Args:
+            result: BacktestResult to save.
+            prefix: Optional filename prefix.
+            post_trade: If True, also generates a PostTradeAnalyzer report.
+
         Retorna las rutas de los archivos creados.
         """
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -43,13 +51,20 @@ class BacktestReporter:
         json_path = self._save_json(result, metrics, stem)
         csv_path  = self._save_csv(result, stem)
 
+        paths = {"json": json_path, "csv": csv_path}
+
+        if post_trade:
+            pt_path = self.save_post_trade_report(result, prefix=prefix)
+            if pt_path:
+                paths["post_trade"] = pt_path
+
         logger.info(
             "backtest_results_saved",
             json=str(json_path),
             csv=str(csv_path),
         )
 
-        return {"json": json_path, "csv": csv_path}
+        return paths
 
     def save_sweep(
         self,
@@ -75,6 +90,74 @@ class BacktestReporter:
             writer.writerows(comparisons)
 
         logger.info("sweep_results_saved", path=str(path), rows=len(comparisons))
+        return path
+
+    def save_post_trade_report(
+        self,
+        result: BacktestResult,
+        prefix: str | None = None,
+    ) -> Path | None:
+        """
+        Run PostTradeAnalyzer on backtest result and save report as JSON.
+
+        Generates a post_trade_analysis.json file with:
+        - Expectancy and profit factor
+        - Exit reason attribution
+        - Win/loss streaks and drawdown
+        - Sharpe estimate
+
+        Returns the path to the saved file, or None if no closed positions.
+        """
+        closed = result.closed_positions
+        if not closed:
+            logger.info("post_trade_skipped_no_positions")
+            return None
+
+        analyzer = PostTradeAnalyzer()
+        report = analyzer.analyze(
+            closed,
+            initial_balance=result.initial_balance,
+        )
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        prefix = prefix or f"{result.asset}_{result.window}"
+        stem = f"{prefix}_post_trade_{timestamp}"
+        path = self._dir / f"{stem}.json"
+
+        output = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "asset": result.asset,
+            "window": result.window,
+            "dataset_start": result.dataset_start.isoformat(),
+            "dataset_end": result.dataset_end.isoformat(),
+            "dataset_ticks": result.dataset_ticks,
+            "trades": [
+                {
+                    "pnl": round(p.pnl or 0, 4),
+                    "exit_reason": p.exit_reason or "",
+                    "entry_tick": p.entry_tick,
+                    "exit_tick": p.exit_tick,
+                }
+                for p in closed
+            ],
+            "post_trade": report.to_dict(),
+        }
+
+        with open(path, "w") as f:
+            json.dump(output, f, indent=2, default=str)
+
+        logger.info(
+            "post_trade_report_saved",
+            path=str(path),
+            total_trades=report.total_trades,
+            expectancy=round(report.expectancy, 4),
+            profit_factor=(
+                round(report.profit_factor, 2)
+                if report.profit_factor != float("inf")
+                else "inf"
+            ),
+        )
+
         return path
 
     def print_summary(self, result: BacktestResult) -> None:
@@ -135,9 +218,23 @@ class BacktestReporter:
         """Guarda métricas completas en JSON."""
         path = self._dir / f"{stem}_metrics.json"
 
+        # Include per-trade data for downstream post-trade analysis
+        trades = []
+        for pos in result.closed_positions:
+            trades.append({
+                "pnl": round(pos.pnl or 0, 4),
+                "pnl_pct": round(pos.pnl_pct or 0, 4),
+                "exit_reason": pos.exit_reason or "",
+                "entry_tick": pos.entry_tick,
+                "exit_tick": pos.exit_tick,
+                "duration_ticks": pos.duration_ticks,
+                "amount": round(pos.amount, 4),
+            })
+
         output = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "metrics":      metrics,
+            "trades":       trades,
         }
 
         with open(path, "w") as f:

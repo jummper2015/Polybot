@@ -1,6 +1,8 @@
 # src/core/container.py
 
+import os
 import time
+from typing import TYPE_CHECKING
 
 import structlog
 from redis.asyncio import Redis as AsyncRedis
@@ -15,8 +17,14 @@ from src.execution.real_handler import RealTradingHandler
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.db.repository import SQLAlchemyRepository
 from src.infrastructure.db.session import create_engine, create_session_factory
-# ServiceStatusEnum imported locally in health_check_all() to avoid
-# circular import with API schemas loaded at FastAPI startup.
+
+if TYPE_CHECKING:
+    from src.interfaces.api.schemas.health_schema import ServiceStatusEnum
+else:
+    # ServiceStatusEnum imported locally in health_check_all() to avoid
+    # circular import with API schemas loaded at FastAPI startup.
+    ServiceStatusEnum = None  # type: ignore[assignment]
+from src.infrastructure.polymarket.data_api_client import DataAPIClient
 from src.infrastructure.polymarket.http_client import PolymarketHTTPClient
 from src.infrastructure.polymarket.ws_client import PolymarketWSClient
 from src.infrastructure.security.audit_log import AuditLogger
@@ -33,10 +41,10 @@ from src.interfaces.telegram.handlers.alerts import TelegramNotifier
 from src.risk.engine import RiskEngine, RiskEngineConfig
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
-from src.strategies.engine import StrategyEngine
 from src.strategies.filters.multi_timeframe import MultiTimeframeFilter
 from src.strategies.mean_reversion.config import MeanReversionConfig
 from src.strategies.mean_reversion.strategy import MeanReversionStrategy
+from src.strategies.regime_aware import build_orchestrator
 
 logger = structlog.get_logger(__name__)
 
@@ -73,7 +81,9 @@ class Container:
         self.security_guard    = None
         self.ws_client         = None
         self.http_client       = None
-        self.strategy_engine   = None
+        self.strategy_engine   = None  # Underlying StrategyEngine (for MTF/BAT wiring)
+        self.strategy_orchestrator = None  # RegimeAwareOrchestrator (P11.1)
+        self.data_api_client   = None  # Data API client (real mode only)
         self.risk_engine       = None
         self.execution_handler = None
         self.telegram_bot      = None
@@ -125,10 +135,25 @@ class Container:
             audit_logger=self.audit_logger,
         )
 
-        # ── 4. Polymarket API (HTTP + WS) ─────────────────────────────
+        # ── 4. Polymarket API (HTTP + WS + Data API) ──────────────────
         log.info("init_step", step="polymarket")
         self.ws_client   = PolymarketWSClient(redis=self.redis)
-        self.http_client = PolymarketHTTPClient(ws_client=self.ws_client, redis=self.redis)
+        rest_only = os.environ.get("REST_ONLY", "").lower() in ("true", "1", "yes")
+        self.http_client = PolymarketHTTPClient(
+            ws_client=self.ws_client, redis=self.redis, rest_only=rest_only,
+        )
+        if rest_only:
+            log.info("rest_only_mode_enabled", reason="WebSocket blocked — using REST polling")
+
+        # Data API client (solo en modo real — necesita wallet address)
+        if self.config.trading_mode == "real" and self.key_manager:
+            try:
+                self.data_api_client = DataAPIClient(
+                    wallet_address=self.key_manager.wallet_address,
+                )
+                log.info("data_api_client_initialized")
+            except Exception as e:
+                log.warning("data_api_client_init_failed", error=str(e))
 
         # ── 5. Strategy Engine ────────────────────────────────────────
         log.info("init_step", step="strategy_engine")
@@ -137,7 +162,7 @@ class Container:
             required_ticks     = self.config.bat_required_ticks,
             stop_loss_pct      = self.config.bat_stop_loss_pct,
             target_price       = self.config.bat_target_price,
-            position_size_usdc = self.config.bat_position_size_usdc,
+            position_size_pusd = self.config.bat_position_size_pusd,
         )
         mr_config = MeanReversionConfig(
             ma_window          = getattr(self.config, 'mr_ma_window', 20),
@@ -146,14 +171,29 @@ class Container:
             stop_loss_pct      = getattr(self.config, 'mr_stop_loss_pct', 0.10),
             timeout_minutes    = getattr(self.config, 'mr_timeout_minutes', 45.0),
             max_spread         = getattr(self.config, 'mr_max_spread', 0.03),
-            min_volume_usdc    = getattr(self.config, 'mr_min_volume_usdc', 1000.0),
-            position_size_usdc = getattr(self.config, 'mr_position_size_usdc', 10.0),
+            min_volume_pusd    = getattr(self.config, 'mr_min_volume_pusd', 1000.0),
+            position_size_pusd = getattr(self.config, 'mr_position_size_pusd', 10.0),
         )
-        self.strategy_engine = StrategyEngine(
-            strategies=[
-                BuyAboveThresholdStrategy(config=bat_config),
-                MeanReversionStrategy(config=mr_config),
-            ]
+
+        bat_strategy = BuyAboveThresholdStrategy(config=bat_config)
+        mr_strategy  = MeanReversionStrategy(config=mr_config)
+
+        # P11.1/P11.2: Build RegimeAwareOrchestrator (drop-in for StrategyEngine)
+        # Auto-creates regime bindings from each strategy's allowed_regimes config.
+        # ensemble_mode=True (P11.2): aggregates all active strategies instead of first-wins.
+        ensemble_enabled = os.environ.get(
+            "ENSEMBLE_MODE", "true"
+        ).lower() in ("true", "1", "yes")
+        self.strategy_orchestrator = build_orchestrator(
+            strategies=[bat_strategy, mr_strategy],
+            ensemble_mode=ensemble_enabled,
+        )
+        # Keep raw engine reference for MTF wiring and BAT settings
+        self.strategy_engine = self.strategy_orchestrator._engine
+        log.info(
+            "regime_aware_orchestrator_built",
+            strategies=self.strategy_orchestrator.registered_strategies(),
+            ensemble_mode=ensemble_enabled,
         )
 
         # ── 6. Risk Engine ────────────────────────────────────────────
@@ -173,7 +213,6 @@ class Container:
 
         # ── 7. Telegram Bot (necesario antes de notifier) ─────────────
         log.info("init_step", step="telegram")
-        import os
         try:
             self.telegram_bot = create_bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
             self.telegram_dp  = create_dispatcher(
@@ -244,13 +283,13 @@ class Container:
         )
         self.trading_service = TradingService(
             market_service=self.market_service,
-            strategy_engine=self.strategy_engine,
+            strategy_engine=self.strategy_orchestrator,  # P11.1: Regime-aware drop-in
             risk_engine=self.risk_engine,
             execution_handler=self.execution_handler,
             repository=self.repository,
             notifier=self.notifier,
             portfolio_service=self.portfolio_service,
-            position_size_usdc=self.config.bat_position_size_usdc,
+            position_size_pusd=self.config.bat_position_size_pusd,
             trading_mode=self.config.trading_mode,
         )
 
@@ -343,7 +382,14 @@ class Container:
             except Exception as e:
                 log.error("shutdown_redis_error", error=str(e))
 
-        # 6. Cierra DB engine
+        # 6. Cierra Data API client
+        if self.data_api_client:
+            try:
+                await self.data_api_client.close()
+            except Exception as e:
+                log.error("shutdown_data_api_error", error=str(e))
+
+        # 7. Cierra DB engine
         if self.engine:
             try:
                 await self.engine.dispose()
@@ -498,7 +544,7 @@ class Container:
 
             if key == "threshold":
                 if not 0.50 <= value <= 0.95:
-                    return False, f"Threshold debe estar entre 0.50 y 0.95"
+                    return False, "Threshold debe estar entre 0.50 y 0.95"
                 updates["threshold"] = value
                 if value >= current.target_price:
                     updates["target_price"] = min(value + 0.05, 0.99)
@@ -507,26 +553,26 @@ class Container:
 
             elif key == "stop_loss":
                 if not 0.05 <= value <= 0.50:
-                    return False, f"Stop loss debe estar entre 5% y 50%"
+                    return False, "Stop loss debe estar entre 5% y 50%"
                 updates["stop_loss_pct"] = value
 
             elif key == "target_price":
                 if not 0.76 <= value <= 0.99:
-                    return False, f"Target price debe estar entre 0.76 y 0.99"
+                    return False, "Target price debe estar entre 0.76 y 0.99"
                 if value <= current.threshold:
                     return False, f"Target price debe ser > threshold ({current.threshold})"
                 updates["target_price"] = value
 
             elif key == "position_size":
                 if not 1.0 <= value <= 500.0:
-                    return False, f"Position size debe estar entre 1 y 500 USDC"
-                updates["position_size_usdc"] = value
+                    return False, "Position size debe estar entre 1 y 500 USDC"
+                updates["position_size_pusd"] = value
                 # También actualiza el trading service
                 self.trading_service._position_size = value
 
             elif key == "required_ticks":
                 if not 1 <= value <= 20:
-                    return False, f"Required ticks debe estar entre 1 y 20"
+                    return False, "Required ticks debe estar entre 1 y 20"
                 updates["required_ticks"] = int(value)
 
             else:
@@ -543,7 +589,7 @@ class Container:
                 "threshold": current.threshold,
                 "required_ticks": current.required_ticks,
                 "max_spread": current.max_spread,
-                "min_volume_usdc": current.min_volume_usdc,
+                "min_volume_pusd": current.min_volume_pusd,
                 "blocked_hours": current.blocked_hours,
                 "stop_loss_pct": current.stop_loss_pct,
                 "stop_drop_floor": current.stop_drop_floor,
@@ -551,7 +597,7 @@ class Container:
                 "target_price": current.target_price,
                 "hedge_drop_pct": current.hedge_drop_pct,
                 "hedge_enabled": current.hedge_enabled,
-                "position_size_usdc": current.position_size_usdc,
+                "position_size_pusd": current.position_size_pusd,
             }
             new_config_dict.update(updates)
             new_config = BuyAboveThresholdConfig(**new_config_dict)
@@ -640,13 +686,13 @@ class Container:
             # 5. Recrear TradingService en modo real
             self.trading_service = TradingService(
                 market_service=self.market_service,
-                strategy_engine=self.strategy_engine,
+                strategy_engine=self.strategy_orchestrator,  # P11.1: Regime-aware
                 risk_engine=self.risk_engine,
                 execution_handler=self.execution_handler,
                 repository=self.repository,
                 notifier=self.notifier,
                 portfolio_service=self.portfolio_service,
-                position_size_usdc=self.config.bat_position_size_usdc,
+                position_size_pusd=self.config.bat_position_size_pusd,
                 trading_mode="real",
             )
 
@@ -681,6 +727,223 @@ class Container:
         except Exception as e:
             logger.error("start_bot_error", error=str(e))
             return False, f"Error al iniciar: {e}"
+
+    # ------------------------------------------------------------------
+    # DATA API — CROSS-VERIFICATION (Real Trading)
+    # ------------------------------------------------------------------
+
+    async def cross_verify_positions(self) -> dict:
+        """
+        Compara posiciones locales (DB) vs Data API de Polymarket.
+
+        Solo disponible en modo real. En modo paper, retorna estado
+        skipped indicando que no aplica.
+
+        El algoritmo:
+          1. Obtiene posiciones abiertas locales desde el repositorio.
+          2. Consulta Data API /positions para la misma wallet.
+          3. Para cada posición local, busca coincidencia en Data API:
+             - conditionId == market_id
+             - Compara shares (±5% tolerancia)
+          4. Detecta posiciones en Data API sin equivalente local
+             (posible discrepancia — el bot podría no saber de una posición).
+
+        Returns:
+            dict con:
+              - status: "ok" | "degraded" | "down" | "skipped"
+              - local_count: int — posiciones abiertas locales
+              - data_api_count: int — posiciones en Data API
+              - matched: int — posiciones que coinciden
+              - discrepancies: list[dict] — discrepancias encontradas
+              - error: str | None — mensaje de error si falló la consulta
+        """
+        from src.infrastructure.observability.metrics import (
+            POSITION_CROSS_VERIFY_DISCREPANCIES,
+        )
+
+        # Solo en modo real
+        if self._runtime_mode != "real":
+            return {
+                "status": "skipped",
+                "reason": "Cross-verification only available in real mode",
+                "local_count": 0,
+                "data_api_count": 0,
+                "matched": 0,
+                "discrepancies": [],
+                "error": None,
+            }
+
+        if self.data_api_client is None:
+            return {
+                "status": "down",
+                "reason": "Data API client not initialized (missing wallet?)",
+                "local_count": 0,
+                "data_api_count": 0,
+                "matched": 0,
+                "discrepancies": [],
+                "error": "data_api_client_not_initialized",
+            }
+
+        try:
+            # 1. Obtiene posiciones abiertas locales
+            local_positions = await self.repository.get_positions(
+                mode=self._runtime_mode, open_only=True
+            )
+            local_count = len(local_positions)
+
+            if local_count == 0:
+                # Sin posiciones locales — no hay qué verificar
+                POSITION_CROSS_VERIFY_DISCREPANCIES.set(0)
+                return {
+                    "status": "ok",
+                    "local_count": 0,
+                    "data_api_count": 0,
+                    "matched": 0,
+                    "discrepancies": [],
+                    "error": None,
+                }
+
+            # 2. Consulta Data API (filtra por los condition_ids locales)
+            local_condition_ids = [p.market_id for p in local_positions]
+            try:
+                data_api_positions = await self.data_api_client.get_positions(
+                    condition_ids=local_condition_ids,
+                )
+            except Exception as e:
+                logger.warning("cross_verify_data_api_failed", error=str(e))
+                POSITION_CROSS_VERIFY_DISCREPANCIES.set(-1)
+                return {
+                    "status": "degraded",
+                    "reason": f"Data API query failed: {e}",
+                    "local_count": local_count,
+                    "data_api_count": 0,
+                    "matched": 0,
+                    "discrepancies": [],
+                    "error": str(e),
+                }
+
+            # 3. Indexa posiciones de Data API por conditionId
+            data_api_by_condition: dict[str, dict] = {}
+            for dp in data_api_positions:
+                cid = dp.get("conditionId", "")
+                if cid:
+                    # Si hay múltiples outcomes para el mismo mercado (YES+NO),
+                    # acumulamos el size (el bot compra de un solo lado)
+                    if cid in data_api_by_condition:
+                        data_api_by_condition[cid]["size"] = (
+                            data_api_by_condition[cid].get("size", 0)
+                            + dp.get("size", 0)
+                        )
+                    else:
+                        data_api_by_condition[cid] = dp
+
+            # 4. Compara posición por posición
+            discrepancies = []
+            matched = 0
+
+            for local in local_positions:
+                dp = data_api_by_condition.get(local.market_id)
+
+                if dp is None:
+                    # Posición local sin equivalente en Data API
+                    discrepancies.append({
+                        "type": "missing_in_data_api",
+                        "market_id": local.market_id,
+                        "asset": local.asset,
+                        "local_shares": round(local.shares, 4),
+                        "detail": "Position exists locally but not in Data API",
+                    })
+                    continue
+
+                # Compara shares (tolerancia 5%)
+                local_shares = local.shares
+                api_size = float(dp.get("size", 0))
+
+                if local_shares <= 0:
+                    continue
+
+                diff_pct = abs(api_size - local_shares) / local_shares
+
+                if diff_pct <= 0.05:
+                    matched += 1
+                else:
+                    discrepancies.append({
+                        "type": "size_mismatch",
+                        "market_id": local.market_id,
+                        "asset": local.asset,
+                        "local_shares": round(local_shares, 4),
+                        "data_api_shares": round(api_size, 4),
+                        "diff_pct": round(diff_pct * 100, 2),
+                        "detail": (
+                            f"Size mismatch: local={local_shares:.4f} vs "
+                            f"data_api={api_size:.4f} ({diff_pct:.1%})"
+                        ),
+                    })
+
+            # 5. Detecta posiciones en Data API sin equivalente local
+            local_ids = {p.market_id for p in local_positions}
+            for cid, dp in data_api_by_condition.items():
+                if cid not in local_ids and float(dp.get("size", 0)) > 0:
+                    discrepancies.append({
+                        "type": "missing_in_local",
+                        "market_id": cid,
+                        "asset": dp.get("asset", "")[:20],
+                        "data_api_shares": round(float(dp.get("size", 0)), 4),
+                        "detail": (
+                            f"Position exists in Data API but not locally "
+                            f"(title: {str(dp.get('title', ''))[:60]})"
+                        ),
+                    })
+
+            # 6. Determina estado
+            num_discrepancies = len(discrepancies)
+            POSITION_CROSS_VERIFY_DISCREPANCIES.set(num_discrepancies)
+
+            if num_discrepancies == 0:
+                status = "ok"
+            elif num_discrepancies <= 1 and all(
+                d["type"] == "size_mismatch" for d in discrepancies
+            ):
+                status = "degraded"
+            else:
+                status = "down"
+
+            result = {
+                "status": status,
+                "local_count": local_count,
+                "data_api_count": len(data_api_positions),
+                "matched": matched,
+                "discrepancies": discrepancies,
+                "error": None,
+            }
+
+            if discrepancies:
+                logger.warning(
+                    "cross_verify_discrepancies_found",
+                    count=num_discrepancies,
+                    types=[d["type"] for d in discrepancies],
+                )
+            else:
+                logger.debug(
+                    "cross_verify_ok",
+                    local_count=local_count,
+                    matched=matched,
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error("cross_verify_unexpected_error", error=str(e))
+            POSITION_CROSS_VERIFY_DISCREPANCIES.set(-1)
+            return {
+                "status": "down",
+                "reason": f"Unexpected error: {e}",
+                "local_count": 0,
+                "data_api_count": 0,
+                "matched": 0,
+                "discrepancies": [],
+                "error": str(e),
+            }
 
     async def stop_bot(self) -> tuple[bool, str]:
         """Detiene el bot de trading desde Telegram."""

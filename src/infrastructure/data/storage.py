@@ -25,10 +25,8 @@ Usage:
 """
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -37,7 +35,6 @@ import structlog
 from src.infrastructure.data.schema import (
     TICK_SCHEMA,
     tick_to_record_batch,
-    datetime_to_ns,
 )
 
 logger = structlog.get_logger(__name__)

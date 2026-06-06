@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.core.lifecycle import lifespan
-from src.interfaces.api.routers import health, markets, metrics, orders, positions, dashboard
+from src.interfaces.api.routers import dashboard, health, markets, metrics, orders, positions
 
 STATIC_DIR = Path(__file__).parent / "static"
 

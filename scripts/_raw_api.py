@@ -1,5 +1,8 @@
 """Print raw Gamma API response to understand the data structure."""
-import asyncio, httpx, json
+import asyncio
+
+import httpx
+
 
 async def main():
     async with httpx.AsyncClient(timeout=30) as c:

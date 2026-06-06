@@ -3,23 +3,23 @@ Minimal test: verify backtesting engine works by generating data with clear,
 known-profitable patterns. Proves engine correctness, then leaves real-data
 validation as next step.
 """
-import random
 import asyncio
-from datetime import datetime, timedelta
 import math
+import random
+from datetime import datetime, timedelta
 
+from backtest_mean_reversion import run_mr_backtest
 from src.backtesting.data_loader import HistoricalDataset
-from src.domain.value_objects.market_tick import MarketTick
 from src.domain.entities.market import Market
 from src.domain.enums.asset import Asset
-from src.domain.enums.window import Window
 from src.domain.enums.market_status import MarketStatus
+from src.domain.enums.window import Window
+from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import SignalType
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
 from src.strategies.mean_reversion.config import MeanReversionConfig
 from src.strategies.mean_reversion.strategy import MeanReversionStrategy
-from backtest_mean_reversion import run_mr_backtest, print_result
 
 
 def generate_trending_data(asset, window, n_ticks=3000) -> HistoricalDataset:
@@ -145,7 +145,7 @@ def backtest_bat(dataset, config):
             else:
                 sig = loop.run_until_complete(strategy.should_enter(market, tick))
                 if sig.type == SignalType.BUY_YES:
-                    amount = config.position_size_usdc
+                    amount = config.position_size_pusd
                     slippage = tick.spread * 0.5
                     fill_price = min(tick.yes_price + slippage, 0.999)
                     shares = amount / fill_price
@@ -205,12 +205,12 @@ if __name__ == "__main__":
     random.seed(42)
 
     print(f"\n{'═' * 70}")
-    print(f"  VERIFICACIÓN: Motor de backtesting + Estrategias")
-    print(f"  Datos con patrones conocidos y rentables")
+    print("  VERIFICACIÓN: Motor de backtesting + Estrategias")
+    print("  Datos con patrones conocidos y rentables")
     print(f"{'═' * 70}")
 
     # ── Test 1: BuyAboveThreshold on TRENDING data ────────────────────
-    print(f"\n  1️⃣  BUY ABOVE THRESHOLD — Datos con tendencia alcista (0.60→0.90)")
+    print("\n  1️⃣  BUY ABOVE THRESHOLD — Datos con tendencia alcista (0.60→0.90)")
 
     trending = generate_trending_data("BTC", "5m", 3000)
     print(f"     Dataset: {trending.tick_count} ticks, "
@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
     bat_cfg = BuyAboveThresholdConfig(
         threshold=0.70, stop_loss_pct=0.10, target_price=0.85,
-        required_ticks=2, position_size_usdc=10.0,
+        required_ticks=2, position_size_pusd=10.0,
     )
     bat_cfg.validate()
     r = backtest_bat(trending, bat_cfg)
@@ -240,7 +240,7 @@ if __name__ == "__main__":
         print(f"     Price range: {min(t.yes_price for t in trending.ticks):.4f} - {max(t.yes_price for t in trending.ticks):.4f}")
 
     # ── Test 2: MeanReversion on OSCILLATING data ─────────────────────
-    print(f"\n  2️⃣  MEAN REVERSION — Datos oscilantes (0.65↔0.85 senoidal)")
+    print("\n  2️⃣  MEAN REVERSION — Datos oscilantes (0.65↔0.85 senoidal)")
 
     oscillating = generate_oscillating_data("BTC", "5m", 3000)
     print(f"     Dataset: {oscillating.tick_count} ticks, "
@@ -251,7 +251,7 @@ if __name__ == "__main__":
                            config=MeanReversionConfig(
                                entry_zscore=-2.0, exit_zscore=0.5,
                                stop_loss_pct=0.05, ma_window=20,
-                               position_size_usdc=10.0,
+                               position_size_pusd=10.0,
                            ))
 
     # Override: use oscillating data instead of synthetic
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     mr_market = make_market(oscillating)
     mr_strat = MeanReversionStrategy(config=MeanReversionConfig(
         entry_zscore=-2.0, exit_zscore=0.5, stop_loss_pct=0.05,
-        ma_window=20, position_size_usdc=10.0,
+        ma_window=20, position_size_pusd=10.0,
     ))
     mr_strat._get_or_create_state(oscillating.market_id)
     mr_state = mr_strat._states[oscillating.market_id]
@@ -327,13 +327,13 @@ if __name__ == "__main__":
 
     # ── Summary ───────────────────────────────────────────────────────
     print(f"\n{'═' * 70}")
-    print(f"  VEREDICTO FINAL")
+    print("  VEREDICTO FINAL")
     print(f"{'═' * 70}")
     print(f"  BuyAboveThreshold en datos con tendencia: {'✅ RENTABLE' if bat_ok else '❌ NO RENTABLE'}")
     print(f"  MeanReversion en datos oscilantes:       {'✅ RENTABLE' if mr_ok else '❌ NO RENTABLE'}")
-    print(f"")
-    print(f"  El motor de backtesting funciona correctamente.")
-    print(f"  Cada estrategia es rentable con el tipo de datos adecuado.")
-    print(f"  La validación de criterios PLAN_MEJORAS (Sharpe>1.0, PF>1.3, WR>45%)")
-    print(f"  requiere datos históricos reales de Polymarket.")
+    print("")
+    print("  El motor de backtesting funciona correctamente.")
+    print("  Cada estrategia es rentable con el tipo de datos adecuado.")
+    print("  La validación de criterios PLAN_MEJORAS (Sharpe>1.0, PF>1.3, WR>45%)")
+    print("  requiere datos históricos reales de Polymarket.")
     print(f"{'═' * 70}\n")

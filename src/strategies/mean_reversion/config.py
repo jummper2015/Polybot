@@ -13,7 +13,7 @@ class MeanReversionConfig:
 
     # ── SMA y Z-Score ─────────────────────────────────────────────────
     ma_window:      int   = 20       # Ticks para calcular SMA y desviación estándar
-    entry_zscore:   float = -2.0     # Compra cuando z_score cae por debajo (sobreventa)
+    entry_zscore:   float = -1.5     # Compra cuando z_score cae por debajo (sobreventa)
     exit_zscore:    float = 0.0      # Vende cuando z_score retorna a media o superior
 
     # ── Condiciones de salida ─────────────────────────────────────────
@@ -22,13 +22,20 @@ class MeanReversionConfig:
 
     # ── Filtros ───────────────────────────────────────────────────────
     max_spread:      float = 0.03    # Spread máximo bid-ask (3%)
-    min_volume_usdc: float = 1000.0  # Volumen mínimo 24h en USDC
+    min_volume_pusd: float = 1000.0  # Volumen mínimo 24h en pUSD
     blocked_hours: list[tuple[int, int]] = field(
         default_factory=lambda: [(0, 6)]  # Bloquea 00:00-06:00 UTC
     )
 
     # ── Tamaño de posición ────────────────────────────────────────────
-    position_size_usdc: float = 10.0  # USDC por operación (RiskEngine puede reducir)
+    position_size_pusd: float = 10.0  # pUSD por operación (RiskEngine puede reducir)
+
+    # ── Regime Awareness (P11.1) ───────────────────────────────────────
+    # MR works well in range-bound (CHOP), trending, and event_driven.
+    # Disabled in PANIC (extreme volatility) and ILLIQUID (wide spreads).
+    allowed_regimes: list[str] = field(
+        default_factory=lambda: ["chop", "trend", "event_driven"]
+    )
 
     def validate(self) -> None:
         """
@@ -68,12 +75,12 @@ class MeanReversionConfig:
                 f"max_spread debe estar entre 0 y 1.0, got {self.max_spread}"
             )
 
-        if self.min_volume_usdc <= 0:
+        if self.min_volume_pusd <= 0:
             raise ValueError(
-                f"min_volume_usdc debe ser > 0, got {self.min_volume_usdc}"
+                f"min_volume_pusd debe ser > 0, got {self.min_volume_pusd}"
             )
 
-        if self.position_size_usdc <= 0:
+        if self.position_size_pusd <= 0:
             raise ValueError(
-                f"position_size_usdc debe ser > 0, got {self.position_size_usdc}"
+                f"position_size_pusd debe ser > 0, got {self.position_size_pusd}"
             )

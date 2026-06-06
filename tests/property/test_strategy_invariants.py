@@ -108,7 +108,7 @@ def make_bat_config(threshold: float) -> BuyAboveThresholdConfig:
         threshold=threshold,
         required_ticks=1,
         max_spread=0.10,            # Permisivo para no interferir
-        min_volume_usdc=100.0,      # Permisivo
+        min_volume_pusd=100.0,      # Permisivo
         blocked_hours=[],           # ⚠️ Sin restricción horaria (evita flaky tests)
         stop_loss_pct=0.15,
         stop_drop_floor=round(threshold * 0.6, 2),  # Siempre < threshold
@@ -116,7 +116,7 @@ def make_bat_config(threshold: float) -> BuyAboveThresholdConfig:
         target_price=round(min(threshold + 0.15, 0.99), 2),  # Siempre > threshold
         hedge_drop_pct=0.20,
         hedge_enabled=False,        # Desactivado para tests limpios
-        position_size_usdc=10.0,
+        position_size_pusd=10.0,
     )
 
 
@@ -324,9 +324,9 @@ def make_mr_config(
         stop_loss_pct=stop_loss_pct,
         timeout_minutes=45.0,
         max_spread=0.10,
-        min_volume_usdc=100.0,
+        min_volume_pusd=100.0,
         blocked_hours=[],       # ⚠️ Sin restricción horaria
-        position_size_usdc=10.0,
+        position_size_pusd=10.0,
     )
 
 

@@ -1,0 +1,142 @@
+{
+  "generated_at": "2026-06-02T11:28:31.201165+00:00",
+  "asset": "BTC",
+  "ticks_sampled": 1000,
+  "components": {
+    "P9.1_FillSimulator": {
+      "component": "P9.1_FillSimulator",
+      "samples": 1000,
+      "elapsed_ms": 22.0,
+      "ticks_per_sec": 91096.0,
+      "entry": {
+        "mean_slippage": 0.0005,
+        "median_slippage": 0.0005,
+        "max_slippage": 0.0005,
+        "min_slippage": 0.0005
+      },
+      "exit": {
+        "mean_slippage": 0.0005,
+        "median_slippage": 0.0005,
+        "max_slippage": 0.0005
+      },
+      "fill_quality": {
+        "mean_fill_ratio": 1.0,
+        "pct_full_fill": 100.0
+      },
+      "distributions": {
+        "p95_gt_p50": 100.0,
+        "mean_p95_ratio": 4.0
+      },
+      "checks": {
+        "all_slippage_non_negative": true,
+        "all_fill_ratios_in_range": true,
+        "entry_exit_slip_similar": true,
+        "mid_prices_valid": true
+      }
+    },
+    "P9.2_SlippageEngine": {
+      "component": "P9.2_SlippageEngine",
+      "samples": 700,
+      "base_slippage": {
+        "mean": 0.0005,
+        "median": 0.0005
+      },
+      "adjusted_slippage": {
+        "mean": 0.000826,
+        "median": 0.00065
+      },
+      "multipliers": {
+        "vol_mean": 1.2642,
+        "vol_range": [
+          0.7,
+          2.33
+        ],
+        "regime_mean": 1.2857,
+        "regime_range": [
+          1.0,
+          2.0
+        ],
+        "total_mean": 1.6515
+      },
+      "tracker": {
+        "samples_before": 0,
+        "samples_after": 20,
+        "calibration_before": 1.0,
+        "calibration_after": 1.0
+      },
+      "checks": {
+        "vol_affects_slippage": true,
+        "regime_affects_slippage": true,
+        "adjusted_differs_from_base": true,
+        "tracker_calibration_stable": true
+      }
+    },
+    "P9.3_QueuePosition": {
+      "component": "P9.3_QueuePosition",
+      "samples": 500,
+      "fill_probability": {
+        "mean": 1.0,
+        "median": 1.0,
+        "max": 1.0,
+        "pct_viable": 100.0,
+        "pct_zero": 0.0
+      },
+      "time_to_fill": {
+        "mean_seconds": 1.56,
+        "median_seconds": 1.6,
+        "pct_inf": 0.0
+      },
+      "adverse_selection": {
+        "mean_bps": 0.14,
+        "median_bps": 0.12,
+        "max_bps": 0.5
+      },
+      "confidence": {
+        "mean": 0.5,
+        "low_conf_pct": 0.0
+      },
+      "maker_vs_taker": {
+        "maker_decisions": 0,
+        "taker_decisions": 500,
+        "maker_pct": 0.0
+      },
+      "checks": {
+        "all_probs_in_range": true,
+        "adverse_non_negative": true,
+        "both_modes_used": false,
+        "confidence_in_range": true
+      }
+    },
+    "P9.4_SmartRouter": {
+      "component": "P9.4_SmartRouter",
+      "samples": 500,
+      "routing": {
+        "taker": 500,
+        "maker": 0,
+        "split": 0,
+        "maker_pct": 0.0
+      },
+      "splitting": {
+        "total_splits": 0,
+        "avg_chunks": 0,
+        "max_chunks": 0
+      },
+      "routing_quality": {
+        "forced_taker_constraints": 500,
+        "pct_constrained": 100.0
+      },
+      "checks": {
+        "all_modes_used": true,
+        "splits_occur": false,
+        "maker_viable_sometimes": false
+      }
+    }
+  },
+  "summary": {
+    "checks_total": 15,
+    "checks_passed": 12,
+    "checks_failed": 3,
+    "pass_rate_pct": 80.0,
+    "all_passed": false
+  }
+}

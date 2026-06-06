@@ -40,8 +40,8 @@ class SecurityGuard:
     """
 
     # Guardrails absolutos — NO modificar
-    HARD_MAX_AMOUNT_USDC = 500.0
-    HARD_MIN_AMOUNT_USDC = 1.0
+    HARD_MAX_AMOUNT_PUSD = 500.0
+    HARD_MIN_AMOUNT_PUSD = 1.0
 
     def __init__(
         self,
@@ -109,12 +109,12 @@ class SecurityGuard:
 
         # ── Check 4: Amount guardrails ────────────────────────────────
         checks["amount_valid"] = (
-            self.HARD_MIN_AMOUNT_USDC <= amount <= self.HARD_MAX_AMOUNT_USDC
+            self.HARD_MIN_AMOUNT_PUSD <= amount <= self.HARD_MAX_AMOUNT_PUSD
         )
         if not checks["amount_valid"]:
             reason = (
                 f"SECURITY: amount={amount:.2f} USDC fuera de guardrails "
-                f"[{self.HARD_MIN_AMOUNT_USDC:.0f}, {self.HARD_MAX_AMOUNT_USDC:.0f}]"
+                f"[{self.HARD_MIN_AMOUNT_PUSD:.0f}, {self.HARD_MAX_AMOUNT_PUSD:.0f}]"
             )
             await self._audit.log(
                 action=AuditAction.GUARDRAIL_TRIGGERED,
@@ -193,9 +193,9 @@ class SecurityGuard:
 
         # 6. Position size dentro de guardrails
         checklist["position_size_safe"] = (
-            self.HARD_MIN_AMOUNT_USDC
-            <= self._config.bat_position_size_usdc
-            <= self.HARD_MAX_AMOUNT_USDC
+            self.HARD_MIN_AMOUNT_PUSD
+            <= self._config.bat_position_size_pusd
+            <= self.HARD_MAX_AMOUNT_PUSD
         )
 
         all_passed = all(checklist.values())
@@ -233,6 +233,6 @@ class SecurityGuard:
                                     if self._keys else False,
             "rate_limit_remaining": await self._rate_limiter.get_remaining(),
             "rate_limit_max":       10,
-            "guardrail_max_usdc":   self.HARD_MAX_AMOUNT_USDC,
-            "guardrail_min_usdc":   self.HARD_MIN_AMOUNT_USDC,
+            "guardrail_max_usdc":   self.HARD_MAX_AMOUNT_PUSD,
+            "guardrail_min_usdc":   self.HARD_MIN_AMOUNT_PUSD,
         }

@@ -36,23 +36,29 @@ from src.infrastructure.security.security_guard import SecurityGuard
 logger = structlog.get_logger(__name__)
 
 # ── Guardrails hardcoded (NO son configurables) ───────────────────────
-MAX_ORDER_AMOUNT_USDC = 500.0    # Nunca más de 500 USDC por orden
-MIN_ORDER_AMOUNT_USDC = 1.0     # Nunca menos de 1 USDC por orden
+# CLOB V2 (abril 2026): colateral migrado de USDC.e → pUSD (Polymarket USD)
+MAX_ORDER_AMOUNT_PUSD = 500.0    # Nunca más de 500 pUSD por orden
+MIN_ORDER_AMOUNT_PUSD = 1.0     # Nunca menos de 1 pUSD por orden
+DEFAULT_TICK_SIZE     = "0.01"   # Tick size default (se pisa con market_info)
 
 # ── Configuración de retry ────────────────────────────────────────────
 MAX_RETRIES       = 3
 RETRY_BACKOFF     = [1.0, 2.0, 4.0]  # Segundos entre intentos
 
-# Errores HTTP que son retryables (errores de red, no de lógica)
-RETRYABLE_STATUS  = {408, 429, 500, 502, 503, 504}
+# Errores HTTP que son retryables:
+# - 408 Request Timeout, 425 Too Early (matching engine restart),
+# - 429 Rate Limited, 5xx (server errors)
+RETRYABLE_STATUS  = {408, 425, 429, 500, 502, 503, 504}
 
 TRADING_MODE = TradingMode.REAL
 
 
 class RealTradingHandler(IExecutionHandler):
     """
-    Ejecuta órdenes reales on-chain en Polymarket via CLOB API.
+    Ejecuta órdenes reales on-chain en Polymarket via CLOB V2 API.
     Implementa el mismo contrato IExecutionHandler que PaperTradingHandler.
+
+    CLOB V2 (abril 2026): colateral pUSD, EIP-712 domain V2, sin nonces.
 
     GARANTÍAS DE SEGURIDAD:
     - Guardrails hardcoded que no pueden superarse por config
@@ -83,7 +89,7 @@ class RealTradingHandler(IExecutionHandler):
 
         logger.info(
             "real_handler_initialized",
-            max_order_usdc=MAX_ORDER_AMOUNT_USDC,
+            max_order_usdc=MAX_ORDER_AMOUNT_PUSD,
             max_retries=MAX_RETRIES,
             circuit_breaker=circuit_breaker is not None,
         )
@@ -157,7 +163,7 @@ class RealTradingHandler(IExecutionHandler):
             )
 
         # Ajusta al máximo permitido si excede (no debería por RiskEngine)
-        safe_amount = min(amount, MAX_ORDER_AMOUNT_USDC)
+        safe_amount = min(amount, MAX_ORDER_AMOUNT_PUSD)
 
         # ── Obtiene token ID del mercado ──────────────────────────────
         token_id, target_price = await self._get_token_and_price(
@@ -186,6 +192,32 @@ class RealTradingHandler(IExecutionHandler):
             market_id=market_id,
             amount=safe_amount,
         )
+
+        # ── Resolver tick_size y neg_risk desde Redis metadata ────────
+        market_meta = await self._redis.get_market_metadata(market_id)
+        order_tick_size = str(
+            market_meta.get("tick_size", DEFAULT_TICK_SIZE)
+        )
+        order_neg_risk = bool(market_meta.get("neg_risk", False))
+        market_mos = float(
+            market_meta.get("min_order_size", MIN_ORDER_AMOUNT_PUSD)
+        )
+
+        # ── MOS guardrail: usar el max del hardcoded y el del mercado ──
+        effective_min = max(MIN_ORDER_AMOUNT_PUSD, market_mos)
+        mos_result = self._apply_mos_guardrail(safe_amount, effective_min, market_id)
+        if mos_result is not None:
+            await self._audit.log(
+                action=AuditAction.GUARDRAIL_TRIGGERED,
+                details={"reason": mos_result, "signal": signal.type.value},
+                market_id=market_id,
+                amount=safe_amount,
+            )
+            entry_span.set_attribute("error", mos_result[:200])
+            entry_span.set_attribute("execution.success", "false")
+            return self._failed_result(
+                market_id, signal, safe_amount, 0.0, mos_result
+            )
 
         # ── Crea la orden en DB (estado PENDING antes de la API call) ─
         order = Order(
@@ -216,6 +248,8 @@ class RealTradingHandler(IExecutionHandler):
                 price=target_price,
                 size=safe_amount,
                 order_id=order_id,
+                tick_size=order_tick_size,
+                neg_risk=order_neg_risk,
             ),
             log=log,
         )
@@ -353,6 +387,11 @@ class RealTradingHandler(IExecutionHandler):
             SignalType.BUY_YES if position.side == "YES" else SignalType.BUY_NO,
         )
 
+        # ── Resolver tick_size y neg_risk para exit ───────────────────
+        market_meta = await self._redis.get_market_metadata(position.market_id)
+        exit_tick_size = market_meta.get("tick_size", DEFAULT_TICK_SIZE)
+        exit_neg_risk = market_meta.get("neg_risk", False)
+
         api_response, error = await self._call_with_retry(
             operation="exit_order",
             order_id=order_id,
@@ -362,6 +401,8 @@ class RealTradingHandler(IExecutionHandler):
                 price=current_price,
                 size=position.shares,  # Vendemos todas las shares
                 order_id=order_id,
+                tick_size=exit_tick_size,
+                neg_risk=exit_neg_risk,
             ),
             log=log,
         )
@@ -457,7 +498,7 @@ class RealTradingHandler(IExecutionHandler):
         return await self.execute_entry(
             signal=hedge_signal,
             market_id=position.market_id,
-            amount=min(hedge_amount, MAX_ORDER_AMOUNT_USDC),
+            amount=min(hedge_amount, MAX_ORDER_AMOUNT_PUSD),
         )
 
     # ------------------------------------------------------------------
@@ -510,25 +551,25 @@ class RealTradingHandler(IExecutionHandler):
                 position.amount, 0.0, error
             )
 
-        # Valor redimido: shares * 1.0 si ganamos (cada token ganador = 1 USDC)
-        redeemed_usdc = float(api_response.get("redeemed_amount", 0.0))
+        # Valor redimido: shares * 1.0 si ganamos (cada token ganador = 1 pUSD)
+        redeemed_pusd = float(api_response.get("redeemed_amount", 0.0))
 
         position.close(
-            exit_price=redeemed_usdc / position.shares if position.shares > 0 else 0,
+            exit_price=redeemed_pusd / position.shares if position.shares > 0 else 0,
             reason="market_resolved_redeemed",
         )
         await self._repo.save_position(position)
 
         await self._audit.log(
             action=AuditAction.REAL_REDEEM_SUCCESS,
-            details={"redeemed_usdc": redeemed_usdc},
+            details={"redeemed_pusd": redeemed_pusd},
             market_id=position.market_id,
-            amount=redeemed_usdc,
+            amount=redeemed_pusd,
         )
 
         log.info(
             "redeem_success",
-            redeemed_usdc=redeemed_usdc,
+            redeemed_pusd=redeemed_pusd,
             pnl=position.pnl,
         )
 
@@ -536,7 +577,7 @@ class RealTradingHandler(IExecutionHandler):
             order_id     = redeem_order_id,
             market_id    = position.market_id,
             side         = position.side,
-            amount       = redeemed_usdc,
+            amount       = redeemed_pusd,
             target_price = 1.0,
             fill_price   = 1.0,
             slippage     = 0.0,
@@ -631,8 +672,29 @@ class RealTradingHandler(IExecutionHandler):
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
 
+                # ── Post-only mode detection (matching engine restart) ──
+                # CLOB V2 returns 503 with code="post_only_mode" after restarts.
+                # Parse retry_after_seconds from body or Retry-After header.
+                if status == 503:
+                    post_only_info = self._parse_post_only_response(e.response)
+                    if post_only_info:
+                        wait = post_only_info["retry_after"]
+                        log.warning(
+                            "post_only_mode_detected",
+                            operation=operation,
+                            retry_after_seconds=wait,
+                            attempt=attempt + 1,
+                        )
+                        last_error = f"Post-only mode (attempt {attempt + 1}/{MAX_RETRIES})"
+                        REAL_ORDER_RETRIES.labels(
+                            market_id="unknown", operation=operation
+                        ).inc()
+                        if attempt < MAX_RETRIES - 1:
+                            await asyncio.sleep(wait)
+                        continue
+
                 # 4xx: error de lógica, no reintentamos
-                if status < 500 and status != 429:
+                if status < 500 and status != 429 and status != 425:
                     error_msg = (
                         f"HTTP {status}: {e.response.text[:200]}"
                     )
@@ -644,7 +706,7 @@ class RealTradingHandler(IExecutionHandler):
                     )
                     return None, error_msg
 
-                # 5xx o 429: reintentamos
+                # 425 (matching engine restart), 429, 5xx: reintentamos
                 last_error = f"HTTP {status} (attempt {attempt + 1}/{MAX_RETRIES})"
                 REAL_ORDER_RETRIES.labels(
                     market_id="unknown", operation=operation
@@ -705,16 +767,16 @@ class RealTradingHandler(IExecutionHandler):
         Devuelve None si todo OK, o string con el motivo si falla.
         ESTOS LÍMITES NO SON CONFIGURABLES — son límites de seguridad.
         """
-        if amount > MAX_ORDER_AMOUNT_USDC:
+        if amount > MAX_ORDER_AMOUNT_PUSD:
             return (
-                f"GUARDRAIL: amount={amount:.2f} USDC > "
-                f"max_allowed={MAX_ORDER_AMOUNT_USDC:.2f} USDC (hardcoded limit)"
+                f"GUARDRAIL: amount={amount:.2f} pUSD > "
+                f"max_allowed={MAX_ORDER_AMOUNT_PUSD:.2f} pUSD (hardcoded limit)"
             )
 
-        if amount < MIN_ORDER_AMOUNT_USDC:
+        if amount < MIN_ORDER_AMOUNT_PUSD:
             return (
-                f"GUARDRAIL: amount={amount:.2f} USDC < "
-                f"min_allowed={MIN_ORDER_AMOUNT_USDC:.2f} USDC"
+                f"GUARDRAIL: amount={amount:.2f} pUSD < "
+                f"min_allowed={MIN_ORDER_AMOUNT_PUSD:.2f} pUSD"
             )
 
         if not market_id or len(market_id) < 10:
@@ -722,9 +784,65 @@ class RealTradingHandler(IExecutionHandler):
 
         return None  # Todos los guardrails pasaron
 
+    @staticmethod
+    def _apply_mos_guardrail(
+        amount: float, mos: float, market_id: str
+    ) -> str | None:
+        """
+        Verifica que el monto de la orden cumpla con el minimum order
+        size (MOS) del mercado. El MOS puede variar por mercado y se
+        obtiene del /book endpoint (cacheado en Redis).
+
+        Devuelve None si OK, o string con el motivo si la orden es
+        demasiado pequeña para este mercado.
+        """
+        if amount < mos:
+            return (
+                f"GUARDRAIL: amount={amount:.2f} pUSD < "
+                f"market_min_order_size={mos:.2f} pUSD "
+                f"(market_id={market_id[:20]}...)"
+            )
+        return None
+
     # ------------------------------------------------------------------
     # HELPERS INTERNOS
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_post_only_response(response: httpx.Response) -> dict | None:
+        """
+        Detecta el modo post-only en respuestas 503 del CLOB V2.
+
+        Polymarket activa post-only mode tras reinicios del matching engine.
+        La respuesta incluye:
+          {"error": "...", "code": "post_only_mode", "retry_after_seconds": N}
+
+        También se envía el header HTTP Retry-After.
+
+        Returns:
+            {"retry_after": float} si es post-only mode, None si no.
+            El valor se limita a [1, 120] segundos.
+        """
+        try:
+            import json as _json
+            body = _json.loads(response.text)
+        except Exception:
+            return None
+
+        if body.get("code") != "post_only_mode":
+            return None
+
+        # Prioridad: retry_after_seconds del body > Retry-After header > default 30s
+        retry = float(body.get("retry_after_seconds", 0))
+        if retry <= 0:
+            retry_header = response.headers.get("Retry-After", "")
+            try:
+                retry = float(retry_header)
+            except (ValueError, TypeError):
+                retry = 30.0  # Default conservador
+
+        # Limitar a rango seguro: 1-120 segundos
+        return {"retry_after": max(1.0, min(retry, 120.0))}
 
     async def _get_token_and_price(
         self,

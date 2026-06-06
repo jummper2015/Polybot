@@ -42,7 +42,7 @@ class TradingService:
         repository:         IRepositoryPort,
         notifier:           INotificationPort,
         portfolio_service:  PortfolioService,
-        position_size_usdc: float = 10.0,
+        position_size_pusd: float = 10.0,
         trading_mode:       str   = "paper",
     ):
         self._market_svc   = market_service
@@ -52,7 +52,7 @@ class TradingService:
         self._repo         = repository
         self._notifier     = notifier
         self._portfolio    = portfolio_service
-        self._position_size = position_size_usdc
+        self._position_size = position_size_pusd
         self._trading_mode  = trading_mode
 
         self._running      = False
@@ -264,7 +264,10 @@ class TradingService:
                             market, entry_signal, tick
                         )
 
-                    SIGNALS_GENERATED.inc()
+                    SIGNALS_GENERATED.labels(
+                        type=entry_signal.type.value,
+                        asset=market.asset.value,
+                    ).inc()
 
             except Exception as e:
                 log.error("market_cycle_error", error=str(e))

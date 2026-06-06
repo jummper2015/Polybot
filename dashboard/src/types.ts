@@ -122,3 +122,16 @@ export interface OrdersListResponse {
   orders: Order[];
   total: number;
 }
+
+// ── Regime (P11.1) ────────────────────────────────────────────────────
+export type RegimeType = 'trend' | 'chop' | 'panic' | 'illiquid' | 'event_driven';
+
+export interface RegimeInfo {
+  asset: string;
+  window: string;
+  regime: RegimeType;
+  confidence: number;
+  strategies_active: string[];
+  strategies_inactive: string[];
+  orchestrator_enabled: boolean;
+}

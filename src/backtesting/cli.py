@@ -100,7 +100,7 @@ def main():
         stop_loss_pct      = args.stop_loss,
         target_price       = args.target,
         required_ticks     = args.ticks,
-        position_size_usdc = args.position_size,
+        position_size_pusd = args.position_size,
     )
     risk_config = RiskEngineConfig()
     reporter    = BacktestReporter()

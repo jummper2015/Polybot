@@ -13,22 +13,20 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from src.infrastructure.data.schema import (
-    TICK_SCHEMA,
     TICK_FIELDS,
+    TICK_SCHEMA,
+    datetime_to_ns,
     tick_to_record_batch,
     tick_to_record_batch_from_market_ticks,
-    datetime_to_ns,
 )
 from src.infrastructure.data.storage import (
-    ParquetTickWriter,
     MultiAssetRecorder,
+    ParquetTickWriter,
 )
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # SCHEMA TESTS

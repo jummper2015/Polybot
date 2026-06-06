@@ -4,6 +4,7 @@ import { KpiRow } from '../components/Health';
 import { EquityChart } from '../components/EquityChart';
 import { MarketsTable } from '../components/MarketsTable';
 import { TradesTable } from '../components/TradesTable';
+import { RegimePanel } from '../components/RegimePanel';
 import { Spinner } from '../components/Common';
 import { usePolling } from '../hooks/useApi';
 import type { DashboardSummary } from '../types';
@@ -72,6 +73,11 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
         <EquityChart mode={modeParam} />
+      </section>
+
+      {/* Regime Panel (P11.1) */}
+      <section className="section">
+        <RegimePanel />
       </section>
 
       {/* Tables */}

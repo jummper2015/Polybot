@@ -18,13 +18,12 @@ import pytest
 from src.backtesting.data_loader import DataLoader, HistoricalDataset
 from src.backtesting.parquet_loader import ParquetDataLoader
 from src.backtesting.replay_engine import (
-    ReplayEngine,
     ReplayConfig,
+    ReplayEngine,
     ReplayResult,
 )
 from src.domain.value_objects.market_tick import MarketTick
 from src.infrastructure.data.schema import TICK_SCHEMA, datetime_to_ns
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # FIXTURES

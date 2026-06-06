@@ -25,6 +25,8 @@ KEY_WS_STATE     = "ws:state:{market_id}"
 KEY_PAPER_BALANCE = "paper:balance"
 KEY_WS_LAST_PRICE = "ws:price:{market_id}"
 KEY_ORDERBOOK     = "orderbook:{market_id}"
+KEY_MARKET_META   = "market:meta:{market_id}"
+KEY_DISCOVERY_CURSOR = "discovery:cursor"
 
 
 class RedisClient:
@@ -59,6 +61,9 @@ class RedisClient:
             "volume_24h":    market.volume_24h,
             "expiry":        market.expiry.isoformat(),
             "discovered_at": market.discovered_at.isoformat(),
+            "neg_risk":      market.neg_risk,
+            "tick_size":     market.tick_size,
+            "min_order_size": market.min_order_size,
         }
         await self._redis.setex(key, ttl_seconds, orjson.dumps(data).decode())
 
@@ -120,7 +125,58 @@ class RedisClient:
             volume_24h    = data["volume_24h"],
             expiry        = datetime.fromisoformat(data["expiry"]),
             discovered_at = datetime.fromisoformat(data["discovered_at"]),
+            neg_risk      = data.get("neg_risk", False),
+            tick_size     = data.get("tick_size", "0.01"),
+            min_order_size = data.get("min_order_size", 1.0),
         )
+
+    # ──────────────────────────────────────────────────────────────────
+    # Market Metadata (tick_size, neg_risk, min_order_size)
+    # ──────────────────────────────────────────────────────────────────
+
+    async def set_market_metadata(
+        self,
+        market_id: str,
+        updates:   dict,
+        ttl_seconds: int = 3900,
+    ) -> None:
+        """
+        Guarda metadatos adicionales del mercado (tick_size, neg_risk,
+        min_order_size) en Redis. Hace merge parcial con los datos
+        existentes — no sobrescribe campos que no se incluyen en updates.
+        """
+        key = KEY_MARKET_META.format(market_id=market_id)
+        existing = await self._redis.get(key)
+        data = orjson.loads(existing) if existing else {}
+        data.update(updates)
+        await self._redis.setex(key, ttl_seconds, orjson.dumps(data).decode())
+
+    async def get_market_metadata(self, market_id: str) -> dict:
+        """
+        Recupera metadatos del mercado desde Redis.
+        Devuelve dict con tick_size, neg_risk, min_order_size (o vacío).
+        """
+        key = KEY_MARKET_META.format(market_id=market_id)
+        data = await self._redis.get(key)
+        return orjson.loads(data) if data else {}
+
+    # ──────────────────────────────────────────────────────────────────
+    # Discovery Cursor (keyset pagination)
+    # ──────────────────────────────────────────────────────────────────
+
+    async def set_discovery_cursor(self, cursor: str) -> None:
+        """
+        Persiste el último cursor de keyset pagination para discovery.
+        Permite retomar desde la última página en el próximo ciclo.
+        TTL de 2 horas — más que suficiente entre ciclos de discovery.
+        """
+        await self._redis.setex(
+            KEY_DISCOVERY_CURSOR, 7200, cursor
+        )
+
+    async def get_discovery_cursor(self) -> str | None:
+        """Recupera el último cursor de discovery, o None."""
+        return await self._redis.get(KEY_DISCOVERY_CURSOR)
 
     # ──────────────────────────────────────────────────────────────────
     # WebSocket State

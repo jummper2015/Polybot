@@ -656,17 +656,17 @@ class TestHighLatency:
                (synchronous check, not affected by latency)
         """
         from src.execution.real_handler import (
-            MAX_ORDER_AMOUNT_USDC,
-            MIN_ORDER_AMOUNT_USDC,
+            MAX_ORDER_AMOUNT_PUSD,
+            MIN_ORDER_AMOUNT_PUSD,
         )
 
         # Guardrails are hardcoded and checked synchronously
         # before any async API calls. This is a safety feature.
-        assert MAX_ORDER_AMOUNT_USDC == 500.0, (
-            f"S5 FAILED: MAX_ORDER_AMOUNT should be 500, got {MAX_ORDER_AMOUNT_USDC}"
+        assert MAX_ORDER_AMOUNT_PUSD == 500.0, (
+            f"S5 FAILED: MAX_ORDER_AMOUNT should be 500, got {MAX_ORDER_AMOUNT_PUSD}"
         )
-        assert MIN_ORDER_AMOUNT_USDC == 1.0, (
-            f"S5 FAILED: MIN_ORDER_AMOUNT should be 1, got {MIN_ORDER_AMOUNT_USDC}"
+        assert MIN_ORDER_AMOUNT_PUSD == 1.0, (
+            f"S5 FAILED: MIN_ORDER_AMOUNT should be 1, got {MIN_ORDER_AMOUNT_PUSD}"
         )
 
     def test_cycle_loop_uses_bounded_gather(self):

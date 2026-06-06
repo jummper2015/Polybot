@@ -179,8 +179,9 @@ async def test_degraded_cache_hit_returns_cached(http_client, ws_client_mock):
     # Pre-condición: forzar entrada en modo degradado
     http_client._degraded_since["test_market"] = time.monotonic() - 10
     cached_tick = make_tick(0.52)
-    http_client._rest_cache["test_market"] = (time.monotonic() - 5, cached_tick)
-    http_client._last_recovery_probe["test_market"] = time.monotonic() - 5
+    # Cache age = 1s (safely within REST_CACHE_TTL=5s, avoiding boundary)
+    http_client._rest_cache["test_market"] = (time.monotonic() - 1, cached_tick)
+    http_client._last_recovery_probe["test_market"] = time.monotonic() - 1
 
     with patch.object(
         http_client, "_fetch_tick_rest", new_callable=AsyncMock

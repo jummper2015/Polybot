@@ -7,7 +7,7 @@ Covers all 7 routers: health, markets, positions, orders,
 dashboard, metrics, and the SPA fallback.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient

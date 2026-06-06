@@ -24,6 +24,7 @@ class IMarketDataPort(ABC):
         self,
         market_id: str,
         callback,           # async callable que recibe MarketTick
+        token_id: str = "",  # asset_id del CLOB para suscripción WS
     ) -> None: ...
 
     @abstractmethod

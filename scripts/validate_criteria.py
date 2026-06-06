@@ -29,6 +29,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
 # Ensure project root is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -148,7 +149,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--position-size", type=float, default=None, dest="position_size",
-        help="BAT position_size_usdc override"
+        help="BAT position_size_pusd override"
     )
     parser.add_argument(
         "--output", type=str, default=None,
@@ -176,14 +177,14 @@ def load_optimal_params() -> dict:
             "stop_loss_pct": top.get("stop_loss_pct", 0.15),
             "target_price": top.get("target_price", 0.90),
             "required_ticks": top.get("required_ticks", 3),
-            "position_size_usdc": top.get("position_size_usdc", 10),
+            "position_size_pusd": top.get("position_size_pusd", 10),
         }
     return {
         "threshold": 0.70,
         "stop_loss_pct": 0.15,
         "target_price": 0.90,
         "required_ticks": 3,
-        "position_size_usdc": 10,
+        "position_size_pusd": 10,
     }
 
 
@@ -325,7 +326,7 @@ def print_results(
           f"stop_loss={config['stop_loss_pct']:.0%} "
           f"target={config['target_price']:.2f} "
           f"ticks={config['required_ticks']} "
-          f"size={config['position_size_usdc']:.0f} USDC")
+          f"size={config['position_size_pusd']:.0f} USDC")
     print()
 
     # ── Per-dataset summary ──────────────────────────────────────────
@@ -695,7 +696,7 @@ def check_data_integrity(data_dir: str) -> tuple[bool, dict]:
                 "sessions": len(sessions),
                 "recorded_at": manifest.get("recorded_at", ""),
             }
-        except Exception as e:
+        except Exception:
             print(f"  {_YELLOW}⚠️  Manifest parse error{_RESET}")
             report["checks"]["manifest_consistent"] = False
     else:
@@ -776,16 +777,16 @@ def main() -> int:
     if args.required_ticks is not None:
         params["required_ticks"] = args.required_ticks
     if args.position_size is not None:
-        params["position_size_usdc"] = args.position_size
+        params["position_size_pusd"] = args.position_size
 
     config = BuyAboveThresholdConfig(
         threshold=params["threshold"],
         stop_loss_pct=params["stop_loss_pct"],
         target_price=params["target_price"],
         required_ticks=params["required_ticks"],
-        position_size_usdc=params["position_size_usdc"],
+        position_size_pusd=params["position_size_pusd"],
         max_spread=0.03,
-        min_volume_usdc=500.0,
+        min_volume_pusd=500.0,
     )
     config.validate()
 
@@ -793,7 +794,7 @@ def main() -> int:
           f"stop_loss={config.stop_loss_pct:.0%} "
           f"target={config.target_price:.2f} "
           f"ticks={config.required_ticks} "
-          f"size={config.position_size_usdc:.0f}")
+          f"size={config.position_size_pusd:.0f}")
     print()
 
     # ── Generate datasets and run backtests ──────────────────────────

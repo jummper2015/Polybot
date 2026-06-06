@@ -1,0 +1,36 @@
+{
+  "data_dir": "/workspaces/Polybot/data/parquet",
+  "checks": {
+    "directory_exists": true,
+    "files_exist": true,
+    "all_readable": true,
+    "schema_valid": true,
+    "prices_valid": true,
+    "spread_valid": true,
+    "timestamps_sorted": true,
+    "manifest_consistent": true,
+    "data_loss_acceptable": true
+  },
+  "warnings": [],
+  "errors": [],
+  "total_files": 152,
+  "total_rows": 20132,
+  "total_size_bytes": 946178,
+  "total_size_mb": 0.9,
+  "timestamp_range": {
+    "min": "2026-05-27T20:54:06+00:00",
+    "max": "2026-06-01T09:15:13+00:00",
+    "span_hours": 108.35
+  },
+  "asset_distribution": {
+    "ETH": 11017,
+    "BTC": 9115
+  },
+  "manifest": {
+    "ticks": 91,
+    "sessions": 4,
+    "recorded_at": "2026-06-01T05:01:06.315296+00:00"
+  },
+  "data_loss_rate_pct": 0,
+  "overall_pass": true
+}

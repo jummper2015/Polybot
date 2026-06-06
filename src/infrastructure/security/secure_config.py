@@ -53,7 +53,7 @@ class SecureConfig:
     bat_required_ticks:     int
     bat_stop_loss_pct:      float
     bat_target_price:       float
-    bat_position_size_usdc: float
+    bat_position_size_pusd: float
     risk_min_balance_usdc:  float
     risk_max_drawdown_pct:  float
     risk_max_exposure_pct:  float
@@ -117,7 +117,7 @@ class SecureConfig:
                 bat_target_price=float(
                     os.environ.get("BAT_TARGET_PRICE", "0.90")
                 ),
-                bat_position_size_usdc=float(
+                bat_position_size_pusd=float(
                     os.environ.get("BAT_POSITION_SIZE_USDC", "10.0")
                 ),
                 risk_min_balance_usdc=float(
@@ -202,7 +202,7 @@ class SecureConfig:
             "bat_required_ticks":     self.bat_required_ticks,
             "bat_stop_loss_pct":      self.bat_stop_loss_pct,
             "bat_target_price":       self.bat_target_price,
-            "bat_position_size_usdc": self.bat_position_size_usdc,
+            "bat_position_size_pusd": self.bat_position_size_pusd,
             "risk_min_balance_usdc":  self.risk_min_balance_usdc,
             "risk_max_drawdown_pct":  self.risk_max_drawdown_pct,
             "risk_max_exposure_pct":  self.risk_max_exposure_pct,

@@ -13,6 +13,7 @@ ENV_API_KEY         = "POLYMARKET_API_KEY"
 ENV_API_SECRET      = "POLYMARKET_API_SECRET"
 ENV_API_PASSPHRASE  = "POLYMARKET_API_PASSPHRASE"
 ENV_WALLET_ADDRESS  = "POLYMARKET_WALLET_ADDRESS"
+ENV_BUILDER_CODE    = "POLYMARKET_BUILDER_CODE"
 
 
 class KeyManager:
@@ -35,6 +36,7 @@ class KeyManager:
             wallet=self._masked_wallet(),
             has_private_key=bool(os.environ.get(ENV_PRIVATE_KEY)),
             has_api_key=bool(os.environ.get(ENV_API_KEY)),
+            has_builder_code=bool(os.environ.get(ENV_BUILDER_CODE)),
         )
 
     # ------------------------------------------------------------------
@@ -70,9 +72,14 @@ class KeyManager:
         """Dirección pública de la wallet (segura para loguear)."""
         return os.environ[ENV_WALLET_ADDRESS]
 
-    # ------------------------------------------------------------------
-    # VALIDACIÓN Y UTILIDADES
-    # ------------------------------------------------------------------
+    @cached_property
+    def builder_code(self) -> str:
+        """
+        Builder code de Polymarket (requerido por CLOB V2 para identificar
+        la entidad que construye la orden).
+        Se genera en https://polymarket.com/settings.
+        """
+        return os.environ.get(ENV_BUILDER_CODE, "")
 
     def _validate_env(self) -> None:
         """

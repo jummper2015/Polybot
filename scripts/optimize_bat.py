@@ -30,7 +30,6 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 # Ensure project root is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -127,7 +126,6 @@ def generate_realistic_dataset(
     - Magnitude: discrete jump of ±10-20% of current price
     - Simulates news events that move prediction markets
     """
-    import math
     import random
     from datetime import datetime, timedelta
 
@@ -362,7 +360,7 @@ def find_robust_params(all_results: dict[str, list[dict]]) -> list[dict]:
                    f"sl={r['stop_loss_pct']:.2f}_"
                    f"tp={r['target_price']:.2f}_"
                    f"tk={r.get('required_ticks', '?')}_"
-                   f"ps={r.get('position_size_usdc', '?')}")
+                   f"ps={r.get('position_size_pusd', '?')}")
 
             if key not in config_stats:
                 config_stats[key] = {
@@ -370,7 +368,7 @@ def find_robust_params(all_results: dict[str, list[dict]]) -> list[dict]:
                     "stop_loss_pct": r["stop_loss_pct"],
                     "target_price": r["target_price"],
                     "required_ticks": r.get("required_ticks", 0),
-                    "position_size_usdc": r.get("position_size_usdc", 0),
+                    "position_size_pusd": r.get("position_size_pusd", 0),
                     "datasets": {},
                 }
 
@@ -445,7 +443,7 @@ def print_robust_results(robust: list[dict], top_n: int = 15) -> None:
             f"{cfg['stop_loss_pct']:>6.0%} "
             f"{cfg['target_price']:>6.2f} "
             f"{cfg['required_ticks']:>4} "
-            f"{cfg['position_size_usdc']:>5.0f} "
+            f"{cfg['position_size_pusd']:>5.0f} "
             f"{cfg['avg_sharpe']:>10.3f} "
             f"{cfg['avg_win_rate']:>7.1%} "
             f"{cfg['avg_profit_factor']:>7.2f} "
@@ -456,13 +454,13 @@ def print_robust_results(robust: list[dict], top_n: int = 15) -> None:
         )
 
     # Per-dataset detail for top 3
-    print(f"\n  PER-DATASET DETAIL FOR TOP 3:\n")
+    print("\n  PER-DATASET DETAIL FOR TOP 3:\n")
     for i, cfg in enumerate(robust[:3]):
         print(f"  #{i+1}: threshold={cfg['threshold']:.2f} "
               f"stop_loss={cfg['stop_loss_pct']:.0%} "
               f"target={cfg['target_price']:.2f} "
               f"ticks={cfg['required_ticks']} "
-              f"size={cfg['position_size_usdc']:.0f} USDC")
+              f"size={cfg['position_size_pusd']:.0f} USDC")
         for ds, stats in sorted(cfg["per_dataset"].items()):
             print(f"     {ds:<8}  sharpe={stats['sharpe_ratio']:>7.3f}  "
                   f"WR={stats['win_rate']:>6.1%}  "
@@ -506,7 +504,7 @@ def save_results(
                 "stop_loss_pct": robust[0]["stop_loss_pct"],
                 "target_price": robust[0]["target_price"],
                 "required_ticks": robust[0]["required_ticks"],
-                "position_size_usdc": robust[0]["position_size_usdc"],
+                "position_size_pusd": robust[0]["position_size_pusd"],
             },
             "top_3": [
                 {
@@ -514,7 +512,7 @@ def save_results(
                     "stop_loss_pct": cfg["stop_loss_pct"],
                     "target_price": cfg["target_price"],
                     "required_ticks": cfg["required_ticks"],
-                    "position_size_usdc": cfg["position_size_usdc"],
+                    "position_size_pusd": cfg["position_size_pusd"],
                     "avg_sharpe": cfg["avg_sharpe"],
                     "avg_win_rate": cfg["avg_win_rate"],
                     "avg_profit_factor": cfg["avg_profit_factor"],
@@ -528,7 +526,7 @@ def save_results(
                     "stop_loss_pct": cfg["stop_loss_pct"],
                     "target_price": cfg["target_price"],
                     "required_ticks": cfg["required_ticks"],
-                    "position_size_usdc": cfg["position_size_usdc"],
+                    "position_size_pusd": cfg["position_size_pusd"],
                     "robustness_score": cfg["robustness_score"],
                     "avg_sharpe": cfg["avg_sharpe"],
                 }
@@ -647,12 +645,12 @@ def main():
 
     if robust:
         best = robust[0]
-        print(f"\n  ✅ Best robust parameters:")
+        print("\n  ✅ Best robust parameters:")
         print(f"     threshold         = {best['threshold']:.2f}")
         print(f"     stop_loss_pct     = {best['stop_loss_pct']:.0%}")
         print(f"     target_price      = {best['target_price']:.2f}")
         print(f"     required_ticks    = {best['required_ticks']}")
-        print(f"     position_size     = {best['position_size_usdc']:.0f} USDC")
+        print(f"     position_size     = {best['position_size_pusd']:.0f} USDC")
         print(f"     avg_sharpe        = {best['avg_sharpe']:.4f}")
         print(f"     robustness_score  = {best['robustness_score']:.4f}")
 
@@ -671,7 +669,7 @@ def main():
         else:
             criteria_met.append(f"⚠️  Profit Factor {best['avg_profit_factor']:.2f} < 1.3 target")
 
-        print(f"\n  Criteria check:")
+        print("\n  Criteria check:")
         for c in criteria_met:
             print(f"     {c}")
 

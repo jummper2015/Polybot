@@ -1,0 +1,31 @@
+{
+  "recorded_at": "2026-06-01T05:01:06.315296+00:00",
+  "total_ticks": 91,
+  "base_dir": "/workspaces/Polybot/data/parquet",
+  "sessions": [
+    {
+      "asset": "BTC",
+      "market_id": "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2",
+      "question": "Will bitcoin hit $1m before GTA VI?",
+      "ticks": 33
+    },
+    {
+      "asset": "BTC",
+      "market_id": "0xd903891c2b9046cae14615afc4c5245370143503f7b2dfc13919acee07a1696d",
+      "question": "What will the price of Bitcoin be on November 4th, 2020?",
+      "ticks": 0
+    },
+    {
+      "asset": "BTC",
+      "market_id": "0x7b02c10a310f38be83ae0dbbb5caa96722a69ae1488b1ac5c2003bccd70ac021",
+      "question": "Will BTC break $15k before 2021?",
+      "ticks": 0
+    },
+    {
+      "asset": "ETH",
+      "market_id": "0xe459d1b598da754c9fd5fc155b6efe3a144aa80abbc7d041fce7d35d903d3c8e",
+      "question": "Will MegaETH perform an airdrop by June 30? ",
+      "ticks": 58
+    }
+  ]
+}

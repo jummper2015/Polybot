@@ -87,6 +87,8 @@ class MarketService:
                         for market in markets:
                             await self._repo.save_market(market)
                             await self._redis.set_market(market, ttl_seconds=3900)
+                            # ── Fetch y cachear market_info (tick_size, MOS, fees) ──
+                            await self._cache_market_info(market)
                             discovered.append(market)
 
                         log.info(
@@ -154,7 +156,7 @@ class MarketService:
             return cached
         return await self._repo.get_market_by_id(market_id)
 
-    async def get_market_tick(self, market_id: str) -> "MarketTick | None":
+    async def get_market_tick(self, market_id: str) -> "MarketTick | None":  # noqa: F821
         """
         Obtiene el tick más reciente del mercado. Delega en el market data port.
         Thin wrapper para que TradingService no acceda a atributos privados.
@@ -172,11 +174,14 @@ class MarketService:
         Subscribe todos los mercados activos al order book via WebSocket.
         El callback recibe MarketTick en cada actualización.
         Llamado desde TradingService.start() después del discovery.
+
+        Pasa yes_token_id (asset_id del CLOB) para la suscripción WS,
+        que es lo que la API de Polymarket espera (no el condition_id).
         """
         markets = await self.get_active_markets()
         for market in markets:
             await self._market_data.subscribe_order_book(
-                market.id, callback
+                market.id, callback, token_id=market.yes_token_id,
             )
         logger.info(
             "ws_subscriptions_started",
@@ -208,6 +213,50 @@ class MarketService:
         ).set(1)
 
     # ------------------------------------------------------------------
+    # MARKET INFO CACHING (tick_size, MOS, neg_risk)
+    # ------------------------------------------------------------------
+
+    async def _cache_market_info(self, market: Market) -> None:
+        """
+        Fetch y cachea metadata del CLOB para este mercado.
+
+        Usa el /book endpoint (via http_client) para obtener tick_size,
+        min_order_size, y neg_risk. Los guarda en Redis como metadata
+        para que el execution handler use los valores correctos.
+
+        Esto evita usar tick_size="0.01" hardcodeado — cada mercado
+        puede tener su propio tick_size.
+        """
+        try:
+            _ = await self._market_data.get_market_tick(market.id)
+            # El tick en sí se descarta; los metadatos ya se cachearon
+            # en Redis por http_client._fetch_tick_rest() via set_market_metadata().
+            # Pero también actualizamos la entidad Market con los metadatos.
+            meta = await self._redis.get_market_metadata(market.id)
+            if meta:
+                if "tick_size" in meta:
+                    market.tick_size = meta["tick_size"]
+                if "neg_risk" in meta:
+                    market.neg_risk = meta["neg_risk"]
+                if "min_order_size" in meta:
+                    market.min_order_size = meta["min_order_size"]
+                # Actualizar en Redis con los metadatos merged
+                await self._redis.set_market(market, ttl_seconds=3900)
+                logger.debug(
+                    "market_info_cached",
+                    market_id=market.id[:20],
+                    tick_size=market.tick_size,
+                    neg_risk=market.neg_risk,
+                    min_order_size=market.min_order_size,
+                )
+        except Exception as e:
+            logger.debug(
+                "market_info_cache_skipped",
+                market_id=market.id[:20],
+                error=str(e),
+            )
+
+    # ------------------------------------------------------------------
     # FILTROS INTERNOS
     # ------------------------------------------------------------------
 
@@ -219,9 +268,10 @@ class MarketService:
     ) -> list[Market]:
         """
         Aplica filtros de asset y ventana temporal a los datos raw de la API.
-        Devuelve solo los mercados que cumplen ambos criterios.
+        Devuelve solo el mercado de mayor volumen que cumple ambos criterios
+        (máximo 1 por combinación asset × window).
         """
-        result = []
+        candidates = []
 
         for raw in raw_markets:
             # Filtro 1: el título debe contener keywords del asset
@@ -238,7 +288,7 @@ class MarketService:
 
             try:
                 market = self._parse_market(raw, asset, window)
-                result.append(market)
+                candidates.append(market)
             except Exception as e:
                 logger.warning(
                     "market_parse_failed",
@@ -246,7 +296,24 @@ class MarketService:
                     error=str(e),
                 )
 
-        return result
+        # Keep only the highest-volume market per (asset, window)
+        if not candidates:
+            return []
+
+        candidates.sort(key=lambda m: m.volume_24h, reverse=True)
+        best = candidates[0]
+
+        if len(candidates) > 1:
+            logger.debug(
+                "market_dedup_applied",
+                asset=asset.value,
+                window=window.value,
+                total_candidates=len(candidates),
+                selected_volume=round(best.volume_24h, 0),
+                selected_id=best.id[:20] + "...",
+            )
+
+        return [best]
 
     def _matches_asset(self, question: str, asset: Asset) -> bool:
         """Verifica si la pregunta del mercado corresponde al asset."""
@@ -274,14 +341,18 @@ class MarketService:
         if window == Window.M15 and "-15m-" in slug:
             return True
 
-        # ── Nivel 2: Parsear rango horario en la pregunta ──────────────
+        # ── Nivel 2: Parsear rango horario en la pregunta ──────────
         # Formato: "9:30AM-9:35AM ET" o "9:30-9:35"
         time_range_pattern = _re.compile(
-            r"(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(?:AM|PM)?"
+            r"(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-"
+            r"\s*(\d{1,2}):(\d{2})\s*(?:AM|PM)?"
         )
         match = time_range_pattern.search(question)
         if match:
-            h1, m1, h2, m2 = int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4))
+            h1 = int(match.group(1))
+            m1 = int(match.group(2))
+            h2 = int(match.group(3))
+            m2 = int(match.group(4))
             start_mins = h1 * 60 + m1
             end_mins = h2 * 60 + m2
             if end_mins <= start_mins:

@@ -64,6 +64,46 @@ async def _check_telegram(container) -> ServiceStatusEnum:
         return ServiceStatusEnum.DOWN
 
 
+async def _check_data_api_cross_verify(container) -> ServiceStatusEnum:
+    """
+    Verifica que las posiciones locales coincidan con la Data API de Polymarket.
+
+    Compara posiciones abiertas en DB local vs GET /positions de data-api.
+    Solo aplica en modo real (en paper: OK).
+
+    Estados:
+      - OK: sin discrepancias o modo paper
+      - DEGRADED: discrepancias menores (size mismatch ≤ 1)
+      - DOWN: discrepancias mayores (missing positions, múltiples mismatches)
+    """
+    try:
+        result = await container.cross_verify_positions()
+
+        status = result.get("status", "down")
+
+        if status == "ok" or status == "skipped":
+            return ServiceStatusEnum.OK
+        elif status == "degraded":
+            logger.warning(
+                "health_data_api_degraded",
+                discrepancies=result.get("discrepancies", []),
+                error=result.get("error"),
+            )
+            return ServiceStatusEnum.DEGRADED
+        else:
+            logger.warning(
+                "health_data_api_down",
+                reason=result.get("reason"),
+                error=result.get("error"),
+                discrepancies=len(result.get("discrepancies", [])),
+            )
+            return ServiceStatusEnum.DOWN
+
+    except Exception as e:
+        logger.warning("health_data_api_failed", error=str(e))
+        return ServiceStatusEnum.DEGRADED
+
+
 async def _check_websockets(container) -> ServiceStatusEnum:
     """
     Verifica estado de las conexiones WS activas.
@@ -106,21 +146,24 @@ async def health_check(request: Request) -> HealthResponse:
         _check_polymarket(container),
         _check_telegram(container),
         _check_websockets(container),
+        _check_data_api_cross_verify(container),
         return_exceptions=True,
     )
 
     # Mapea resultados (maneja excepciones inesperadas)
     services = {
-        "database":   results[0] if not isinstance(results[0], Exception)
-                      else ServiceStatusEnum.DOWN,
-        "redis":      results[1] if not isinstance(results[1], Exception)
-                      else ServiceStatusEnum.DOWN,
-        "polymarket": results[2] if not isinstance(results[2], Exception)
-                      else ServiceStatusEnum.DOWN,
-        "telegram":   results[3] if not isinstance(results[3], Exception)
-                      else ServiceStatusEnum.DOWN,
-        "websockets": results[4] if not isinstance(results[4], Exception)
-                      else ServiceStatusEnum.DOWN,
+        "database":       results[0] if not isinstance(results[0], Exception)
+                          else ServiceStatusEnum.DOWN,
+        "redis":          results[1] if not isinstance(results[1], Exception)
+                          else ServiceStatusEnum.DOWN,
+        "polymarket":     results[2] if not isinstance(results[2], Exception)
+                          else ServiceStatusEnum.DOWN,
+        "telegram":       results[3] if not isinstance(results[3], Exception)
+                          else ServiceStatusEnum.DOWN,
+        "websockets":     results[4] if not isinstance(results[4], Exception)
+                          else ServiceStatusEnum.DOWN,
+        "data_api_cross": results[5] if not isinstance(results[5], Exception)
+                          else ServiceStatusEnum.DEGRADED,
     }
 
     # Estado global: OK solo si todos OK

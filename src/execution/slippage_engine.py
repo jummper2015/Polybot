@@ -34,7 +34,6 @@ from src.execution.fill_simulator import FillEstimate, FillSimulator
 from src.execution.queue_position import (
     CostComparator,
     MakerVsTakerDecision,
-    QueuePositionConfig,
     QueuePositionEngine,
     QueuePositionEstimate,
 )

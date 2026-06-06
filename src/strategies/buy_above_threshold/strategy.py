@@ -49,7 +49,7 @@ class BuyAboveThresholdStrategy(IStrategy):
         # Orden de evaluación: Spread → Liquidity → Time → TickConfirmation
         self._filters: list[IFilter] = [
             SpreadFilter(max_spread=self._config.max_spread),
-            LiquidityFilter(min_volume_usdc=self._config.min_volume_usdc),
+            LiquidityFilter(min_volume_pusd=self._config.min_volume_pusd),
             TimeFilter(blocked_hours=self._config.blocked_hours),
             TickConfirmationFilter(required_ticks=self._config.required_ticks),
         ]
@@ -455,7 +455,7 @@ class BuyAboveThresholdStrategy(IStrategy):
         # Reconstruye los filtros con la nueva config
         self._filters = [
             SpreadFilter(max_spread=self._config.max_spread),
-            LiquidityFilter(min_volume_usdc=self._config.min_volume_usdc),
+            LiquidityFilter(min_volume_pusd=self._config.min_volume_pusd),
             TimeFilter(blocked_hours=self._config.blocked_hours),
             TickConfirmationFilter(required_ticks=self._config.required_ticks),
         ]

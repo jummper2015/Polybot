@@ -1,18 +1,26 @@
 # src/infrastructure/polymarket/clob_client.py
 """
-Cliente autenticado para el CLOB de Polymarket usando el SDK oficial.
+Cliente autenticado para el CLOB de Polymarket usando el SDK oficial V2.
 
-Usa py-clob-client-v2 para firma EIP-712 correcta, manejo de nonces,
+Usa py-clob-client-v2 para firma EIP-712 correcta (Exchange domain V2,
+EIP-712 version "2", new order struct con timestamp/metadata/builder)
 y autenticación L2. Todas las llamadas al SDK son síncronas, así que
 se envuelven en asyncio.to_thread() para compatibilidad async.
 
 NOTA: El PLAN_MEJORAS.txt mencionaba "py-clob-client==2.0.0", pero ese
 paquete no existe. El SDK oficial real es py-clob-client-v2 (v1.0.1).
 
+MIGRACIÓN CLOB V2 (abril 2026):
+  - Nonces eliminados → unicidad de órdenes vía timestamp (ms).
+  - feeRateBps y taker eliminados del Order struct.
+  - Colateral: USDC.e → pUSD (Polymarket USD).
+  - Builder program: HMAC headers → builderCode field en la orden.
+  - Exchange domain version "1" → "2".
+
 LIMITACIÓN CONOCIDA: OrderArgs del SDK no tiene campo order_id externo.
-El SDK usa nonce interno para idempotencia. Nuestra key SHA256 de P1.4
-se persiste en la DB pero no se envía al CLOB. Esto es seguro porque el
-SDK maneja la deduplicación vía nonce.
+El SDK usa timestamp (ms) para unicidad de órdenes en V2. Nuestra key
+SHA256 de P1.4 se persiste en la DB pero no se envía al CLOB. Esto es
+seguro porque el SDK maneja la deduplicación vía timestamp+salt.
 """
 
 import asyncio
@@ -60,9 +68,10 @@ def _ensure_dict(response) -> dict:
 
 class PolymarketCLOBClient:
     """
-    Cliente autenticado para el CLOB de Polymarket usando py-clob-client-v2.
+    Cliente autenticado para el CLOB V2 de Polymarket usando py-clob-client-v2.
 
-    Maneja firma EIP-712, autenticación L2, y llamadas a la API de órdenes.
+    Maneja firma EIP-712 (Exchange domain V2), autenticación L2,
+    y llamadas a la API de órdenes. Compatible con CLOB V2 (abril 2026).
     NUNCA loguea claves, amounts sin contexto, ni datos sensibles de la wallet.
 
     La interfaz pública es async (usa asyncio.to_thread internamente),
@@ -115,22 +124,29 @@ class PolymarketCLOBClient:
         order_id:    str,
         tick_size:   str = "0.01",
         order_type:  OrderType | None = None,
+        neg_risk:    bool = False,
     ) -> dict:
         """
-        Crea y postea una orden limitada en el CLOB de Polymarket.
+        Crea y postea una orden limitada en el CLOB V2 de Polymarket.
 
-        Usa create_and_post_order del SDK: firma EIP-712, asigna nonce,
-        y envía la orden en una sola llamada.
+        Usa create_and_post_order del SDK: firma EIP-712 (domain V2),
+        asigna timestamp (ms) como campo de unicidad, y envía la orden
+        en una sola llamada.
+
+        En CLOB V2, la unicidad se basa en timestamp (ms) + salt —
+        el sistema de nonces fue eliminado en la migración V2.
 
         Args:
             token_id:  Token ID del mercado (YES o NO)
             side:      "BUY" o "SELL"
             price:     Precio límite (0.0 - 1.0)
-            size:      Cantidad en USDC
+            size:      Cantidad en pUSD (Polymarket USD)
             order_id:  ID externo para tracking DB (NO se envía al CLOB —
-                       el SDK usa nonce interno para idempotencia)
+                       el SDK usa timestamp+salt para unicidad)
             tick_size: Tick size del mercado ("0.01", "0.001", "0.0001")
             order_type: Tipo de orden (por defecto GTC)
+            neg_risk:  Si True, incluye negRisk=True en la orden
+                       (requerido para mercados neg_risk)
 
         Returns:
             dict con al menos {"price": float} o {"id": str, "status": str}.
@@ -146,6 +162,43 @@ class PolymarketCLOBClient:
             side     = side,
         )
         options = CreateOrderOptions(tick_size=tick_size)
+
+        # ── CLOB V2: pasar negRisk si el mercado lo requiere ──────────
+        if neg_risk:
+            # El SDK py-clob-client-v2 soporta neg_risk en CreateOrderOptions
+            # como keyword argument. Si no está disponible en esta versión,
+            # lo pasamos como atributo extra (el SDK lo ignora si no lo soporta).
+            try:
+                options = CreateOrderOptions(tick_size=tick_size, neg_risk=True)
+            except TypeError:
+                # Fallback: versión del SDK que no soporta neg_risk aún
+                logger.warning(
+                    "neg_risk_not_supported_by_sdk",
+                    token_id=token_id[:20],
+                    hint="SDK version may need update for neg_risk support",
+                )
+                options = CreateOrderOptions(tick_size=tick_size)
+
+        # ── CLOB V2: builderCode identificador de la entidad ───────────
+        builder_code = self._keys.builder_code
+        if builder_code:
+            # El SDK puede aceptar builderCode como campo adicional
+            try:
+                order_args_dict = {
+                    "token_id": token_id,
+                    "price": price,
+                    "size": size,
+                    "side": side,
+                    "builderCode": builder_code,
+                }
+                # Reconstruir OrderArgs con builderCode
+                order_args = OrderArgs(**order_args_dict)
+            except TypeError:
+                # SDK version sin soporte para builderCode — ignorar
+                logger.debug(
+                    "builder_code_not_supported_by_sdk",
+                    hint="SDK version may need update for builderCode support",
+                )
 
         response = await asyncio.to_thread(
             self._sdk.create_and_post_order,
@@ -203,10 +256,11 @@ class PolymarketCLOBClient:
 
     async def get_balance(self) -> float:
         """
-        Consulta el balance USDC disponible para trading en Polymarket.
+        Consulta el balance pUSD (Polymarket USD) disponible para trading.
 
+        CLOB V2 migró de USDC.e → pUSD como colateral (abril 2026).
         Usa get_balance_allowance del SDK como fuente primaria (devuelve
-        cuánto USDC puede gastar el contrato CLOB en nuestro nombre).
+        cuánto pUSD puede gastar el contrato CLOB en nuestro nombre).
         La API REST /balance es un fallback no verificado — el endpoint
         puede no existir en versiones recientes de la API de Polymarket.
         """
@@ -228,6 +282,40 @@ class PolymarketCLOBClient:
             response.raise_for_status()
             data = response.json()
             return float(data.get("balance", 0.0))
+
+    # ------------------------------------------------------------------
+    # CLOB V2 — INFORMACIÓN DE MERCADO (Fees dinámicos)
+    # ------------------------------------------------------------------
+
+    async def get_market_info(self, condition_id: str) -> dict:
+        """
+        Consulta parámetros CLOB V2 de un mercado específico.
+
+        CLOB V2 introdujo fees dinámicos por mercado (abril 2026).
+        Usa get_clob_market_info del SDK para obtener:
+          - mts: minimum tick size
+          - mos: minimum order size
+          - fd: fee details {r: rate, e: exponent, to: takerOnly}
+          - t: tokens [{t: tokenID, o: outcome}, ...]
+          - rfqe: si RFQ está habilitado
+
+        Args:
+            condition_id: Condition ID del mercado (0x...).
+
+        Returns:
+            dict con los parámetros del mercado normalizado vía _ensure_dict.
+        """
+        response = await asyncio.to_thread(
+            self._sdk.get_clob_market_info,
+            condition_id=condition_id,
+        )
+        result = _ensure_dict(response)
+        logger.debug(
+            "market_info_fetched",
+            condition_id=condition_id[:20],
+            has_fees="fd" in result,
+        )
+        return result
 
     # ------------------------------------------------------------------
     # CIERRE

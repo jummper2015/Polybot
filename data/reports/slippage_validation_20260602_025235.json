@@ -1,0 +1,94 @@
+{
+  "total_rows": 20132,
+  "sampled": 2000,
+  "valid_ticks": 2000,
+  "skipped": 0,
+  "entry": {
+    "count": 2000,
+    "estimated": {
+      "mean": 0.005362,
+      "median": 0.004505,
+      "p95": 0.014503
+    },
+    "real": {
+      "mean": 0.005356,
+      "median": 0.0045,
+      "p95": 0.0145
+    },
+    "ratio": {
+      "mean": 1.0015,
+      "median": 1.0002
+    },
+    "correlation": 1.0,
+    "ratio_distribution": {
+      "under_0.5": 0.0,
+      "0.5_to_0.8": 0.0,
+      "0.8_to_1.2": 100.0,
+      "1.2_to_2.0": 0.0,
+      "over_2.0": 0.0
+    },
+    "by_spread_regime": {
+      "tight": 1.0,
+      "normal": 1.025,
+      "wide": 1.0013
+    },
+    "by_asset": {
+      "BTC": {
+        "mean_ratio": 1.0,
+        "count": 876
+      },
+      "ETH": {
+        "mean_ratio": 1.0027,
+        "count": 1124
+      }
+    }
+  },
+  "exit": {
+    "count": 2000,
+    "estimated": {
+      "mean": 0.005363,
+      "median": 0.00452,
+      "p95": 0.014502
+    },
+    "real": {
+      "mean": 0.005356,
+      "median": 0.0045,
+      "p95": 0.0145
+    },
+    "ratio": {
+      "mean": 1.0011,
+      "median": 1.0002
+    },
+    "correlation": 1.0,
+    "ratio_distribution": {
+      "under_0.5": 0.0,
+      "0.5_to_0.8": 0.0,
+      "0.8_to_1.2": 100.0,
+      "1.2_to_2.0": 0.0,
+      "over_2.0": 0.0
+    },
+    "by_spread_regime": {
+      "tight": 1.0,
+      "normal": 1.0015,
+      "wide": 1.0019
+    },
+    "by_asset": {
+      "BTC": {
+        "mean_ratio": 1.0,
+        "count": 876
+      },
+      "ETH": {
+        "mean_ratio": 1.0019,
+        "count": 1124
+      }
+    }
+  },
+  "overall_pass": true,
+  "verdict": {
+    "entry_correlation": 1.0,
+    "exit_correlation": 1.0,
+    "entry_in_range_pct": 100.0,
+    "exit_in_range_pct": 100.0,
+    "engine_calibration": 1.0
+  }
+}

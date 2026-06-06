@@ -733,7 +733,7 @@
         Bin (3), Report (10), Calibrator (13), Edge (3)
     [x] ruff check: 0 errors
 
-  P10.4 — Post-Trade Analytics Engine  [🟢 100% — PLANEAR ✅, CONSTRUIR ✅, TESTEAR ✅]
+  P10.4 — Post-Trade Analytics Engine  [🟢 100% — PLANEAR ✅, CONSTRUIR ✅, TESTEAR ✅, DESPLEGAR ✅]
   ─────────────────────────────────────
   CONSTRUIR:
     [x] Atribución detallada de performance
@@ -749,12 +749,19 @@
     [x] Fuentes de profitability explicables (49 tests ✅)
     [x] Tests de consistencia de atribución (by_exit_reason + by_regime)
 
+  DESPLEGAR:
+    [x] CLI script: scripts/analyze_post_trade.py — análisis standalone
+    [x] Integración en BacktestReporter: save_post_trade_report()
+    [x] Auto-generación de reporte post-trade al guardar resultados (save())
+    [x] JSON incluye array "trades" para análisis downstream
+    [x] E2E verificado: backtest → save → post_trade JSON → CLI re-parse
+
 
   ──────────────────────────────────────────────────────────────────────────
   ✅ FASE 10 — COMPLETADA (2026-06-02)
   ──────────────────────────────────────────────────────────────────────────
   P10.1 Walk-Forward:  42 tests ✅ | P10.2 Monte Carlo:    44 tests ✅
-  P10.3 Calibration:   29 tests ✅ | P10.4 Post-Trade:     49 tests ✅
+  P10.3 Calibration:   29 tests ✅ | P10.4 Post-Trade:     49 tests ✅ | DESPLEGAR ✅
   TOTAL P10: 164 tests pasando, 0 ruff errors
   ──────────────────────────────────────────────────────────────────────────
 
@@ -769,26 +776,123 @@
     ▸ Estado actual: BAT (momentum básico) + MR (reversión a media simple)
     ▸ Meta: Portfolio de estrategias con switching adaptativo por régimen
 
-  P11.1 — Regime-Aware Strategy Switching
+  P11.1 — Regime-Aware Strategy Switching  [🟢 100% — PLANEAR ✅, CONSTRUIR ✅, TESTEAR ✅, DESPLEGAR ✅]
   ─────────────────────────────────────────
   CONSTRUIR:
-    [ ] Activación condicional de estrategias por régimen
-    [ ] Pesos dinámicos basados en performance por régimen
+    [x] RegimeAwareOrchestrator: drop-in replacement para StrategyEngine
+        → Envuelve StrategyEngine con detección de régimen en tiempo real
+        → Filtra estrategias por régimen antes de evaluar señales
+        → Aplica multiplicadores de confidence por régimen
+        → Fallback a HOLD si ninguna estrategia activa en el régimen actual
+    [x] RegimeDetector: clasificación streaming de regímenes
+        → Buffer rolling de ticks por mercado (50 ticks)
+        → Cómputo de features desde StreamingState (sin double-push)
+        → Integración con RegimeClassifier.classify_tick()
+        → Cache del último régimen por mercado
+    [x] StrategyRegimeBinding: configuración por estrategia
+        → allowed_regimes: set[Regime] — en qué regímenes opera
+        → confidence_multipliers: dict[Regime, float] — ajuste de confianza
+        → enabled: bool — activación/desactivación runtime
+    [x] Factory helpers: create_binding_from_config() + build_orchestrator()
+        → Auto-detección de allowed_regimes desde config de estrategia
+        → Soporte para regime_configs externos
+    [x] _TickProxy dataclass: MarketTick-like para classify_tick desde state
+    [x] Configs actualizados:
+        → BuyAboveThresholdConfig.allowed_regimes = ["trend"]
+        → MeanReversionConfig.allowed_regimes = ["chop", "trend", "event_driven"]
+    [x] Exit signals NO filtradas por régimen (seguridad: siempre evaluar salida)
+    [x] src/strategies/regime_aware.py — ~520 líneas
 
   TESTEAR:
-    [ ] Menores drawdowns que estrategia única
-    [ ] Mayor consistencia entre regímenes
+    [x] pytest tests/unit/test_regime_aware.py — 42/42 ✅
+        → StrategyRegimeBinding: defaults, custom, disabled, empty (4 tests)
+        → RegimeDetector: feed_tick, detect not-ready/chop, reset, multi-market (6 tests)
+        → Orchestrator construction: bindings, delegation, state, clear (6 tests)
+        → Strategy filtering: active/inactive/fallback/disabled/first-match/in-position (6 tests)
+        → Exit behavior: regime-independent exit, only-in-position, no-position (3 tests)
+        → Confidence multipliers: apply/cap/no-multiplier (3 tests)
+        → Management: set_regime, disable/enable, get_current_regime (3 tests)
+        → Factory helpers: create_binding, build_orchestrator (5 tests)
+        → Error handling: isolated errors, detection fallback (2 tests)
+    [x] pytest tests/unit/test_regime_aware_backtest.py — 16/16 ✅
+        → MultiStrategyBacktestResult: empty, serialization, distribution (3 tests)
+        → Runner construction: auto-bindings, custom, disabled (4 tests)
+        → Runner execution: multi-strategy, run_from_dataset, batch regimes (6 tests)
+        → Regime filtering effect: restricted trades, per-strategy PnL (2 tests)
+        → Determinism: same input → same output (1 test)
+    [x] ruff check: 0 errors en archivos nuevos
+    [x] 746 tests existentes sin regresiones
 
-  P11.2 — Ensemble Signal Engine
+  DESPLEGAR:
+    [x] Wire en container.py: build_orchestrator() reemplaza StrategyEngine()
+        → self.strategy_orchestrator = build_orchestrator([BAT, MR])
+        → self.strategy_engine = orchestrator._engine (backward compat MTF/BAT)
+        → TradingService recibe orchestrator como drop-in
+        → enable_real_mode() también usa orchestrator
+    [x] RegimeAwareBacktestRunner: multi-estrategia + batch regime detection
+        → Pre-computa regímenes vía RegimeClassifier.classify_batch()
+        → Evalúa BAT solo en TREND, MR en CHOP/TREND/EVENT_DRIVEN
+        → Tracking per-strategy: positions, PnL, trades, skipped_by_regime
+        → MultiStrategyBacktestResult con breakdown completo
+        → src/backtesting/regime_aware_backtest.py — ~450 líneas
+    [x] Paper trading: código listo para ejecutar con mode="paper"
+        → RegimeAwareOrchestrator cableado en Container
+        → Ejecutar: python main.py --mode paper
+    [x] Documentación actualizada en RECORRIDO.txt + WORKFLOW.md
+    [x] VERIFICADO (2026-06-04): paper trading ejecutado exitosamente
+        → REST_ONLY=true, 6 mercados descubiertos (BTC M5/M15, ETH M5/M15)
+        → regime_detected: CHOP detectado en todos los mercados activos
+        → strategy_skipped_by_regime: BAT correctamente filtrado en CHOP
+        → MR evaluado normalmente (activo en CHOP)
+        → Fix: timestamp ms → seconds en adapters.py (CLOB /book usa ms)
+        → Fix: SIGNALS_GENERATED labels faltantes en trading_service.py
+        → 0 errores, 0 fallos de tick, shutdown limpio
+        → Monitor: endpoint GET /dashboard/regimes expone estado de régimen
+
+  P11.2 — Ensemble Signal Engine  [🟢 100% — PLANEAR ✅, CONSTRUIR ✅, TESTEAR ✅, DESPLEGAR ✅]
   ────────────────────────────────
   CONSTRUIR:
-    [ ] Combinación de múltiples fuentes de alpha
-    [ ] Componentes: momentum, mean reversion, liquidez, eventos
-    [ ] Weighting dinámico basado en confianza
+    [x] EnsembleAggregator: combinación de señales de múltiples estrategias
+        → Agregación ponderada por strategy_weight multiplier
+        → Agreement bonus: cuando 2+ estrategias coinciden → +0.10 boost
+        → Conflict detection: BUY_YES vs BUY_NO/EXIT → HOLD (safety-first)
+        → Conflict ablesable: conflict_to_hold=False → BUY_YES gana
+        → min_confidence_threshold: señales débiles (< 0.05) ignoradas
+        → Per-strategy contribution tracking + métricas Prometheus
+    [x] Integración en RegimeAwareOrchestrator:
+        → _ensemble_enter(): evalúa TODAS las estrategias activas
+        → Agrega vía EnsembleAggregator en vez de first-wins
+        → _single_enter() preservado para backward compat
+        → ensemble_mode toggleable en runtime
+    [x] Wire en container.py:
+        → ensemble_mode controlado por ENSEMBLE_MODE env var (default true)
+        → build_orchestrator(..., ensemble_mode=True)
+    [x] Métricas Prometheus P11.2:
+        → ENSEMBLE_SIGNALS: outcome (buy_yes, hold_all, conflict_hold, no_buy)
+        → ENSEMBLE_CONFLICTS: total conflicts detectados
+        → ENSEMBLE_AGREEMENT_BONUS: total bonuses aplicados
+        → ENSEMBLE_CONTRIBUTIONS: per-strategy contribution count
+        → ENSEMBLE_WEIGHTS: per-strategy configured weight
+    [x] src/strategies/ensemble.py — ~250 líneas
 
   TESTEAR:
-    [ ] Returns mejor ajustados por riesgo
-    [ ] Menor correlación entre componentes
+    [x] pytest tests/unit/test_ensemble.py — 15/15 ✅
+        → EnsembleConfig: defaults, custom (2 tests)
+        → Aggregation: single, below threshold, two agree + bonus, capped (4 tests)
+        → Mixed: BUY + HOLD ignores HOLD (1 test)
+        → Conflict: BUY vs SELL → HOLD, conflict disabled → BUY wins (2 tests)
+        → Weights: custom strategy_weights multiplier, get_strategy_weight (2 tests)
+        → Edge cases: all HOLD, empty signals, result properties (3 tests)
+        → 878 tests totales sin regresiones
+    [x] ruff check: 0 errors en archivos nuevos
+
+  DESPLEGAR:
+    [x] Paper trading test: ensemble_mode=True verificado en vivo
+        → regime_aware_orchestrator_initialized ensemble_mode=True
+        → Bot arranca y ejecuta cleanly con ensemble enabled
+        → 0 errores, 0 fallos de tick, shutdown limpio
+    [x] Documentación actualizada en RECORRIDO.txt + WORKFLOW.md
+    [x] Activación por defecto: ENSEMBLE_MODE=true en container.py
 
   P11.3 — Liquidity-Aware Trading
   ─────────────────────────────────
@@ -1043,7 +1147,7 @@
     FASE 8:  ✅ COMPLETADA — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
     FASE 9:  ✅ COMPLETADA — Execution Realism              (P9.1: 100%, P9.2: 100%, P9.3: 100%, P9.4: 100%)
     FASE 10: ✅ COMPLETE  — Quantitative Validation        (164 tests, P10.1-P10.4: 100%)
-    FASE 11: ⏳ PLANNED   — Advanced Strategies            (0/4)
+'    FASE 11: 🔄 ACTIVE    — Advanced Strategies            (2/4: P11.1 ✅, P11.2 ✅)
     FASE 12: 🔮 FUTURE    — Portfolio & Scaling            (0/3)
     FASE 13: 🧪 EXPERIMENTAL — AI/ML Research              (0/3)
 

@@ -26,6 +26,9 @@ class Market:
     no_price:      float                        # Último precio NO (0.0 - 1.0)
     volume_24h:    float                        # Volumen en USDC últimas 24h
     expiry:        datetime                     # Cuándo cierra el mercado
+    neg_risk:      bool    = False  # Mercado neg_risk (requiere negRisk=True en órdenes)
+    tick_size:     str     = "0.01"  # Tick size ("0.01", "0.001", "0.0001")
+    min_order_size: float  = 1.0     # Minimum order size en pUSD
     discovered_at: datetime = field(default_factory=datetime.utcnow)
     updated_at:    datetime = field(default_factory=datetime.utcnow)
 

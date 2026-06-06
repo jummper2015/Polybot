@@ -8,29 +8,27 @@ Tests:
   - StreamingState: push, eviction, readiness
 """
 
-import math
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
+from src.domain.value_objects.market_tick import MarketTick
 from src.infrastructure.data.features import (
-    FeatureRegistry,
-    FeaturePipeline,
     FeatureBatch,
     FeatureDict,
+    FeaturePipeline,
+    FeatureRegistry,
     StreamingState,
     _registry,
-    compute_spread_percentile,
-    compute_realized_volatility,
-    compute_momentum_decay,
     compute_event_proximity,
-    compute_orderbook_imbalance,
     compute_liquidity_depth,
+    compute_momentum_decay,
+    compute_orderbook_imbalance,
+    compute_realized_volatility,
+    compute_spread_percentile,
 )
-from src.domain.value_objects.market_tick import MarketTick
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # HELPERS

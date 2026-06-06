@@ -12,28 +12,35 @@ class BuyAboveThresholdConfig:
     """
 
     # ── Condición de entrada ──────────────────────────────────────────
-    threshold:          float = 0.75    # Precio YES mínimo para considerar entrada
-    required_ticks:     int   = 3       # Ticks consecutivos confirmando threshold
+    threshold:          float = 0.55    # Precio YES mínimo para considerar entrada
+    required_ticks:     int   = 1       # Ticks consecutivos confirmando threshold
 
     # ── Filtros ───────────────────────────────────────────────────────
     max_spread:         float = 0.03    # Spread máximo bid-ask (3%)
-    min_volume_usdc:    float = 1000.0  # Volumen mínimo 24h en USDC
+    min_volume_pusd:    float = 1000.0  # Volumen mínimo 24h en pUSD
     blocked_hours: list[tuple[int, int]] = field(
         default_factory=lambda: [(0, 6)]  # Bloquea 00:00-06:00 UTC
     )
 
     # ── Condiciones de salida ─────────────────────────────────────────
     stop_loss_pct:      float = 0.15    # -15% desde entrada → stop loss
-    stop_drop_floor:    float = 0.55    # Precio absoluto mínimo → salir siempre
+    stop_drop_floor:    float = 0.40    # Precio absoluto mínimo → salir siempre
     timeout_minutes:    float = 30.0    # Máximo minutos en posición
-    target_price:       float = 0.90    # Precio objetivo → tomar ganancias
+    target_price:       float = 0.75    # Precio objetivo → tomar ganancias
 
     # ── Hedge ─────────────────────────────────────────────────────────
     hedge_drop_pct:     float = 0.20    # Caída >20% en 2 ticks → evaluar hedge
     hedge_enabled:      bool  = True    # Si False, nunca genera señal de hedge
 
     # ── Tamaño de posición ────────────────────────────────────────────
-    position_size_usdc: float = 10.0    # USDC por operación (RiskEngine puede reducir)
+    position_size_pusd: float = 10.0    # pUSD por operación (RiskEngine puede reducir)
+
+    # ── Regime Awareness (P11.1) ───────────────────────────────────────
+    # BAT performs best in trending markets with clear direction.
+    # Also enabled in CHOP for testing with looser threshold (0.55).
+    allowed_regimes: list[str] = field(
+        default_factory=lambda: ["trend", "chop"]
+    )
 
     def validate(self) -> None:
         """

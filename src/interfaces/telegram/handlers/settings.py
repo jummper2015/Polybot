@@ -48,7 +48,7 @@ def settings_keyboard(container=None) -> InlineKeyboardMarkup:
                     threshold = str(cfg.threshold)
                     stop_loss = f"{cfg.stop_loss_pct:.0%}"
                     target = str(cfg.target_price)
-                    pos_size = f"{cfg.position_size_usdc:.0f} USDC"
+                    pos_size = f"{cfg.position_size_pusd:.0f} USDC"
                     ticks = str(cfg.required_ticks)
                     break
         except Exception:

@@ -401,7 +401,7 @@ class TestRiskEngineAlwaysEvaluated:
             repository=mock_repo,
             notifier=mock_notifier,
             portfolio_service=mock_portfolio,
-            position_size_usdc=10.0,
+            position_size_pusd=10.0,
             trading_mode=trading_mode,
         )
 

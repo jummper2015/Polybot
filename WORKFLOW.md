@@ -147,7 +147,7 @@ Ninguna fase se considera completada hasta que sus 4 etapas están verificadas.
 | **Fase 8** | Data & Research Foundation | ✅ COMPLETADA | CRÍTICA |
 | **Fase 9** | Execution Realism | ✅ COMPLETADA | CRÍTICA |
 | Fase 10 | Quantitative Validation | 🔄 ACTIVE | MUY ALTA |
-| Fase 11 | Advanced Strategies | ⏳ PLANNED | ALTA |
+| Fase 11 | Advanced Strategies | 🔄 ACTIVE | ALTA |
 | Fase 12 | Portfolio & Scaling | 🔮 FUTURE | ALTA |
 | Fase 13 | AI/ML Research | 🧪 EXPERIMENTAL | BAJA |
 
@@ -388,15 +388,15 @@ Ninguna fase se considera completada hasta que sus 4 etapas están verificadas.
 | P10.1 Walk-Forward Validation | ✅ Definido | ✅ | ✅ | ✅ |
 | P10.2 Monte Carlo Simulation | ✅ Definido | ✅ | ✅ | ✅ |
 | P10.3 Confidence Calibration | ✅ Definido | ✅ | ✅ | ✅ |
-| P10.4 Post-Trade Analytics Engine | ✅ Definido | ✅ | ✅ | [ ] |
+| P10.4 Post-Trade Analytics Engine | ✅ Definido | ✅ | ✅ | ✅ |
 
 ## FASE 11 — ADVANCED STRATEGIES [PLANNED ⏳]
 **Dependencia:** Fase 10 completa
 
 | Subfase | PLANEAR | CONSTRUIR | TESTEAR | DESPLEGAR |
 |---|---|---|---|---|
-| P11.1 Regime-Aware Strategy Switching | ✅ Definido | [ ] | [ ] | [ ] |
-| P11.2 Ensemble Signal Engine | ✅ Definido | [ ] | [ ] | [ ] |
+| P11.1 Regime-Aware Strategy Switching | ✅ Definido | ✅ | ✅ | ✅ |
+| P11.2 Ensemble Signal Engine | ✅ Definido | ✅ | ✅ | ✅ |
 | P11.3 Liquidity-Aware Trading | ✅ Definido | [ ] | [ ] | [ ] |
 | P11.4 Event-Driven Trading | ✅ Definido | [ ] | [ ] | [ ] |
 

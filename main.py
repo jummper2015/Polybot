@@ -1,8 +1,8 @@
 # main.py  (raíz del proyecto)
 
 import asyncio
-import sys
 import os
+import sys
 
 # ── uvloop: reemplazo de alto rendimiento para el event loop asyncio ─
 try:

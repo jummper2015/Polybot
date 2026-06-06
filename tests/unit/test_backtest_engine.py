@@ -81,7 +81,7 @@ def _make_strategy_config(**overrides) -> BuyAboveThresholdConfig:
         "required_ticks": 1,
         "stop_loss_pct": 0.30,
         "target_price": 0.99,
-        "position_size_usdc": 10.0,
+        "position_size_pusd": 10.0,
         "timeout_minutes": 120,
     }
     defaults.update(overrides)
@@ -259,7 +259,7 @@ class TestEntryFillSimulator:
         call_args = mock_fs.estimate_entry.call_args
         assert call_args is not None
         assert call_args.kwargs["asset"] == "ETH"
-        assert call_args.kwargs["order_size"] == config.position_size_usdc
+        assert call_args.kwargs["order_size"] == config.position_size_pusd
 
     def test_entry_fill_price_used(self):
         """The fill_price from FillSimulator becomes the entry price."""

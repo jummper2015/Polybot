@@ -207,11 +207,11 @@ class BacktestEngine:
                     risk_ok, risk_reason = self._check_risk_sync(
                         balance=balance,
                         open_count=1 if open_position else 0,
-                        amount=self._strategy_config.position_size_usdc,
+                        amount=self._strategy_config.position_size_pusd,
                     )
 
                     if risk_ok:
-                        amount = self._strategy_config.position_size_usdc
+                        amount = self._strategy_config.position_size_pusd
                         # ── P9.1 FillSimulator slippage ──────────────
                         tick_data = self._tick_to_data(tick)
                         estimate = self._fill_sim.estimate_entry(
@@ -308,7 +308,7 @@ class BacktestEngine:
         stop_losses = stop_losses or [0.10, 0.15, 0.20]
         targets     = targets     or [0.85, 0.90, 0.95]
         ticks_list  = ticks_list  or [self._strategy_config.required_ticks]
-        pos_sizes   = pos_sizes   or [self._strategy_config.position_size_usdc]
+        pos_sizes   = pos_sizes   or [self._strategy_config.position_size_pusd]
 
         results = []
         total   = (
@@ -346,10 +346,10 @@ class BacktestEngine:
                                     stop_loss_pct  = stop_loss,
                                     target_price   = target,
                                     required_ticks = ticks,
-                                    position_size_usdc = pos_size,
+                                    position_size_pusd = pos_size,
                                     # Resto de parámetros desde la config base
                                     max_spread     = self._strategy_config.max_spread,
-                                    min_volume_usdc = self._strategy_config.min_volume_usdc,
+                                    min_volume_pusd = self._strategy_config.min_volume_pusd,
                                 )
 
                                 engine = BacktestEngine(

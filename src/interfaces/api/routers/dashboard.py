@@ -80,6 +80,17 @@ class RecentTrade(BaseModel):
     is_open:      bool
 
 
+class RegimeInfo(BaseModel):
+    """Estado de régimen para un mercado activo (P11.1)."""
+    asset:         str
+    window:        str
+    regime:        str
+    confidence:    float
+    strategies_active:   list[str]
+    strategies_inactive: list[str]
+    orchestrator_enabled: bool
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get(
@@ -197,12 +208,26 @@ async def get_markets_overview(request: Request) -> list[MarketOverview]:
     """
     Lista de mercados activos con precio actual desde Redis/WS.
     Incluye estado de la conexión WebSocket por mercado.
+
+    Deduplica por (asset, window) — solo 1 mercado por combinación
+    (BTC 5m, BTC 15m, ETH 5m, ETH 15m = hasta 4 mercados).
     """
     container = request.app.state.container
     markets   = await container.market_service.get_active_markets()
     overview  = []
 
-    for market in markets:
+    # Deduplicate by (asset, window) — keep highest-volume market per pair
+    seen_pairs: set[tuple[str, str]] = set()
+    markets_sorted = sorted(markets, key=lambda m: m.volume_24h, reverse=True)
+    deduped: list = []
+    for market in markets_sorted:
+        key = (market.asset.value, market.window.value)
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
+        deduped.append(market)
+
+    for market in deduped:
         # Obtiene estado WS desde Redis
         ws_state = await container.redis.get_ws_state(market.id)
         ws_connected = (
@@ -232,9 +257,11 @@ async def get_markets_overview(request: Request) -> list[MarketOverview]:
             for a in asks_raw
         ]
 
-        # Extrae best_bid / best_ask del orderbook si está disponible
-        best_bid = orderbook_bids[0].price if orderbook_bids else 0.0
-        best_ask = orderbook_asks[0].price if orderbook_asks else 0.0
+        # Extrae best_bid / best_ask del orderbook (max bid, min ask)
+        # Polymarket /book API returns bids ASC and asks DESC;
+        # use max/min to get the true best levels regardless of sort order.
+        best_bid = max((b.price for b in orderbook_bids), default=0.0)
+        best_ask = min((a.price for a in orderbook_asks), default=0.0)
 
         overview.append(MarketOverview(
             market_id=market.id,
@@ -295,6 +322,52 @@ async def get_recent_trades(
         ))
 
     return trades
+
+
+@router.get(
+    "/dashboard/regimes",
+    response_model=list[RegimeInfo],
+    summary="Estado de régimen por mercado (P11.1)",
+)
+async def get_regimes_overview(request: Request) -> list[RegimeInfo]:
+    """
+    Devuelve el régimen actual detectado para cada mercado activo.
+    Incluye qué estrategias están activas/inactivas en ese régimen.
+    """
+    container = request.app.state.container
+
+    # Accede al orchestrator desde el container
+    orchestrator = container.strategy_orchestrator
+    if orchestrator is None:
+        return []
+
+    markets = await container.market_service.get_active_markets()
+    regime_list: list[RegimeInfo] = []
+
+    # Deduplicate by (asset, window) — multiple Polymarket token IDs
+    # can point to the same market (e.g., BTC-5m-USDC vs BTC-5m-USDC-e)
+    seen: set[tuple[str, str]] = set()
+
+    for market in markets:
+        key = (market.asset.value, market.window.value)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # Use the public get_regime_status method (encapsulates all internals)
+        status = orchestrator.get_regime_status(market.id)
+
+        regime_list.append(RegimeInfo(
+            asset=market.asset.value,
+            window=market.window.value,
+            regime=status["regime"].value if status else "unknown",
+            confidence=round(status["confidence"], 4) if status else 0.0,
+            strategies_active=status["strategies_active"] if status else [],
+            strategies_inactive=status["strategies_inactive"] if status else [],
+            orchestrator_enabled=orchestrator.enabled,
+        ))
+
+    return regime_list
 
 
 # ── Helper interno ────────────────────────────────────────────────────
