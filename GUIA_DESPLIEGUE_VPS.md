@@ -85,7 +85,7 @@ sudo systemctl start postgresql
 
 # Crear base de datos y usuario
 sudo -u postgres psql <<EOF
-CREATE USER botuser WITH PASSWORD 'TU_PASSWORD_SEGURO';
+CREATE USER botuser WITH PASSWORD 'Ceg0@123';
 CREATE DATABASE polybot OWNER botuser;
 GRANT ALL PRIVILEGES ON DATABASE polybot TO botuser;
 \q
@@ -455,7 +455,7 @@ Wants=network.target postgresql.service redis-server.service
 
 [Service]
 Type=simple
-User=root
+User=polybot
 WorkingDirectory=/opt/polybot
 Environment=PATH=/opt/polybot/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=/opt/polybot/.env
@@ -474,8 +474,13 @@ CPUQuota=150%
 WantedBy=multi-user.target
 SERVEOF
 
+# Crear usuario dedicado para el bot (seguridad)
+useradd --system --no-create-home --shell /usr/sbin/nologin polybot
+chown -R polybot:polybot /opt/polybot
+
 # Crear directorio de logs
 mkdir -p /opt/polybot/logs
+chown polybot:polybot /opt/polybot/logs
 
 # Recargar systemd y activar el servicio
 sudo systemctl daemon-reload
@@ -573,10 +578,11 @@ Con Codebuff instalado en el VPS, ahora puedes completar las tareas pendientes d
 
 ### Tareas CRÍTICAS (R1)
 
-Ejecuta estos comandos en Codebuff dentro del VPS para que te ayude a completar:
+Copia y pega estos prompts en Codebuff dentro del VPS. Cada uno completará una tarea pendiente:
 
+**Prompt para R1.1:**
 ```
-@Buffy: Completa R1.1 — Paper Trading Extendido.
+Completa R1.1 — Paper Trading Extendido.
 Crea el script scripts/run_paper_marathon.py que ejecute 100+ ciclos
 de paper trading sin errores, con auto-reinicio con backoff,
 métricas por ciclo (latencia, señales, posiciones, PnL), y
@@ -584,8 +590,9 @@ guarde resultados en reports/paper_marathon.json.
 Sigue el plan en RUTA_IMPLEMENTACION.md.
 ```
 
+**Prompt para R1.2:**
 ```
-@Buffy: Completa R1.2 — Validación MR con Datos Reales.
+Completa R1.2 — Validación MR con Datos Reales.
 Ejecuta scripts/optimize_mr.py con los datos Parquet reales
 en data/parquet/, ejecuta walk-forward validation (P10.1),
 y guarda los resultados en data/optimization/optimal_params_mr_real.json.
@@ -593,8 +600,9 @@ Valida Sharpe > 0.5 (out-of-sample), Profit Factor > 1.1,
 Max Drawdown < 20%.
 ```
 
+**Prompt para R1.3:**
 ```
-@Buffy: Completa R1.3 — Dashboard Event-Driven P11.4.
+Completa R1.3 — Dashboard Event-Driven P11.4.
 El dashboard del EventDetector ya debería existir en
 monitoring/grafana-event-dashboard.json. Verifica que:
 - Tenga paneles para los 4 tipos de eventos
@@ -604,16 +612,18 @@ monitoring/grafana-event-dashboard.json. Verifica que:
 Si falta algo, complétalo y actualiza Grafana provisioning.
 ```
 
+**Prompt para R1.4:**
 ```
-@Buffy: Completa R1.4 — Auditoría de Seguridad.
+Completa R1.4 — Auditoría de Seguridad.
 Ejecuta scripts/security_scan.sh, verifica que bandit muestra
 0 HIGH/MEDIUM issues, verifica que pip-audit no tiene CVEs
 críticos nuevos, verifica que .env no expone secrets.
 Actualiza AUDIT_REPORT.md con los resultados.
 ```
 
+**Prompt para R1.5:**
 ```
-@Buffy: Completa R1.5 — Cobertura de Tests.
+Completa R1.5 — Cobertura de Tests.
 Añade tests para routers API (markets, orders, positions, dashboard),
 execution handlers, y Telegram handlers.
 Sube cobertura al 80%+ en esos módulos sin romper tests existentes.
@@ -622,8 +632,9 @@ Verifica con pytest --cov.
 
 ### Tareas de VERIFICACIÓN (R2)
 
+**Prompt para R2.1:**
 ```
-@Buffy: Completa el checklist pre-real-trading R2.1.
+Completa el checklist pre-real-trading R2.1.
 Ayúdame a verificar los pasos 2-6:
 - Paso 2: Recording 168h activo
 - Paso 3: optimize_mr.py con datos reales
@@ -631,6 +642,42 @@ Ayúdame a verificar los pasos 2-6:
 - Paso 5: Paper trading 100 ciclos (R1.1)
 - Paso 6: Preparar /mode real <PIN>
 ```
+
+### 12.1 — Guardar y subir cambios a GitHub desde el VPS
+
+> **IMPORTANTE:** Cada vez que Codebuff complete una tarea, haz commit y push para no perder el trabajo.
+
+```bash
+cd /opt/polybot
+
+# Ver qué archivos cambiaron
+git status
+
+# Añadir todos los cambios
+git add -A
+
+# Commit con mensaje descriptivo
+git commit -m "feat: completar R1.X — [descripción de la tarea]"
+
+# Subir al repositorio remoto
+git push origin main
+
+# ── Si pide autenticación ──
+# Opción 1: Usar token de GitHub
+#   git remote set-url origin https://TU_TOKEN@github.com/TU_USUARIO/Polybot.git
+#
+# Opción 2: Usar SSH key
+#   ssh-keygen -t ed25519 -C "vps@polybot"
+#   cat ~/.ssh/id_ed25519.pub  # Añadir a GitHub → Settings → SSH Keys
+#   git remote set-url origin git@github.com:TU_USUARIO/Polybot.git
+```
+
+> 💡 **Tip:** Crea un alias en el VPS para facilitar:
+> ```bash
+> echo 'alias guardar="git add -A && git commit -m \"save: cambios desde VPS\" && git push"' >> ~/.bashrc
+> source ~/.bashrc
+> # Luego solo escribes: guardar
+> ```
 
 ---
 
