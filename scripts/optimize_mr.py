@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Reuse the realistic data generator from optimize_bat.py (canonical source)
 from scripts.optimize_bat import generate_realistic_dataset as _gen_bat_dataset
+from src.backtesting.parquet_loader import ParquetDataLoader
 from src.domain.value_objects.market_tick import MarketTick
 
 OUTPUT_DIR = Path("data/optimization")
@@ -78,10 +79,68 @@ def parse_args() -> argparse.Namespace:
                         help="Number of synthetic ticks per dataset (default: 3000)")
     parser.add_argument("--balance", type=float, default=1000.0,
                         help="Initial balance in USDC (default: 1000)")
+    parser.add_argument("--parquet-dir", type=str, default=None,
+                        help="Load real data from Parquet dir instead of synthetic")
     return parser.parse_args()
 
 
 # ── SHARED DATA GENERATOR (imported from optimize_bat) ────────────────
+
+def load_parquet_ticks(
+    asset: str,
+    window: str,
+    parquet_dir: str = "data/parquet",
+) -> list[MarketTick]:
+    """
+    Load real MarketTick data from Parquet files.
+
+    Uses ParquetDataLoader to read all tick data for an asset.
+    Returns ticks sorted by timestamp.
+    """
+    loader = ParquetDataLoader(base_dir=parquet_dir)
+    try:
+        dataset = loader.load(asset=asset, window=window)
+        if dataset.tick_count == 0:
+            print(f"  ⚠️  No ticks for {asset}/{window} — skipping")
+            return []
+        print(f"     Loaded {dataset.tick_count} real ticks for {asset}/{window}")
+        return dataset.ticks
+    except FileNotFoundError:
+        print(f"  ⚠️  No Parquet files for {asset} — skipping")
+        return []
+    except Exception as e:
+        print(f"  ⚠️  Error loading {asset}/{window}: {e} — skipping")
+        return []
+
+
+def load_real_dataset(
+    asset: str,
+    window: str,
+    n_ticks: int = 3000,
+    parquet_dir: str = "data/parquet",
+) -> list[MarketTick]:
+    """
+    Load real data from Parquet, falling back to synthetic if unavailable.
+
+    If real data exists, samples up to n_ticks (chronologically).
+    If insufficient real data, uses all available ticks.
+    If no real data, falls back to synthetic generation.
+    """
+    ticks = load_parquet_ticks(asset, window, parquet_dir)
+
+    if ticks:
+        # Sample up to n_ticks (use most recent for relevance)
+        if len(ticks) > n_ticks:
+            ticks = ticks[-n_ticks:]
+        print(f"     Using {len(ticks)} ticks (real Parquet data)")
+        return ticks
+
+    # Fallback to synthetic
+    print(f"     No real data for {asset}/{window} — generating synthetic fallback")
+    return generate_realistic_dataset(
+        asset=asset, window=window, n_ticks=n_ticks, save_csv=False
+    )
+
 
 def generate_realistic_dataset(
     asset: str,
@@ -586,11 +645,14 @@ def save_mr_results(
 
     # Save optimal parameters
     if robust:
-        optimal_path = OUTPUT_DIR / "optimal_params_mr.json"
+        output_filename = "optimal_params_mr_real.json" if args.parquet_dir else "optimal_params_mr.json"
+        optimal_path = OUTPUT_DIR / output_filename
         best = robust[0]
         optimal = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "mode": "quick" if args.quick else "full",
+            "data_source": "parquet" if args.parquet_dir else "synthetic",
+            "parquet_dir": args.parquet_dir,
             "n_ticks": args.n_ticks,
             "balance": args.balance,
             "top_config": {
@@ -645,6 +707,10 @@ def main() -> None:
     print(f"  Ticks:   {args.n_ticks} per dataset")
     print(f"  Balance: ${args.balance:.0f} USDC")
     print(f"  Output:  {OUTPUT_DIR.absolute()}")
+    if args.parquet_dir:
+        print(f"  Data:    REAL (parquet: {args.parquet_dir})")
+    else:
+        print(f"  Data:    SYNTHETIC")
 
     if args.quick:
         ma_windows = QUICK_MA_WINDOWS
@@ -678,20 +744,37 @@ def main() -> None:
     # Determine datasets
     if args.dataset:
         ds_info = DATASETS[args.dataset]
-        print(f"📊 Generating data for {args.dataset}...")
-        ticks = generate_realistic_dataset(
-            ds_info["asset"], ds_info["window"], args.n_ticks, save_csv=True
-        )
-        target_datasets = {args.dataset: ticks}
-    else:
-        print("📊 Generating realistic data for all datasets...")
-        target_datasets = {}
-        for ds_name, ds_info in DATASETS.items():
-            print(f"   {ds_name}...")
+        if args.parquet_dir:
+            print(f"📊 Loading real data for {args.dataset}...")
+            ticks = load_real_dataset(
+                ds_info["asset"], ds_info["window"], args.n_ticks, args.parquet_dir
+            )
+        else:
+            print(f"📊 Generating data for {args.dataset}...")
             ticks = generate_realistic_dataset(
                 ds_info["asset"], ds_info["window"], args.n_ticks, save_csv=True
             )
-            target_datasets[ds_name] = ticks
+        target_datasets = {args.dataset: ticks}
+    else:
+        if args.parquet_dir:
+            print(f"📊 Loading real data from {args.parquet_dir}...")
+        else:
+            print("📊 Generating realistic data for all datasets...")
+        target_datasets = {}
+        for ds_name, ds_info in DATASETS.items():
+            if args.parquet_dir:
+                print(f"   {ds_name}...")
+                ticks = load_real_dataset(
+                    ds_info["asset"], ds_info["window"],
+                    args.n_ticks, args.parquet_dir
+                )
+            else:
+                print(f"   {ds_name}...")
+                ticks = generate_realistic_dataset(
+                    ds_info["asset"], ds_info["window"], args.n_ticks, save_csv=True
+                )
+            if ticks:
+                target_datasets[ds_name] = ticks
 
     # ── Run sweeps ──────────────────────────────────────────────────
     t_total = time.monotonic()
