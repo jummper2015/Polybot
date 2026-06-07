@@ -1,6 +1,6 @@
 # tests/unit/test_strategy.py
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -10,11 +10,27 @@ from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.signal_type import SignalType
 from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
+from src.domain.value_objects.signal import Signal
+from src.risk.context import RiskContext
+from src.risk.rules.drawdown import DrawdownRule
+from src.risk.rules.hedge import HedgeRule
+from src.risk.rules.max_exposure import MaxExposureRule
+from src.risk.rules.max_positions import MaxPositionsRule
+from src.risk.rules.min_balance import MinBalanceRule
+from src.strategies.base import StrategyState
 from src.strategies.buy_above_threshold.config import BuyAboveThresholdConfig
 from src.strategies.buy_above_threshold.strategy import BuyAboveThresholdStrategy
+from src.strategies.filters.liquidity_filter import LiquidityFilter
+from src.strategies.filters.spread_filter import SpreadFilter
+from src.strategies.filters.tick_confirmation import TickConfirmationFilter
+from src.strategies.filters.time_filter import TimeFilter
+
+# ── BAT Helpers ──────────────────────────────────────────────────────────────
 
 
-def make_tick(yes_price: float, spread: float = 0.01, volume: float = 5000.0, hour: int = 12) -> MarketTick:
+def make_tick(
+    yes_price: float, spread: float = 0.01, volume: float = 5000.0, hour: int = 12
+) -> MarketTick:
     """Create a tick at the specified hour to avoid blocked-window flakiness."""
     ts = datetime.utcnow().replace(hour=hour, minute=0, second=0, microsecond=0)
     return MarketTick(
@@ -30,7 +46,6 @@ def make_tick(yes_price: float, spread: float = 0.01, volume: float = 5000.0, ho
 
 
 def make_market(minutes_to_expiry: float = 60.0) -> Market:
-    from datetime import timedelta
     return Market(
         id="test_market",
         asset=Asset.BTC,
@@ -44,6 +59,66 @@ def make_market(minutes_to_expiry: float = 60.0) -> Market:
         volume_24h=5000.0,
         expiry=datetime.utcnow() + timedelta(minutes=minutes_to_expiry),
     )
+
+
+# ── Risk Helpers ─────────────────────────────────────────────────────────────
+
+
+def make_signal(signal_type: SignalType = SignalType.BUY_YES) -> Signal:
+    return Signal(
+        type=signal_type,
+        market_id="test_market",
+        confidence=0.8,
+        source_strategy="BuyAboveThreshold",
+        reason="test",
+        timestamp=datetime.utcnow(),
+    )
+
+
+def make_context(**kwargs) -> RiskContext:
+    defaults = {
+        "current_balance":      1000.0,
+        "initial_day_balance":  1000.0,
+        "open_positions_count": 0,
+        "market_exposure_usdc": 0.0,
+        "total_exposure_usdc":  0.0,
+        "requested_amount":     10.0,
+        "market_id":            "test_market",
+        "trading_mode":         "paper",
+    }
+    defaults.update(kwargs)
+    return RiskContext(**defaults)
+
+
+# ── Filter Helpers ───────────────────────────────────────────────────────────
+
+
+def make_tick_for_filter(
+    yes_price: float = 0.80,
+    spread:    float = 0.01,
+    volume:    float = 5000.0,
+    hour:      int   = 12,
+) -> MarketTick:
+    ts = datetime.utcnow().replace(hour=hour)
+    return MarketTick(
+        market_id="test",
+        yes_price=yes_price,
+        no_price=1.0 - yes_price,
+        best_bid=yes_price - spread / 2,
+        best_ask=yes_price + spread / 2,
+        spread=spread,
+        volume_24h=volume,
+        timestamp=ts,
+    )
+
+
+def make_state(consecutive_ticks: int = 0) -> StrategyState:
+    state = StrategyState(market_id="test", strategy_name="test")
+    state.consecutive_ticks = consecutive_ticks
+    return state
+
+
+# ── BAT Fixtures ─────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -60,6 +135,9 @@ def strategy():
 @pytest.fixture
 def market():
     return make_market()
+
+
+# ── BAT Tests ────────────────────────────────────────────────────────────────
 
 
 class TestBuyAboveThreshold:
@@ -191,44 +269,7 @@ class TestBuyAboveThreshold:
             assert signal_far.confidence > signal_close.confidence
 
 
-# tests/unit/test_risk.py
-
-
-import pytest
-
-from src.domain.value_objects.signal import Signal
-from src.risk.context import RiskContext
-from src.risk.rules.drawdown import DrawdownRule
-from src.risk.rules.hedge import HedgeRule
-from src.risk.rules.max_exposure import MaxExposureRule
-from src.risk.rules.max_positions import MaxPositionsRule
-from src.risk.rules.min_balance import MinBalanceRule
-
-
-def make_signal(signal_type: SignalType = SignalType.BUY_YES) -> Signal:
-    return Signal(
-        type=signal_type,
-        market_id="test_market",
-        confidence=0.8,
-        source_strategy="BuyAboveThreshold",
-        reason="test",
-        timestamp=datetime.utcnow(),
-    )
-
-
-def make_context(**kwargs) -> RiskContext:
-    defaults = {
-        "current_balance":      1000.0,
-        "initial_day_balance":  1000.0,
-        "open_positions_count": 0,
-        "market_exposure_usdc": 0.0,
-        "total_exposure_usdc":  0.0,
-        "requested_amount":     10.0,
-        "market_id":            "test_market",
-        "trading_mode":         "paper",
-    }
-    defaults.update(kwargs)
-    return RiskContext(**defaults)
+# ── Risk Tests ───────────────────────────────────────────────────────────────
 
 
 class TestMinBalanceRule:
@@ -332,42 +373,7 @@ class TestHedgeRule:
         assert not result.allowed
 
 
-# tests/unit/test_filters.py
-
-
-import pytest
-
-from src.domain.value_objects.market_tick import MarketTick
-from src.strategies.base import StrategyState
-from src.strategies.filters.liquidity_filter import LiquidityFilter
-from src.strategies.filters.spread_filter import SpreadFilter
-from src.strategies.filters.tick_confirmation import TickConfirmationFilter
-from src.strategies.filters.time_filter import TimeFilter
-
-
-def make_tick_for_filter(
-    yes_price: float = 0.80,
-    spread:    float = 0.01,
-    volume:    float = 5000.0,
-    hour:      int   = 12,
-) -> MarketTick:
-    ts = datetime.utcnow().replace(hour=hour)
-    return MarketTick(
-        market_id="test",
-        yes_price=yes_price,
-        no_price=1.0 - yes_price,
-        best_bid=yes_price - spread/2,
-        best_ask=yes_price + spread/2,
-        spread=spread,
-        volume_24h=volume,
-        timestamp=ts,
-    )
-
-
-def make_state(consecutive_ticks: int = 0) -> StrategyState:
-    state = StrategyState(market_id="test", strategy_name="test")
-    state.consecutive_ticks = consecutive_ticks
-    return state
+# ── Filter Tests ─────────────────────────────────────────────────────────────
 
 
 class TestFilters:
