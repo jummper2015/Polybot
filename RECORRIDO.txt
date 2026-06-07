@@ -247,24 +247,6 @@
     🎯 PROYECTO LEGACY COMPLETADO — 39/39 prioridades totales
 
 
-  ──────────────────────────────────────────────────────────────────────────
-  NOTA SOBRE WORKFLOW/ DIRECTORY
-  ──────────────────────────────────────────────────────────────────────────
-
-  El directorio WORKFLOW/ contiene versiones anteriores (en español) de
-  SPEC.md y CLAUDE.md. Estos archivos están desactualizados y han sido
-  reemplazados por sus versiones en inglés en la raíz del proyecto:
-
-    WORKFLOW/SPEC.md    → reemplazado por SPEC.md (v2.0, en inglés)
-    WORKFLOW/Claude.md  → reemplazado por CLAUDE.md (v2.0, en inglés)
-    WORKFLOW/PLAN_MEJORAS.txt → plan legacy ya completado (Fases 1-7)
-
-  WORKFLOW.md (raíz) es el documento operativo activo que define el ciclo
-  PLANEAR → CONSTRUIR → TESTEAR → DESPLEGAR y detalla el progreso de cada
-  fase. Se actualiza junto con RECORRIDO.txt al completar cada subfase.
-
-  Los archivos en WORKFLOW/ se mantienen como referencia histórica.
-
 
   ══════════════════════════════════════════════════════════════════════════
   RESUMEN COMPLETADO
