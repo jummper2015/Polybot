@@ -1,4 +1,113 @@
-# AUDIT_REPORT.md — Polymarket API Integration Audit
+# AUDIT_REPORT.md — PolyBot Security Audit
+
+**Última auditoría:** 2026-06-07 (R1.4)  
+**Auditoría anterior:** 2026-06-05 (P11.1 — Polymarket API Integration)
+
+---
+
+## 🔴 R1.4 — Auditoría de Seguridad (Junio 2026)
+
+**Fecha:** 2026-06-07  
+**Alcance:** SAST (bandit), SCA (pip-audit), secrets scan, .env hygiene  
+
+### 1. Bandit — Static Analysis Security Testing
+
+```
+✅ HIGH:   0 findings
+✅ MEDIUM: 0 findings
+🟡 LOW:   23 findings (reviewed, no action needed)
+```
+
+**Detalle LOW:** 23 issues de baja severidad (assert usages, subprocess sin shell=True,
+random no criptográfico en tests). Ninguno es explotable en producción.
+- `assert` en tests → sin riesgo
+- `subprocess` sin `shell=True` → uso correcto
+- `random` en `optimize_bat.py` y `optimize_mr.py` → solo genera datos sintéticos
+- `try-except-pass` → intencional en graceful degradation paths
+
+**Conclusión:** ✅ Código limpio — 0 HIGH, 0 MEDIUM.
+
+### 2. pip-audit — Software Composition Analysis
+
+```
+⚠️  53 vulnerabilidades en 13 paquetes
+```
+
+| Paquete | Vulns | Tipo | Riesgo Producción |
+|---------|-------|------|-------------------|
+| aiohttp 3.9.5 | 22 | HTTP server | 🟡 MEDIO — usado en prod, actualizar |
+| jupyter-server 2.17.0 | 7 | Dev tool | 🟢 BAJO — solo desarrollo |
+| gitpython 3.1.46 | 4 | Dev tool | 🟢 BAJO — solo desarrollo |
+| mistune 3.2.0 | 4 | Markdown parser | 🟢 BAJO — dependencia de nbconvert |
+| starlette 0.37.2 | 4 | ASGI framework | 🟡 MEDIO — usado en prod (FastAPI), actualizar |
+| jupyterlab 4.5.5 | 3 | Dev tool | 🟢 BAJO — solo desarrollo |
+| nbconvert 7.17.0 | 2 | Dev tool | 🟢 BAJO — solo desarrollo |
+| urllib3 2.6.3 | 2 | HTTP library | 🟡 MEDIO — usado en prod, actualizar |
+| idna 3.11 | 1 | URL parser | 🟢 BAJO — dependencia indirecta |
+| pip 26.1.1 | 1 | Package manager | 🟢 BAJO — entorno de build |
+| pygments 2.19.2 | 1 | Syntax highlighter | 🟢 BAJO — dependencia indirecta |
+| pytest 8.4.2 | 1 | Test framework | 🟢 BAJO — solo desarrollo |
+| requests 2.32.5 | 1 | HTTP client | 🟡 MEDIO — usado en prod, actualizar |
+
+**Conclusión:** ⚠️ 53 vulnerabilidades, pero solo 4 paquetes de producción necesitan atención:
+- `aiohttp` (22 vulns) → considerar actualizar a 3.10+
+- `starlette` (4 vulns) → actualizar a 0.38+
+- `urllib3` (2 vulns) → actualizar
+- `requests` (1 vuln) → actualizar
+
+El resto (jupyter, pytest, nbconvert, gitpython) son dependencias de desarrollo sin exposición en producción.
+
+### 3. Secrets Scan — Git History
+
+```
+✅ No secrets found in git history
+```
+
+Verificados los siguientes patrones:
+- `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_API_SECRET` → 0 matches
+- `TELEGRAM_BOT_TOKEN` con valores reales → 0 matches
+- `DATABASE_URL` con credenciales reales → 0 matches
+- Claves SSH/PEM/GitHub tokens → 0 matches
+- `.env` en git history → 0 commits
+
+**Conclusión:** ✅ Sin secrets expuestos en el historial.
+
+### 4. .env Hygiene
+
+```
+✅ .env existe localmente con valores reales
+✅ .env.example contiene solo placeholders (CAMBIA_ESTE_VALOR)
+✅ .gitignore cubre .env (no se trackea)
+✅ 0 archivos .env/.pem/.key trackeados en git
+```
+
+### 5. Circuit Breakers & Guards
+
+Verificados en `src/infrastructure/security/`:
+- `circuit_breaker.py` — CLOB circuit breaker (5 fallos/60s → bloquea 60s) ✅
+- `security_guard.py` — pre-flight checks para órdenes reales ✅
+- `rate_limiter.py` — rate limiting en API calls ✅
+- `key_manager.py` — manejo seguro de claves privadas ✅
+- `audit_log.py` — registro inmutable de operaciones sensibles ✅
+
+### R1.4 — Resumen
+
+| Check | Resultado |
+|-------|-----------|
+| Bandit HIGH/MEDIUM | ✅ 0 findings |
+| pip-audit producción | ⚠️ 4 paquetes a actualizar |
+| Secrets en git | ✅ 0 leaks |
+| .env hygiene | ✅ Seguro |
+| Circuit breakers | ✅ Funcionales |
+
+**Acciones recomendadas:**
+1. `pip install --upgrade aiohttp starlette urllib3 requests`
+2. Re-ejecutar tests tras actualizar dependencias
+3. Nada bloquea el despliegue — riesgo aceptable
+
+---
+
+## P11.1 — Polymarket API Integration Audit (Junio 2026)
 
 **Fecha:** 2026-06-05  
 **Alcance:** Revisión completa de la integración con Polymarket API vs documentación oficial  
