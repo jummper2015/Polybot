@@ -876,14 +876,30 @@
     [x] Documentación actualizada en RECORRIDO.txt + WORKFLOW.md
     [x] Activación por defecto: ENSEMBLE_MODE=true en container.py
 
-  P11.3 — Liquidity-Aware Trading
+  P11.3 — Liquidity-Aware Trading  [🟢 100% — PLANEAR ✅, CONSTRUIR ✅, TESTEAR ✅, DESPLEGAR ✅]
   ─────────────────────────────────
   CONSTRUIR:
-    [ ] Adaptación de comportamiento a profundidad de mercado
-    [ ] Reducción automática de tamaño en baja liquidez
+    [x] LiquidityAwareSizer: análisis pre-trade de liquidez del mercado
+        → depth_factor: reduce tamaño cuando L1 depth < min_depth_coverage (3x)
+        → spread_factor: penaliza spreads amplios (>5%)
+        → volume_factor: penaliza volumen bajo (<$500/24h)
+        → multiplicador combinado: floor 25% del tamaño original
+    [x] Wireado en TradingService._evaluate_risk_and_execute()
+        → llamado ANTES de RiskEngine.evaluate()
+        → reduce requested_amount basado en condiciones de liquidez
+    [x] _build_tick_data_from_market_tick() helper para construir tick dict
 
   TESTEAR:
-    [ ] Menor degradación en ejecución por liquidez
+    [x] pytest tests/unit/test_liquidity_sizer.py — 41/41 ✅
+        → Config (7), Assessment (4), Depth factor (7), Spread factor (4)
+        → Volume factor (4), Combined factors (5), Edge cases (6)
+        → Convenience (2), Determinism (1)
+    [x] ruff check: 0 errors
+    [x] 919 unit tests totales sin regresiones
+
+  DESPLEGAR:
+    [x] Código listo para paper trading con liquidity-aware sizing
+    [x] Documentación actualizada en RECORRIDO.txt + WORKFLOW.md
 
   P11.4 — Event-Driven Trading
   ──────────────────────────────
@@ -1129,7 +1145,7 @@
     FASE 8:  ✅ COMPLETADA — Data & Research Foundation     (P8.1: 100%, P8.2: 100%, P8.3: 100%, P8.4: 100%)
     FASE 9:  ✅ COMPLETADA — Execution Realism              (P9.1: 100%, P9.2: 100%, P9.3: 100%, P9.4: 100%)
     FASE 10: ✅ COMPLETADA — Quantitative Validation        (164 tests, P10.1-P10.4: 100%)
-'    FASE 11: 🔄 ACTIVE    — Advanced Strategies            (2/4: P11.1 ✅, P11.2 ✅, P11.3 ⌛, P11.4 ⌛)
+'    FASE 11: 🔄 ACTIVE    — Advanced Strategies            (3/4: P11.1 ✅, P11.2 ✅, P11.3 ✅, P11.4 ⌛)
     FASE 12: 🔮 FUTURE    — Portfolio & Scaling            (0/3)
     FASE 13: 🧪 EXPERIMENTAL — AI/ML Research              (0/3)
 

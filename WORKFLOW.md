@@ -397,7 +397,7 @@ Ninguna fase se considera completada hasta que sus 4 etapas están verificadas.
 |---|---|---|---|---|
 | P11.1 Regime-Aware Strategy Switching | ✅ Definido | ✅ | ✅ | ✅ |
 | P11.2 Ensemble Signal Engine | ✅ Definido | ✅ | ✅ | ✅ |
-| P11.3 Liquidity-Aware Trading | ✅ Definido | [ ] | [ ] | [ ] |
+| P11.3 Liquidity-Aware Trading | ✅ Definido | ✅ | ✅ | ✅ |
 | P11.4 Event-Driven Trading | ✅ Definido | [ ] | [ ] | [ ] |
 
 ## FASE 12 — PORTFOLIO & SCALING [FUTURE 🔮]

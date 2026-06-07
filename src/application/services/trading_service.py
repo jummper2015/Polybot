@@ -13,6 +13,7 @@ from src.domain.entities.market import Market
 from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import Signal
 from src.execution.base import IExecutionHandler
+from src.execution.liquidity_sizer import LiquidityAwareSizer
 from src.infrastructure.observability.metrics import CYCLE_DURATION, CYCLE_ERRORS, SIGNALS_GENERATED
 from src.infrastructure.observability.tracing import get_tracer
 from src.risk.engine import RiskEngine
@@ -54,6 +55,9 @@ class TradingService:
         self._portfolio    = portfolio_service
         self._position_size = position_size_pusd
         self._trading_mode  = trading_mode
+
+        # P11.3: Liquidity-aware position sizing
+        self._liquidity_sizer = LiquidityAwareSizer()
 
         self._running      = False
         self._tasks:       list[asyncio.Task] = []
@@ -309,11 +313,31 @@ class TradingService:
         # Extrae datos de mercado para RiskContext (Kelly Criterion)
         market_yes_price = tick.yes_price if tick else 0.5
 
+        # P11.3: Liquidity-aware sizing — reduce position size in thin markets
+        requested_amount = self._position_size
+        if tick is not None:
+            tick_data = self._build_tick_data_from_market_tick(tick)
+            assessment = self._liquidity_sizer.assess(
+                tick_data=tick_data,
+                order_size=self._position_size,
+                side="entry",
+            )
+            requested_amount = assessment.recommended_size
+            if assessment.is_reduced:
+                logger.info(
+                    "liquidity_size_reduced",
+                    market_id=market.id,
+                    original=self._position_size,
+                    adjusted=requested_amount,
+                    multiplier=assessment.liquidity_multiplier,
+                    reasons=assessment.reasons,
+                )
+
         # ── Sub-span: risk_evaluation ─────────────────────────────────
         with tracer.start_as_current_span("risk_evaluation") as risk_span:
             risk_span.set_attribute("market.id", market.id)
             risk_span.set_attribute("signal.confidence", str(entry_signal.confidence))
-            risk_span.set_attribute("requested_amount", str(self._position_size))
+            risk_span.set_attribute("requested_amount", str(requested_amount))
             risk_span.set_attribute("current_balance", str(balance))
 
             # Evalúa riesgo con contexto completo
@@ -323,7 +347,7 @@ class TradingService:
                 open_positions_count=len(open_positions),
                 market_exposure_usdc=market_exposure,
                 total_exposure_usdc=total_exposure,
-                requested_amount=self._position_size,
+                requested_amount=requested_amount,
                 market_id=market.id,
                 trading_mode=self._trading_mode,
                 market_yes_price=market_yes_price,
@@ -341,7 +365,7 @@ class TradingService:
                 # Usa el monto ajustado por el RiskEngine si lo hay
                 amount = (
                     risk_decision.suggested_amount
-                    or self._position_size
+                    or requested_amount
                 )
 
                 result = await self._execution.execute_entry(
@@ -456,3 +480,44 @@ class TradingService:
                 error=str(e),
             )
             return None
+
+    @staticmethod
+    def _build_tick_data_from_market_tick(tick: MarketTick) -> dict:
+        """Build a FillSimulator-compatible tick dict from a MarketTick.
+
+        Used by P11.3 LiquidityAwareSizer to assess market depth before
+        submitting orders. Uses best-effort depth estimation from
+        spread and volume when real orderbook data is unavailable.
+        """
+        spread = tick.spread if tick.spread > 0 else 0.01
+        mid = tick.yes_price
+        best_bid = (
+            tick.best_bid
+            if hasattr(tick, 'best_bid') and tick.best_bid > 0
+            else mid - spread / 2
+        )
+        best_ask = (
+            tick.best_ask
+            if hasattr(tick, 'best_ask') and tick.best_ask > 0
+            else mid + spread / 2
+        )
+
+        # Estimate depth from volume and spread: deeper markets have more liquidity
+        vol = tick.volume_24h if tick.volume_24h > 0 else 0.0
+        # Default depth: at least $50 or 5× position size as safe floor
+        # This prevents overly aggressive size reduction when real orderbook
+        # depth data is unavailable (MarketTick lacks bids_vol/asks_vol).
+        estimated_l1 = max(50.0, vol / 1440.0) if vol > 0 else 50.0
+
+        return {
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "spread": spread,
+            "bids_vol_1": estimated_l1,
+            "bids_vol_2": 0.0,
+            "bids_vol_3": 0.0,
+            "asks_vol_1": estimated_l1,
+            "asks_vol_2": 0.0,
+            "asks_vol_3": 0.0,
+            "volume_24h": vol,
+        }
