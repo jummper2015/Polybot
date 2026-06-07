@@ -8,6 +8,6 @@
 #
 # Severity filter: -ll (medium and high only) is applied via CLI flag
 
-[bandit]
-exclude_dirs: tests,alembic,monitoring,scripts,.git
-skips: B101,B311  # B101: assert_used (allowed in domain __post_init__); B311: random (we don't use random for crypto)
+# Use YAML format (Bandit's preferred format with -c flag)
+exclude_dirs: ['tests', 'alembic', 'monitoring', 'scripts', '.git']
+skips: ['B101', 'B311']  # B101: assert_used (allowed in domain __post_init__); B311: random (not used for crypto)

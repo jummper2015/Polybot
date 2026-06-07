@@ -60,7 +60,7 @@ logger = structlog.get_logger(__name__)
 class QueuePositionConfig:
     """Configuration for queue position modeling and maker/taker decisions."""
 
-    wait_time_T: float = 30.0
+    wait_time_T: float = 30.0  # noqa: N815
     """Maximum time (seconds) the maker is willing to wait for a fill."""
 
     missed_entry_factor: float = 0.5
@@ -99,7 +99,7 @@ class QueuePositionEstimate:
     confidence: float = 1.0
     """Confidence in the estimate (0.0-1.0). Degraded when using fallbacks."""
 
-    wait_time_T: float = 30.0
+    wait_time_T: float = 30.0  # noqa: N815
     """Wait window used for this estimate."""
 
     volume_sec: float = 0.0
@@ -215,7 +215,7 @@ class QueuePositionModel:
         order_size: float,
         l1_depth: float,
         volume_sec: float,
-        wait_time_T: float | None = None,
+        wait_time_T: float | None = None,  # noqa: N803
     ) -> tuple[float, float]:
         """Estimate P(fill) and expected time to fill.
 
@@ -229,8 +229,7 @@ class QueuePositionModel:
             (p_fill, expected_time_to_fill_seconds):
                 p_fill in [0.0, 1.0], time_to_fill in seconds.
         """
-        if wait_time_T is None:
-            wait_time_T = self._config.wait_time_T
+        wait_time_t = wait_time_T if wait_time_T is not None else self._config.wait_time_T
 
         # ── Guards ────────────────────────────────────────────────────
         if order_size <= 0:
@@ -240,7 +239,7 @@ class QueuePositionModel:
             return 0.0, float("inf")  # no taker volume → never fills
 
         l1 = max(l1_depth, self._config.min_l1_depth)
-        wait_time = max(wait_time_T, 1.0)  # minimum 1s to avoid degenerate
+        wait_time = max(wait_time_t, 1.0)  # minimum 1s to avoid degenerate
 
         # ── Core formula ──────────────────────────────────────────────
         volume_needed = l1 + order_size
@@ -461,7 +460,7 @@ class QueuePositionEngine:
         side: str = "entry",
         volatility: float | None = None,
         regime: str | None = None,
-        wait_time_T: float | None = None,
+        wait_time_T: float | None = None,  # noqa: N803
     ) -> QueuePositionEstimate:
         """Estimate fill probability and adverse selection for a maker order.
 
@@ -486,8 +485,7 @@ class QueuePositionEngine:
         else:
             l1_depth = tick_data.get("asks_vol_1", 0.0) or 0.0
 
-        if wait_time_T is None:
-            wait_time_T = self._config.wait_time_T
+        wait_time_t = wait_time_T if wait_time_T is not None else self._config.wait_time_T
 
         # ── 1. Turnover rate ──────────────────────────────────────────
         volume_sec, turnover_confidence = self._turnover.estimate_volume_per_sec(
@@ -499,7 +497,7 @@ class QueuePositionEngine:
             order_size=order_size,
             l1_depth=l1_depth,
             volume_sec=volume_sec,
-            wait_time_T=wait_time_T,
+            wait_time_T=wait_time_t,
         )
 
         # ── 3. Adverse selection cost ─────────────────────────────────

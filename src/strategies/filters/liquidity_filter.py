@@ -27,5 +27,6 @@ class LiquidityFilter(IFilter):
             )
         return FilterResult.fail(
             self.name,
-            f"volume={tick.volume_24h:.0f} < min={self._min_volume:.0f} USDC (liquidez insuficiente)",
+            f"volume={tick.volume_24h:.0f} < min={self._min_volume:.0f} USDC "
+            f"(liquidez insuficiente)",
         )

@@ -575,7 +575,7 @@ class SlippageEngine:
         side: str = "entry",
         volatility: float | None = None,
         regime: str | None = None,
-        wait_time_T: float | None = None,
+        wait_time_T: float | None = None,  # noqa: N803
     ) -> QueuePositionEstimate:
         """Estimate fill probability for a MAKER (limit) order.
 

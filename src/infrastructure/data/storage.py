@@ -168,7 +168,7 @@ class ParquetTickWriter:
 
         After close(), the writer cannot be reused.
         """
-        final_flush = self.flush()
+        self.flush()  # Flush remaining ticks before closing
         summary = {
             "total_ticks":   self._total_written,
             "flush_count":   self._flush_count,

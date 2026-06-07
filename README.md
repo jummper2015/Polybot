@@ -4,11 +4,12 @@
 [Polymarket](https://polymarket.com) para resultados de precio de **BTC** y **ETH** en
 ventanas temporales de **5 minutos** y **15 minutos**.
 
-> ⚠️ **Estado:** El código está **técnicamente completo (100%)** — 39/39 prioridades implementadas,
-> 343 tests pasando, pipeline CI/CD, manifiestos Kubernetes, dashboards Grafana y hardening de
-> seguridad completo. **La validación con datos reales de mercado está bloqueada** a la espera
-> de credenciales de la API de Polymarket. Consulta [PLAN_MEJORAS.txt](./PLAN_MEJORAS.txt) § P7.3
-> para ver la checklist exacta de 6 pasos a seguir cuando las credenciales estén disponibles.
+> ⚠️ **Estado:** El código está **técnicamente completo (100%)** — 39/39 prioridades
+> implementadas, **1030 tests** (878 unit, 73 integration, 33 property, 38 chaos,
+> 4 e2e, 4 performance), pipeline CI/CD, manifiestos Kubernetes, dashboards Grafana
+> y hardening de seguridad. **La validación con datos reales de mercado avanza**
+> — las credenciales de la API de Polymarket ya están configuradas. Consulta
+> [PLAN_MEJORAS.txt](./PLAN_MEJORAS.txt) § P7.3 para la checklist de validación.
 
 ---
 
@@ -472,7 +473,7 @@ ruff check src/
 mypy src/ --ignore-missing-imports
 ```
 
-**Resumen de tests:** 343 tests pasando (298 unitarios + 45 de integración API) — cero fallos.
+**Resumen de tests:** 1030 tests pasando (878 unitarios + 73 integración + 33 property + 38 chaos + 4 e2e + 4 performance) — cero fallos.
 
 Consulta `AUDIT_REPORT.md` para un análisis detallado de cobertura por módulo.
 
@@ -598,7 +599,7 @@ Disparadores: push a `main`, PRs a `main`, programación diaria (06:00 UTC), dis
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests totales** | 343 (298 unitarios + 45 integración API) |
+| **Tests totales** | 1030 (878 unit + 73 integration + 33 property + 38 chaos + 4 e2e + 4 perf) |
 | **Tests de propiedad** | 33 (Hypothesis, ~200 ejemplos cada uno) |
 | **Experimentos de chaos** | 5 escenarios, 38 tests |
 | **Archivos fuente** | ~200 |
@@ -609,6 +610,7 @@ Disparadores: push a `main`, PRs a `main`, programación diaria (06:00 UTC), dis
 | **Reglas de riesgo** | 6 (incl. Criterio de Kelly) |
 | **Clases de excepción** | 31 en jerarquía tipada |
 | **Prioridades completadas** | 39/39 (100%) |
+| **Fases estratégicas** | 8-11 en progreso (Fases 8-10 ✅, Fase 11 🔄) |
 
 ---
 

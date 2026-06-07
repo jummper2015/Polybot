@@ -18,7 +18,7 @@ class TimeFilter(IFilter):
     ):
         # blocked_hours: lista de (hora_inicio, hora_fin) UTC donde NO operamos
         # Default: bloquea madrugada UTC (00:00 - 06:00)
-        self._blocked = blocked_hours or [(0, 6)]
+        self._blocked = blocked_hours if blocked_hours is not None else [(0, 6)]
 
     @property
     def name(self) -> str:

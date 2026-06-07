@@ -134,7 +134,8 @@ async def cb_pnl(callback: CallbackQuery, container=None) -> None:
             data = await get_positions_data(container)
             total_pnl = data["total_pnl"]
             sign = "\\.+" if total_pnl >= 0 else ""
-            wl = f"`{data['winners_count']}W/{data['losers_count']}L`" if (data['winners_count'] + data['losers_count']) > 0 else "`\\.-`"
+            has_trades = (data['winners_count'] + data['losers_count']) > 0
+            wl = f"`{data['winners_count']}W/{data['losers_count']}L`" if has_trades else "`\\.-`"
             wr_text = f"`{data['win_rate']:.1%}`" if data['total_trades'] > 0 else "`\\.-`"
 
             text = (

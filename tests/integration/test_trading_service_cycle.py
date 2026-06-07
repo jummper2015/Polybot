@@ -168,6 +168,7 @@ def strategy_engine():
         required_ticks=3,
         stop_loss_pct=0.15,
         target_price=0.90,
+        blocked_hours=[],  # Disable time filter for tests
     )
     strategy = BuyAboveThresholdStrategy(config=config)
     return StrategyEngine(strategies=[strategy])
@@ -311,6 +312,7 @@ class TestTradingServiceCycle:
             required_ticks=3,
             stop_loss_pct=0.15,
             target_price=0.90,
+            blocked_hours=[],  # Disable time filter for tests
         )
         strategy = BuyAboveThresholdStrategy(config=config)
         market = _make_market()
@@ -446,7 +448,7 @@ class TestTradingServiceCycle:
         Mercado a punto de expirar (< 5 min) no genera señal de entrada.
         La estrategia verifica market.minutes_to_expiry() < 5.0 en should_enter.
         """
-        config = BuyAboveThresholdConfig(threshold=0.75, required_ticks=3)
+        config = BuyAboveThresholdConfig(threshold=0.75, required_ticks=3, target_price=0.90, blocked_hours=[])
         strategy = BuyAboveThresholdStrategy(config=config)
 
         # Mercado que expira en 3 minutos

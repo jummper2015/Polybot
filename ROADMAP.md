@@ -1,6 +1,14 @@
 # ROADMAP.md
 
 ```md
+> **⚠️ HISTÓRICO — Este documento está congelado.**  
+> El roadmap activo y actualizado se encuentra en [`WORKFLOW.md`](./WORKFLOW.md)  
+> y el seguimiento detallado en [`RECORRIDO.txt`](./RECORRIDO.txt).  
+> La numeración de fases en este documento (6-11) corresponde a la  
+> antigua y ha sido reemplazada por Fases 8-13 en el resto del proyecto.
+
+---
+
 # ROADMAP.md — PolyBot Strategic Roadmap
 
 Version: 2.0

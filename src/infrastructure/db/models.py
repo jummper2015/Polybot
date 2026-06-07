@@ -70,9 +70,13 @@ class OrderModel(Base):
     strategy:     Mapped[str]            = mapped_column(String(50), nullable=False)
     reason:       Mapped[str]            = mapped_column(Text, nullable=False, default="")
     error:        Mapped[str | None]     = mapped_column(Text, nullable=True)
-    retry_count:  Mapped[int]            = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    retry_count:  Mapped[int]            = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     last_retry_at:Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    idempotency_key: Mapped[str | None]  = mapped_column(String(32), nullable=True, unique=True)
+    idempotency_key: Mapped[str | None]  = mapped_column(
+        String(32), nullable=True, unique=True
+    )
     created_at:   Mapped[datetime]       = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -83,6 +87,7 @@ class OrderModel(Base):
         Index("ix_orders_status",    "status"),
         Index("ix_orders_mode",      "mode"),
         Index("ix_orders_created",   "created_at"),
+        # Index for idempotency key lookups to prevent duplicate orders
         Index("ix_orders_idempotency", "idempotency_key"),
     )
 
