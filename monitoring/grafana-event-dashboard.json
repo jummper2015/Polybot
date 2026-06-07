@@ -1,0 +1,452 @@
+{
+  "dashboard": {
+    "title": "PolyBot — Event-Driven Trading (P11.4)",
+    "uid": "polybot-event-driven",
+    "tags": ["polybot", "p11.4", "event-driven", "events", "market-events"],
+    "timezone": "utc",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "15s",
+    "panels": [
+      {
+        "id": 100,
+        "title": "Events Detected (5m)",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(increase(polybot_event_detected_total[5m]))",
+            "legendFormat": "Events"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 5 },
+                { "color": "orange", "value": 15 },
+                { "color": "red", "value": 30 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 101,
+        "title": "HALTs Triggered (Total)",
+        "type": "stat",
+        "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(polybot_event_halt_entries_total)",
+            "legendFormat": "HALTs"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "orange", "value": 5 },
+                { "color": "red", "value": 20 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 102,
+        "title": "Blocking Events Active",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(polybot_event_active)",
+            "legendFormat": "Blocking"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ]
+            },
+            "mappings": [
+              { "type": "value", "options": { "0": { "text": "✅ CLEAR", "color": "green" }, "1": { "text": "⚠️ 1 BLOCKING", "color": "orange" } } },
+              { "type": "range", "options": { "from": 2, "to": 999, "result": { "text": "🔴 MULTI-BLOCK", "color": "red" } } }
+            ]
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 103,
+        "title": "HALT Rate (per hour)",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "rate(polybot_event_halt_entries_total[1h]) * 3600",
+            "legendFormat": "HALT/h"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "decimals": 1,
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+          "textMode": "auto"
+        }
+      },
+      {
+        "id": 200,
+        "title": "Events Detected — by Type (rate 5m)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(polybot_event_detected_total{event_type=\"price_shock\"}[5m])) by (event_type)",
+            "legendFormat": "Price Shock"
+          },
+          {
+            "refId": "B",
+            "expr": "sum(rate(polybot_event_detected_total{event_type=\"volume_surge\"}[5m])) by (event_type)",
+            "legendFormat": "Volume Surge"
+          },
+          {
+            "refId": "C",
+            "expr": "sum(rate(polybot_event_detected_total{event_type=\"expiry_proximity\"}[5m])) by (event_type)",
+            "legendFormat": "Expiry Proximity"
+          },
+          {
+            "refId": "D",
+            "expr": "sum(rate(polybot_event_detected_total{event_type=\"spread_explosion\"}[5m])) by (event_type)",
+            "legendFormat": "Spread Explosion"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "cps",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 15,
+              "spanNulls": true,
+              "showPoints": "auto",
+              "pointSize": 5,
+              "stacking": { "mode": "none" },
+              "lineInterpolation": "smooth"
+            },
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max", "mean", "lastNotNull"] },
+          "tooltip": { "mode": "multi" }
+        }
+      },
+      {
+        "id": 201,
+        "title": "Events Detected — by Severity (rate 5m)",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(polybot_event_detected_total{severity=\"low\"}[5m])) by (severity)",
+            "legendFormat": "LOW"
+          },
+          {
+            "refId": "B",
+            "expr": "sum(rate(polybot_event_detected_total{severity=\"medium\"}[5m])) by (severity)",
+            "legendFormat": "MEDIUM"
+          },
+          {
+            "refId": "C",
+            "expr": "sum(rate(polybot_event_detected_total{severity=\"high\"}[5m])) by (severity)",
+            "legendFormat": "HIGH"
+          },
+          {
+            "refId": "D",
+            "expr": "sum(rate(polybot_event_detected_total{severity=\"critical\"}[5m])) by (severity)",
+            "legendFormat": "CRITICAL"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "cps",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 15,
+              "spanNulls": true,
+              "showPoints": "auto",
+              "pointSize": 5,
+              "stacking": { "mode": "normal" },
+              "lineInterpolation": "smooth"
+            },
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max", "mean", "lastNotNull"] },
+          "tooltip": { "mode": "multi" }
+        }
+      },
+      {
+        "id": 300,
+        "title": "HALT Blocks — Timeline by Asset",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 12, "w": 16, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "rate(polybot_event_halt_entries_total[5m])",
+            "legendFormat": "{{asset}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "cps",
+            "custom": {
+              "drawStyle": "bars",
+              "lineWidth": 0,
+              "fillOpacity": 80,
+              "spanNulls": true,
+              "stacking": { "mode": "none" }
+            },
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] },
+          "tooltip": { "mode": "multi" }
+        }
+      },
+      {
+        "id": 301,
+        "title": "Event Distribution — by Type & Severity (15m total)",
+        "type": "bargauge",
+        "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(increase(polybot_event_detected_total[15m])) by (event_type)",
+            "legendFormat": "{{event_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "vertical",
+          "showUnfilled": true
+        }
+      },
+      {
+        "id": 400,
+        "title": "Response Actions — by Type (Total)",
+        "type": "bargauge",
+        "gridPos": { "x": 0, "y": 20, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(polybot_event_response_total) by (action)",
+            "legendFormat": "{{action}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 10 },
+                { "color": "red", "value": 50 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "showUnfilled": true
+        }
+      },
+      {
+        "id": 401,
+        "title": "Events — BTC vs ETH (Total by Type)",
+        "type": "bargauge",
+        "gridPos": { "x": 12, "y": 20, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(polybot_event_detected_total{asset=\"BTC\"}) by (event_type)",
+            "legendFormat": "BTC — {{event_type}}"
+          },
+          {
+            "refId": "B",
+            "expr": "sum(polybot_event_detected_total{asset=\"ETH\"}) by (event_type)",
+            "legendFormat": "ETH — {{event_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "options": {
+          "displayMode": "gradient",
+          "orientation": "horizontal",
+          "showUnfilled": true
+        }
+      },
+      {
+        "id": 500,
+        "title": "Response Actions — Timeline (rate 5m)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 26, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "sum(rate(polybot_event_response_total{action=\"halt\"}[5m])) by (action)",
+            "legendFormat": "HALT"
+          },
+          {
+            "refId": "B",
+            "expr": "sum(rate(polybot_event_response_total{action=\"reduce_size\"}[5m])) by (action)",
+            "legendFormat": "REDUCE_SIZE"
+          },
+          {
+            "refId": "C",
+            "expr": "sum(rate(polybot_event_response_total{action=\"boost_confidence\"}[5m])) by (action)",
+            "legendFormat": "BOOST"
+          },
+          {
+            "refId": "D",
+            "expr": "sum(rate(polybot_event_response_total{action=\"allow\"}[5m])) by (action)",
+            "legendFormat": "ALLOW"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "cps",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "spanNulls": true,
+              "showPoints": "auto",
+              "pointSize": 4,
+              "stacking": { "mode": "none" },
+              "lineInterpolation": "smooth"
+            },
+            "color": { "mode": "palette-classic" }
+          }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max", "lastNotNull"] },
+          "tooltip": { "mode": "multi" }
+        }
+      },
+      {
+        "id": 501,
+        "title": "Blocking Markets — Current Status",
+        "type": "table",
+        "gridPos": { "x": 12, "y": 26, "w": 12, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "polybot_event_active == 1",
+            "legendFormat": "{{asset}}/{{market_id}}",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": { "align": "center" },
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null }
+              ]
+            },
+            "mappings": [
+              { "type": "value", "options": { "1": { "text": "🔴 BLOCKED", "color": "red" } } }
+            ]
+          }
+        },
+        "options": {
+          "showTypeIcons": false
+        }
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    }
+  },
+  "folderUid": "",
+  "message": "P11.4 Event-Driven Trading Dashboard — event detection rates, severity distribution, HALT blocks, response actions timeline, blocking markets status",
+  "overwrite": true
+}

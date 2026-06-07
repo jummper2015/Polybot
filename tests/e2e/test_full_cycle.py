@@ -142,7 +142,9 @@ class TestFullTradingCycle:
     @pytest.mark.asyncio
     async def test_strategy_engine_marks_entry_correctly(self):
         """mark_entry actualiza el estado in_position correctamente."""
-        config   = BuyAboveThresholdConfig(threshold=0.75, required_ticks=3)
+        config   = BuyAboveThresholdConfig(
+            threshold=0.75, required_ticks=3, target_price=0.90
+        )
         strategy = BuyAboveThresholdStrategy(config=config)
         engine   = StrategyEngine(strategies=[strategy])
         market   = make_market()
