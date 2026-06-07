@@ -418,3 +418,32 @@ ENSEMBLE_WEIGHTS = Gauge(
     "Current ensemble weight per strategy",
     ["strategy"],
 )
+
+# ══════════════════════════════════════════════════════════════
+# LIQUIDITY-AWARE TRADING (P11.3)
+# ══════════════════════════════════════════════════════════════
+LIQUIDITY_MULTIPLIER = Gauge(
+    "polybot_liquidity_multiplier",
+    "Current liquidity multiplier applied to position size (0.25-1.0)",
+    ["asset", "side"],
+)
+LIQUIDITY_DEPTH_COVERAGE = Gauge(
+    "polybot_liquidity_depth_coverage",
+    "Ratio of total L1 depth to order size (higher = more liquidity)",
+    ["asset", "side"],
+)
+LIQUIDITY_SIZE_REDUCTIONS = Counter(
+    "polybot_liquidity_size_reductions_total",
+    "Total times position size was reduced due to low liquidity",
+    ["asset", "reason"],
+)
+LIQUIDITY_SPREAD_FACTOR = Gauge(
+    "polybot_liquidity_spread_factor",
+    "Current spread penalty factor (0.7-1.0, lower = worse spread)",
+    ["asset", "side"],
+)
+LIQUIDITY_VOLUME_FACTOR = Gauge(
+    "polybot_liquidity_volume_factor",
+    "Current volume penalty factor (0.6-1.0, lower = lower volume)",
+    ["asset", "side"],
+)

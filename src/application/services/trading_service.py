@@ -14,7 +14,16 @@ from src.domain.value_objects.market_tick import MarketTick
 from src.domain.value_objects.signal import Signal
 from src.execution.base import IExecutionHandler
 from src.execution.liquidity_sizer import LiquidityAwareSizer
-from src.infrastructure.observability.metrics import CYCLE_DURATION, CYCLE_ERRORS, SIGNALS_GENERATED
+from src.infrastructure.observability.metrics import (
+    CYCLE_DURATION,
+    CYCLE_ERRORS,
+    LIQUIDITY_DEPTH_COVERAGE,
+    LIQUIDITY_MULTIPLIER,
+    LIQUIDITY_SIZE_REDUCTIONS,
+    LIQUIDITY_SPREAD_FACTOR,
+    LIQUIDITY_VOLUME_FACTOR,
+    SIGNALS_GENERATED,
+)
 from src.infrastructure.observability.tracing import get_tracer
 from src.risk.engine import RiskEngine
 from src.strategies.engine import StrategyEngine
@@ -323,7 +332,27 @@ class TradingService:
                 side="entry",
             )
             requested_amount = assessment.recommended_size
+
+            # ── P11.3 metrics ──────────────────────────────────────
+            asset_label = market.asset.value if market.asset else "UNKNOWN"
+            LIQUIDITY_MULTIPLIER.labels(
+                asset=asset_label, side="entry"
+            ).set(assessment.liquidity_multiplier)
+            LIQUIDITY_DEPTH_COVERAGE.labels(
+                asset=asset_label, side="entry"
+            ).set(assessment.depth_coverage)
+            LIQUIDITY_SPREAD_FACTOR.labels(
+                asset=asset_label, side="entry"
+            ).set(assessment.spread_factor)
+            LIQUIDITY_VOLUME_FACTOR.labels(
+                asset=asset_label, side="entry"
+            ).set(assessment.volume_factor)
+
             if assessment.is_reduced:
+                for reason in assessment.reasons:
+                    LIQUIDITY_SIZE_REDUCTIONS.labels(
+                        asset=asset_label, reason=reason
+                    ).inc()
                 logger.info(
                     "liquidity_size_reduced",
                     market_id=market.id,
