@@ -64,6 +64,10 @@ from src.domain.value_objects.signal import Signal
 from src.infrastructure.data.features import FeaturePipeline, StreamingState
 from src.infrastructure.data.regime import Regime, RegimeClassifier
 from src.infrastructure.observability.metrics import (
+    EVENT_ACTIVE,
+    EVENT_DETECTED,
+    EVENT_HALT_ENTRIES,
+    EVENT_RESPONSE,
     REGIME_CLASSIFICATIONS,
     REGIME_CONFIDENCE,
     REGIME_CURRENT,
@@ -75,6 +79,10 @@ from src.infrastructure.observability.metrics import (
 from src.strategies.base import IStrategy
 from src.strategies.engine import StrategyEngine
 from src.strategies.ensemble import EnsembleAggregator, EnsembleConfig, EnsembleResult
+from src.strategies.event_detector import (
+    EventDetector,
+    MarketEvent,
+)
 
 # ══════════════════════════════════════════════════════════════════════════
 # TICK PROXY (for regime classification from streaming state)
@@ -415,6 +423,8 @@ class RegimeAwareOrchestrator:
         regime_detection_enabled: bool = True,
         ensemble_mode: bool = False,
         ensemble_config: EnsembleConfig | None = None,
+        event_detector: EventDetector | None = None,
+        event_detection_enabled: bool = True,
     ):
         """
         Args:
@@ -428,11 +438,21 @@ class RegimeAwareOrchestrator:
             ensemble_mode: If True (P11.2), evaluates ALL active strategies
                 and aggregates their signals instead of first-wins.
             ensemble_config: Configuration for EnsembleAggregator.
+            event_detector: Optional EventDetector (P11.4). Created with
+                defaults if None and event detection is enabled.
+            event_detection_enabled: If False (P11.4), disables event-driven
+                response. Useful for A/B testing event detection impact.
         """
         self._engine = strategy_engine
         self._bindings = bindings or {}
         self._enabled = regime_detection_enabled
         self._ensemble_mode = ensemble_mode
+        self._event_enabled = event_detection_enabled
+
+        # Event detector (P11.4) — detects price shocks, volume surges, etc.
+        self._event_detector = event_detector or (
+            EventDetector() if event_detection_enabled else None
+        )
 
         # Ensemble aggregator (P11.2)
         self._ensemble = (
@@ -457,6 +477,7 @@ class RegimeAwareOrchestrator:
             "regime_aware_orchestrator_initialized",
             enabled=regime_detection_enabled,
             ensemble_mode=ensemble_mode,
+            event_detection_enabled=event_detection_enabled,
             strategies=self.registered_strategies(),
             bindings={name: list(b.allowed_regimes) for name, b in self._bindings.items()},
         )
@@ -477,6 +498,8 @@ class RegimeAwareOrchestrator:
         """
         if self._enabled:
             self._detector.feed_tick(market.id, tick)
+        if self._event_enabled:
+            self._event_detector.feed_tick(tick, market)
         await self._engine.on_tick(market, tick)
 
     async def should_enter(
@@ -491,9 +514,39 @@ class RegimeAwareOrchestrator:
           - Ensemble (P11.2): evaluates ALL active strategies,
             aggregates their signals via EnsembleAggregator.
         """
-        # Detect regime
+        # Detect regime and market events
         regime, regime_conf = self._detect_regime(market)
         self._emit_regime_metrics(market, regime, regime_conf)
+
+        # P11.4: Event-driven response — check for blocking events first
+        if self._event_enabled:
+            events = self._event_detector.detect(tick, market)
+            self._emit_event_metrics(market, events)
+            if events:
+                response = self._event_detector.respond(
+                    events, order_size=0.0, confidence=0.0
+                )
+                EVENT_RESPONSE.labels(
+                    asset=market.asset.value, action=response.action.value
+                ).inc()
+                if response.should_halt:
+                    EVENT_HALT_ENTRIES.labels(asset=market.asset.value).inc()
+                    EVENT_ACTIVE.labels(
+                        asset=market.asset.value, market_id=market.id
+                    ).set(1)
+                    logger.info(
+                        "event_halt_entry",
+                        market_id=market.id,
+                        reasons=response.reasons,
+                    )
+                    return self._HOLD(market.id, "EventDetector:HALT")
+            EVENT_ACTIVE.labels(
+                asset=market.asset.value, market_id=market.id
+            ).set(0)
+        else:
+            EVENT_ACTIVE.labels(
+                asset=market.asset.value, market_id=market.id
+            ).set(0)
 
         if self._ensemble_mode:
             return await self._ensemble_enter(market, tick, regime)
@@ -665,6 +718,19 @@ class RegimeAwareOrchestrator:
             window=market.window.value,
             regime=regime.value,
         ).inc()
+
+    def _emit_event_metrics(
+        self, market: Market, events: list[MarketEvent]
+    ) -> None:
+        """Emit Prometheus metrics for detected market events (P11.4)."""
+        if not events:
+            return
+        for e in events:
+            EVENT_DETECTED.labels(
+                asset=market.asset.value,
+                event_type=e.event_type.value,
+                severity=e.severity.value,
+            ).inc()
 
     async def should_exit(
         self, market: Market, tick: MarketTick

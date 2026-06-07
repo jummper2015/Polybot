@@ -447,3 +447,27 @@ LIQUIDITY_VOLUME_FACTOR = Gauge(
     "Current volume penalty factor (0.6-1.0, lower = lower volume)",
     ["asset", "side"],
 )
+
+# ══════════════════════════════════════════════════════════════
+# EVENT-DRIVEN TRADING (P11.4)
+# ══════════════════════════════════════════════════════════════
+EVENT_DETECTED = Counter(
+    "polybot_event_detected_total",
+    "Market events detected by type and severity",
+    ["asset", "event_type", "severity"],
+)
+EVENT_RESPONSE = Counter(
+    "polybot_event_response_total",
+    "Trading responses to market events by action",
+    ["asset", "action"],
+)
+EVENT_HALT_ENTRIES = Counter(
+    "polybot_event_halt_entries_total",
+    "Entries blocked due to event HALT response",
+    ["asset"],
+)
+EVENT_ACTIVE = Gauge(
+    "polybot_event_active",
+    "Whether a market has an active blocking event (1=blocking, 0=clear)",
+    ["asset", "market_id"],
+)
