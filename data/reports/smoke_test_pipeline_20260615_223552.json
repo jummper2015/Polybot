@@ -1,0 +1,73 @@
+{
+  "status": "success",
+  "timestamp": "2026-06-15T22:36:01.227778+00:00",
+  "elapsed_seconds": 8.28,
+  "config": {
+    "n_cycles": 2,
+    "warmup_ticks": 5,
+    "cycle_interval_s": 2.0,
+    "warmup_interval_s": 1.0,
+    "limit_per_asset": 2,
+    "force_fake_signal": false,
+    "force_amount": 5.0
+  },
+  "b5_context": "Polymarket tiene 0 markets BTC/ETH M5/M15 abiertos hoy; el smoke test usa markets cripto longevos como fallback para ejercitar el pipeline E2E.",
+  "markets_used": [
+    {
+      "id": "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2",
+      "asset": "BTC",
+      "window_placeholder": "15m",
+      "question": "Will bitcoin hit $1m before GTA VI?",
+      "yes_price_at_inject": 0.4925,
+      "no_price_at_inject": 0.5075,
+      "volume_24h": 1855.0184829999998,
+      "expiry": "2026-07-31T12:00:00",
+      "tick_size": "0.001",
+      "min_order_size": 5.0
+    }
+  ],
+  "warmup": [
+    {
+      "market_id": "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2",
+      "ticks_fetched": 5,
+      "ticks_unavailable": 0,
+      "price_min": 0.4925,
+      "price_max": 0.4925
+    }
+  ],
+  "cycles": [
+    {
+      "cycle": 1,
+      "market_id": "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2",
+      "duration_ms": 2.02,
+      "error": null,
+      "positions_before": 0,
+      "positions_after": 0,
+      "balance_before": 1000.0,
+      "balance_after": 1000.0
+    },
+    {
+      "cycle": 2,
+      "market_id": "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2",
+      "duration_ms": 126.69,
+      "error": null,
+      "positions_before": 0,
+      "positions_after": 0,
+      "balance_before": 1000.0,
+      "balance_after": 1000.0
+    }
+  ],
+  "forced_signals": [],
+  "summary": {
+    "markets_count": 1,
+    "total_cycles_run": 2,
+    "total_errors": 0,
+    "total_orders": 0,
+    "forced_signals_executed": 0
+  },
+  "validations": {
+    "objective_1_connectivity_read": "PASS",
+    "objective_2_paper_execution": "PASS_NO_SIGNAL",
+    "objective_3_m5_m15_rotation": "BLOCKED_BY_B5"
+  }
+}

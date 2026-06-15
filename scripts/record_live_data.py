@@ -32,6 +32,7 @@ import asyncio
 import csv
 import json
 import os
+import re
 import signal
 import sys
 from datetime import datetime, timezone
@@ -46,6 +47,11 @@ import websockets
 
 from src.infrastructure.data.schema import datetime_to_ns
 from src.infrastructure.data.storage import MultiAssetRecorder
+from src.infrastructure.polymarket.market_filters import (
+    detect_asset as _detect_asset,
+    is_live_crypto_market,
+    live_crypto_window,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -96,39 +102,330 @@ Examples:
                         help="Parquet buffer batch size (default: 1000)")
     parser.add_argument("--verbose", action="store_true",
                         help="Print every tick received")
+    parser.add_argument("--auto-rotate", action="store_true", default=True,
+                        help="Auto-rotate to the next live crypto market when "
+                             "the current one expires (B5 default: ON)")
+    parser.add_argument("--no-auto-rotate", dest="auto_rotate",
+                        action="store_false",
+                        help="Disable auto-rotation (use one-shot discovery)")
     return parser.parse_args()
 
 
 # ── Market Discovery ─────────────────────────────────────────────────────────
 
-async def find_markets_for_asset(asset: str) -> list[dict]:
-    """Find active markets for a given asset via Gamma API."""
+# ── Window matchers (alineado con MarketService._matches_window) ─────────────
+# B4 fix (R1.2-bis): el filtro previo sólo verificaba el keyword del asset
+# y aceptaba binarios longevos (p. ej. "Will bitcoin hit $1m before GTA VI?")
+# que no corresponden a las ventanas M5/M15 del bot. Replicamos aquí la lógica
+# canónica de src/application/services/market_service.py para mantener un único
+# criterio de filtrado entre discovery online (MarketService) y recording offline.
+
+_TIME_RANGE_PATTERN = re.compile(
+    r"(\d{1,2}):(\d{2})\s*(?:AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(?:AM|PM)?"
+)
+
+# B5 fix: los markets live de Polymarket (ciclo cada 5/15 min) usan el patrón
+# "Bitcoin Up or Down on June 14, 3:35PM ET" o
+# "Ethereum Price - June 14 3:35PM ET", NO "-5m-" en slug ni rangos H:MM-H:MM.
+# Estos markets se crean continuamente y rotan cuando el anterior termina.
+# Se acepta cualquier "Up or Down" sobre BTC/ETH como M5 o M15 por su
+# naturaleza: Polymarket sólo publica ventanas cortas para Up/Down crypto.
+
+_UP_DOWN_CRYPTO_PATTERN = re.compile(
+    r"\b(bitcoin|btc|ethereum|eth)\b\s+up\s+or\s+down\b",
+    re.IGNORECASE,
+)
+
+_PRICE_TIME_ET_PATTERN = re.compile(
+    r"\b(bitcoin|btc|ethereum|eth)\b[\s\w-]*?\bprice\b[\s\w-]*?"
+    r"(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*et\b)",
+    re.IGNORECASE,
+)
+
+# Asset canónico de un market en base a su texto
+_ASSET_PATTERN_BTC = re.compile(r"\b(bitcoin|btc)\b", re.IGNORECASE)
+_ASSET_PATTERN_ETH = re.compile(r"\b(ethereum|eth)\b", re.IGNORECASE)
+
+
+def _detect_asset(raw: dict) -> str | None:
+    """Devuelve 'BTC' o 'ETH' según el texto del market, o None si no es
+    ninguno de los dos. Evita falsos positivos como 'Ethiopia' o
+    'Eth0x...' exigiendo que NO sea un asset distinto."""
+    title = raw.get("title", "") or raw.get("question", "")
+    slug = raw.get("slug", "")
+    text = f"{title} {slug}"
+    has_btc = bool(_ASSET_PATTERN_BTC.search(text))
+    has_eth = bool(_ASSET_PATTERN_ETH.search(text))
+    if has_btc and not has_eth:
+        return "BTC"
+    if has_eth and not has_btc:
+        return "ETH"
+    if has_btc and has_eth:
+        # Empate ambiguo: priorizar el que aparezca primero
+        m_btc = _ASSET_PATTERN_BTC.search(text)
+        m_eth = _ASSET_PATTERN_ETH.search(text)
+        if m_btc and m_eth:
+            return "BTC" if m_btc.start() < m_eth.start() else "ETH"
+    return None
+
+
+def _is_live_crypto_market(raw: dict) -> tuple[bool, str | None, str | None]:
+    """
+    Detecta markets live de Polymarket (Up/Down o Price crypto).
+
+    Polymarket publica estos markets en ciclos de 5 o 15 minutos. El formato
+    del título es:
+      - "Bitcoin Up or Down on June 14, 3:35PM ET"
+      - "Ethereum Up or Down on June 14, 3:35PM ET"
+      - "Bitcoin Price - June 14 3:35PM ET"
+      - "Ethereum Price - June 14 3:35PM ET"
+
+    Returns:
+        (is_live, window, asset) donde:
+          - is_live: True si es un market live crypto
+          - window: "5m" o "15m" (heurística basada en duración hasta endDate)
+          - asset: "BTC" o "ETH"
+    """
+    title = raw.get("title", "") or raw.get("question", "")
+    slug = raw.get("slug", "")
+    text = f"{title} {slug}"
+
+    is_up_down = bool(_UP_DOWN_CRYPTO_PATTERN.search(text))
+    is_price_et = bool(_PRICE_TIME_ET_PATTERN.search(text))
+    if not (is_up_down or is_price_et):
+        return False, None, None
+
+    asset = _detect_asset(raw)
+    if not asset:
+        return False, None, None
+
+    # Heurística de ventana: los markets Up/Down se publican tanto en M5
+    # como en M15. Si no podemos distinguir por el slug, lo etiquetamos
+    # conservadoramente como ambos para que la estrategia decida.
+    if "-5m-" in slug or "-5-minute-" in slug:
+        return True, "5m", asset
+    if "-15m-" in slug or "-15-minute-" in slug:
+        return True, "15m", asset
+
+    # Sin marcador explícito: aceptar como 5m (los markets live crypto
+    # más comunes en Polymarket son de 5 minutos; el ciclo de 15m
+    # también existe pero suele etiquetarse con "15m" en el slug).
+    # Devolver ambos casos requiere dos entradas — aquí simplificamos
+    # a "5m" como ventana por defecto, y el caller puede pedir ambas.
+    return True, "5m", asset
+
+
+def _matches_window(raw: dict, *, window: str) -> bool:
+    """True si el market corresponde a M5 (5m) o M15 (15m). Nunca acepta
+    longevos. Acepta:
+      1. slug con ``-5m-`` / ``-15m-``.
+      2. question con rango horario que cuadre con la duración esperada.
+      3. markets live crypto (Up or Down / Price crypto) — solo en su
+         ventana explícita si está marcada, o ambos si no.
+    Rechaza el resto."""
+    slug = raw.get("slug", "")
+    # Aceptar tanto "question" (markets) como "title" (events) — Polymarket
+    # devuelve el título en uno u otro campo según el endpoint.
+    question = raw.get("question", "") or raw.get("title", "")
+
+    if window == "5m" and "-5m-" in slug:
+        return True
+    if window == "15m" and "-15m-" in slug:
+        return True
+
+    match = _TIME_RANGE_PATTERN.search(question)
+    if match:
+        h1, m1, h2, m2 = (int(g) for g in match.groups())
+        start_mins = h1 * 60 + m1
+        end_mins = h2 * 60 + m2
+        if end_mins <= start_mins:
+            end_mins += 12 * 60
+        duration = end_mins - start_mins
+        if window == "5m" and 2 <= duration <= 7:
+            return True
+        if window == "15m" and 12 <= duration <= 18:
+            return True
+
+    # B5: aceptar markets live crypto (Up or Down / Price crypto) cuya
+    # ventana explícita coincida. Sin marcador, sólo aceptamos 5m por
+    # ser la ventana más común.
+    is_live, live_window, _ = _is_live_crypto_market(raw)
+    if is_live and live_window == window:
+        return True
+
+    return False
+
+
+async def find_markets_for_asset(
+    asset: str,
+    windows: tuple[str, ...] = ("5m", "15m"),
+    max_per_window: int = 5,
+) -> list[dict]:
+    """Find active M5/M15 markets for a given asset via Gamma API.
+
+    Rechaza binarios longevos (ej. *Will bitcoin hit $1m before GTA VI?*)
+    aplicando el mismo filtro de ventana que el ``MarketService`` de
+    producción. Solo retorna markets con `active=True` y `closed=False`.
+    """
     async with httpx.AsyncClient(timeout=30) as client:
         keywords = ["bitcoin", "btc"] if asset == "BTC" else ["ethereum", "eth"]
-        all_markets = []
+        response = await client.get(
+            f"{GAMMA_BASE_URL}/markets",
+            params={"active": "true", "closed": "false", "_limit": "500"},
+        )
+        response.raise_for_status()
+        all_markets = response.json()
 
-        for closed_flag in [False, True]:
-            response = await client.get(
-                f"{GAMMA_BASE_URL}/markets",
-                params={
-                    "active": str(not closed_flag).lower(),
-                    "closed": str(closed_flag).lower(),
-                    "_limit": "50",
-                },
-            )
-            response.raise_for_status()
-            all_markets.extend(response.json())
+        # Group by window, keep highest-volume markets per window.
+        by_window: dict[str, list[dict]] = {w: [] for w in windows}
+        seen: set[str] = set()
 
-        matching = []
-        seen = set()
         for m in all_markets:
             cid = m.get("conditionId", "")
+            if not cid or cid in seen:
+                continue
             q = m.get("question", "").lower()
-            if cid and cid not in seen and any(k in q for k in keywords):
-                seen.add(cid)
-                matching.append(m)
+            if not any(k in q for k in keywords):
+                continue
+            for w in windows:
+                if _matches_window(m, window=w):
+                    by_window[w].append(m)
+                    seen.add(cid)
+                    break
 
-        return matching[:5]
+        # Sort each window bucket by volume descending and pick top N.
+        result: list[dict] = []
+        for w in windows:
+            bucket = sorted(
+                by_window[w],
+                key=lambda m: float(m.get("volume24hr", m.get("volume", 0)) or 0),
+                reverse=True,
+            )
+            result.extend(bucket[:max_per_window])
+
+        return result
+
+
+async def find_live_crypto_markets(asset: str) -> list[dict]:
+    """Find Polymarket live crypto markets (Up/Down o Price crypto) que
+    están por abrir o acaban de abrir.
+
+    A diferencia de ``find_markets_for_asset``, que solo busca markets
+    actualmente activos, esta función busca los markets programados
+    para resolverse en los próximos minutos (mercado "Bitcoin Up or
+    Down on [date] [time] ET" o similar).
+
+    Returns:
+        Lista de markets ordenados por ``endDate`` ascendente (el más
+        próximo a expirar primero). El primero es el que debería estar
+        activo AHORA. Cuando expire, el siguiente de la lista toma el
+        relevo en la rotación automática.
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(
+            f"{GAMMA_BASE_URL}/markets",
+            params={
+                "active": "true",
+                "closed": "false",
+                "order": "endDate",
+                "ascending": "true",
+                "_limit": "500",
+            },
+        )
+        response.raise_for_status()
+        all_markets = response.json()
+
+        candidates: list[dict] = []
+        seen: set[str] = set()
+        for m in all_markets:
+            cid = m.get("conditionId", "")
+            if not cid or cid in seen:
+                continue
+            if not is_live_crypto_market(m):
+                continue
+            if _detect_asset(m) != asset:
+                continue
+            seen.add(cid)
+            candidates.append(m)
+
+        def _end_key(m: dict) -> float:
+            end_str = m.get("endDate") or ""
+            try:
+                end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                return end_dt.timestamp()
+            except (ValueError, TypeError):
+                return float("inf")  # Sin fecha válida → al final
+
+        candidates.sort(key=_end_key)
+        return candidates
+
+
+def select_next_market_for_rotation(
+    markets: list[dict],
+    current_market_id: str | None,
+) -> dict | None:
+    """Selecciona el siguiente market para la rotación automática.
+
+    Lógica:
+      1. Si no hay mercado actual, devuelve el primero de la lista
+         (el más próximo a expirar).
+      2. Si hay un mercado actual y aún no expiró, lo mantiene.
+      3. Si el mercado actual expiró, devuelve el siguiente disponible
+         (que aún no haya expirado).
+
+    Args:
+        markets: Lista ordenada por endDate ascendente.
+        current_market_id: condition_id del mercado actual (puede ser None).
+
+    Returns:
+        El mercado a procesar a continuación, o None si la lista está
+        vacía o todos han expirado.
+    """
+    if not markets:
+        return None
+
+    now = datetime.now(timezone.utc)
+
+    def _is_expired(m: dict) -> bool:
+        end_str = m.get("endDate") or ""
+        try:
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            return end_dt <= now
+        except (ValueError, TypeError):
+            return False
+
+    # Si no hay mercado actual, devolver el primero no expirado
+    if not current_market_id:
+        for m in markets:
+            if not _is_expired(m):
+                return m
+        return None
+
+    # Buscar el mercado actual
+    current_idx = None
+    for i, m in enumerate(markets):
+        if m.get("conditionId") == current_market_id:
+            current_idx = i
+            break
+
+    if current_idx is None:
+        # El mercado actual ya no está en la lista (cerrado y desplazado)
+        for m in markets:
+            if not _is_expired(m):
+                return m
+        return None
+
+    current = markets[current_idx]
+    if not _is_expired(current):
+        # El mercado actual sigue vigente
+        return current
+
+    # El mercado actual expiró — buscar el siguiente no expirado
+    for m in markets[current_idx + 1:]:
+        if not _is_expired(m):
+            return m
+
+    return None
 
 
 def parse_market(m: dict) -> dict | None:
@@ -615,6 +912,128 @@ def setup_signal_handlers():
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+async def run_with_auto_rotation(
+    assets: list[str],
+    recorder,                       # MultiAssetRecorder o CsvTickRecorder
+    use_parquet: bool,
+    duration_hours: float,
+    batch_size: int,
+    verbose: bool,
+) -> None:
+    """
+    B5: loop continuo de grabación con auto-rotación entre markets live.
+
+    Cada ``rotation_interval`` segundos:
+      1. Llama ``find_live_crypto_markets(asset)`` para refrescar la lista.
+      2. Compara el primer mercado no expirado con el actual.
+      3. Si es distinto, cancela la task WS del anterior y arranca una
+         nueva con el siguiente market.
+
+    Así el bot transiciona automáticamente del market "Bitcoin Up or
+    Down on June 14 3:35PM ET" al siguiente ("3:40PM ET", etc.) sin
+    intervención humana.
+    """
+    import asyncio
+    rotation_interval = 30  # segundos entre polls de discovery
+
+    start_time = asyncio.get_event_loop().time()
+    all_tasks: list = []
+    current_ids: dict[str, str | None] = {a: None for a in assets}
+
+    try:
+        while not _shutdown_requested:
+            elapsed = (asyncio.get_event_loop().time() - start_time) / 3600
+            if duration_hours > 0 and elapsed >= duration_hours:
+                print(f"  ⏰ Duration reached ({duration_hours}h)")
+                return
+
+            for asset in assets:
+                # 1) Refrescar lista de markets
+                markets = await find_live_crypto_markets(asset)
+                next_market = select_next_market_for_rotation(
+                    markets, current_ids[asset],
+                )
+                if next_market is None:
+                    continue
+                next_id = next_market.get("conditionId", "")
+                if next_id == current_ids[asset]:
+                    # Mismo market, no rotar
+                    continue
+
+                # 2) Cancelar la task del market anterior (si existe)
+                for t, cid, _q, _a in list(all_tasks):
+                    if cid == current_ids[asset] and not t.done():
+                        t.cancel()
+                        all_tasks.remove((t, cid, _q, _a))
+
+                # 3) Parsear el nuevo market
+                info = parse_market(next_market)
+                if not info:
+                    continue
+                ws_token_id = info.get("yes_token_id") or info.get("no_token_id")
+                if not ws_token_id:
+                    print(f"  ⚠️  No clobTokenIds for {info['condition_id'][:20]}")
+                    continue
+
+                print(
+                    f"  🔄 [{asset}] Rotating to {info['question'][:60]} "
+                    f"(end={next_market.get('endDate', '?')})"
+                )
+
+                if use_parquet:
+                    recorder.start_session(
+                        asset=asset,
+                        market_id=info["condition_id"],
+                        question=info["question"],
+                    )
+                    task = asyncio.create_task(
+                        listen_market_parquet(
+                            token_id=ws_token_id,
+                            market_id=info["condition_id"],
+                            asset=asset,
+                            recorder=recorder,
+                            duration_hours=duration_hours,
+                            verbose=verbose,
+                        ),
+                        name=f"ws_{info['condition_id'][:20]}",
+                    )
+                else:
+                    task = asyncio.create_task(
+                        listen_market_csv(
+                            token_id=ws_token_id,
+                            market_id=info["condition_id"],
+                            asset=asset,
+                            recorder=recorder,
+                            duration_hours=duration_hours,
+                            verbose=verbose,
+                        ),
+                        name=f"ws_{info['condition_id'][:20]}",
+                    )
+
+                all_tasks.append(
+                    (task, info["condition_id"], info["question"], asset)
+                )
+                current_ids[asset] = next_id
+
+            # Esperar antes del próximo poll
+            await asyncio.sleep(rotation_interval)
+
+    except asyncio.CancelledError:
+        pass
+    finally:
+        for t, *_ in all_tasks:
+            if not t.done():
+                t.cancel()
+        if all_tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*[t for t, *_ in all_tasks], return_exceptions=True),
+                    timeout=5,
+                )
+            except asyncio.TimeoutError:
+                pass
+
+
 async def main() -> None:
     args = parse_args()
     setup_signal_handlers()
@@ -666,8 +1085,8 @@ async def main() -> None:
         print("❌ Specify --asset, --all, or --market-id")
         sys.exit(1)
 
-    all_market_infos = []
-    all_tasks = []
+    all_market_infos: list = []  # placeholder; populated by inner loop
+    all_tasks: list = []
 
     for asset in assets:
         print(f"\n{'─' * 65}")
@@ -723,6 +1142,32 @@ async def main() -> None:
                 )
 
             all_tasks.append((task, info["condition_id"], info["question"], asset))
+
+    # ── Mode: B5 auto-rotation entre markets live crypto ────────────
+    if args.auto_rotate and assets:
+        print(f"\n  🔁 Auto-rotation ON (B5): polling every 30s for next live market")
+        print(f"  📡 Recording {len(assets)} asset(s) with continuous rotation...")
+        print("  Press Ctrl+C to stop early\n")
+        # Usa el recorder (MultiAssetRecorder o CsvTickRecorder)
+        active_recorder = recorder if use_parquet else csv_recorder
+        await run_with_auto_rotation(
+            assets=assets,
+            recorder=active_recorder,
+            use_parquet=use_parquet,
+            duration_hours=args.duration_hours,
+            batch_size=args.batch_size,
+            verbose=args.verbose,
+        )
+        # Después de rotar, finalizar
+        if use_parquet:
+            manifest = recorder.finalize_all()
+            total_ticks = manifest.get("total_ticks", 0)
+            print(f"\n  ✅ {total_ticks} total ticks (auto-rotation mode)")
+        else:
+            summaries = csv_recorder.close_all()
+            total_ticks = sum(s["ticks"] for s in summaries)
+            print(f"\n  ✅ {total_ticks} total ticks (auto-rotation mode)")
+        return
 
     if not all_tasks:
         print("\n  ❌ No markets found to record.")
