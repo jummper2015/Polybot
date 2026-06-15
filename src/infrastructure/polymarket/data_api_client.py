@@ -137,6 +137,65 @@ class DataAPIClient:
             raise
 
     # ------------------------------------------------------------------
+    # ACTIVITY / TRADES (público — cross-check con CLOB SDK)
+    # ------------------------------------------------------------------
+
+    async def get_activity(
+        self,
+        limit: int = 50,
+        activity_type: str | None = None,
+    ) -> list[dict]:
+        """
+        Consulta la actividad reciente de la wallet vía Data API pública.
+
+        Endpoint: GET /activity?user=<wallet>[&type=TRADE|...][&limit=N]
+
+        La respuesta es un array de eventos (TRADE, REDEEM, MERGE, SPLIT, ...).
+        Útil como cross-check independiente contra `clob_client.get_trades()`,
+        que pasa por L2 auth.
+
+        Args:
+            limit: máximo de eventos a pedir (la API tiene su propio cap).
+            activity_type: filtro opcional (p.ej. "TRADE", "REDEEM").
+
+        Returns:
+            Lista de dicts con eventos de actividad.
+        """
+        params: dict = {"user": self._wallet, "limit": str(limit)}
+        if activity_type:
+            params["type"] = activity_type
+
+        try:
+            with HTTP_REQUEST_DURATION.labels(
+                endpoint="data_api_get_activity"
+            ).time():
+                response = await self._http.get("/activity", params=params)
+                response.raise_for_status()
+            data = response.json()
+            activity = data if isinstance(data, list) else []
+            logger.debug(
+                "data_api_activity_fetched",
+                wallet=_mask_wallet(self._wallet),
+                count=len(activity),
+                type=activity_type or "all",
+            )
+            return activity
+        except httpx.HTTPStatusError as e:
+            logger.warning(
+                "data_api_activity_http_error",
+                status=e.response.status_code,
+                wallet=_mask_wallet(self._wallet),
+            )
+            raise
+        except httpx.RequestError as e:
+            logger.warning(
+                "data_api_activity_request_error",
+                error=str(e),
+                wallet=_mask_wallet(self._wallet),
+            )
+            raise
+
+    # ------------------------------------------------------------------
     # CIERRE
     # ------------------------------------------------------------------
 
