@@ -66,7 +66,7 @@ nvm install --lts
 nvm use --lts
 
 # Verificar versiones
-python3 --version    # Debe ser 3.11+
+python3 --version 
 node --version       # 20 LTS+
 npm --version        # 10+
 redis-cli --version  # 7+
@@ -101,7 +101,7 @@ psql -h localhost -U botuser -d polybot -c "SELECT 1;"  # Debe mostrar 1
 
 ```bash
 cd /opt
-git clone <URL-DEL-REPO-POLYBOT> polybot
+git clone <https://github.com/jummper2015/Polybot.git> polybot
 cd polybot
 
 # Verificar que todo está

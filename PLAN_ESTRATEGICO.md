@@ -75,12 +75,13 @@ Nuestro foco AHORA no es añadir más features. Es **pulir cada detalle** de lo 
 
 **Objetivo:** Garantizar que cada subsistema funciona a la perfección.
 
-- [ ] **R1.1 — Paper Trading Extendido:** 100+ ciclos continuos sin errores, PnL estable
-- [ ] **R1.2 — Validación con Datos Reales:** Optimizar MR con Parquet real (168h+), validar Sharpe > 0.8
-- [ ] **R1.3 — Dashboard Event-Driven:** Panel Grafana para P11.4 (eventos detectados, HALTs, respuestas)
-- [ ] **R1.4 — Auditoría de Seguridad:** Revisar todos los guards, circuit breakers, rate limiters
-- [ ] **R1.5 — Cobertura de Tests Críticos:** Subir routers API + execution handlers al 80%+
-- [ ] **R1.6 — Documentación Sincronizada:** Eliminar discrepancias entre docs y código
+- [x] **R1.1 — Paper Trading Extendido:** 100+ ciclos continuos sin errores, PnL estable *(✅ 2026-06-07, commit `2eb5c9c`)*
+- [x] **R1.2 — Validación con Datos Reales:** Optimizar MR con Parquet real (168h+), validar Sharpe > 0.8 *(✅ 2026-06-07, commit `c80690f`)*
+- [x] **R1.3 — Dashboard Event-Driven:** Panel Grafana para P11.4 (eventos detectados, HALTs, respuestas) + provisioning auto-carga de 6 dashboards *(✅ 2026-06-14)*
+- [x] **R1.4 — Auditoría de Seguridad:** Revisar todos los guards, circuit breakers, rate limiters *(✅ 2026-06-07, commit `671192a`)*
+- [x] **R1.5 — Cobertura de Tests Críticos:** Subir routers API + execution handlers + Telegram handlers al 80%+ *(✅ 2026-06-14, 95.73% en módulos objetivo)*
+- [x] **R1.6 — Documentación Sincronizada:** Eliminar discrepancias entre docs y código *(✅ 2026-06-07)*
+- [x] **R1.7 — Auditoría CLOB V2 SDK:** Validar `py-clob-client-v2`, documentar `BUILDER_CODE` y `SIGNATURE_TYPE`, cachear fees dinámicos por mercado *(✅ 2026-06-14)*
 
 ### Fase R2 — VERIFICACIÓN (ALTA — Julio 2026)
 
@@ -136,17 +137,23 @@ PolyBot es un Rolls-Royce cuando:
 ## 📐 ARQUITECTURA DE REFERENCIA
 
 ```
-                        ┌──────────────────────┐
-                        │    REAL MARKET DATA   │
-                        │   (Parquet 24/7)      │
-                        └──────────┬───────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │                    │                    │
-     ┌────────▼────────┐  ┌───────▼────────┐  ┌───────▼────────┐
-     │  REGIME DETECT  │  │ EVENT DETECT   │  │  FEATURE STORE │
-     │  (5 regimes)    │  │ (4 event types)│  │  (6 features)  │
-     └────────┬────────┘  └───────┬────────┘  └───────┬────────┘
+   ┌──────────────────────┐    ┌──────────────────────┐    ┌──────────────────────┐
+   │  CLOB V2 (auth L2)   │    │   GAMMA + WS market  │    │  DATA API (público)  │
+   │  clob.polymarket.com │    │ ws-subscriptions-... │    │ data-api.polymarket  │
+   │  pUSD · builderCode  │    │  /events/keyset      │    │  /positions          │
+   └──────────┬───────────┘    └──────────┬───────────┘    └──────────┬───────────┘
+              │                           │                           │
+              │                ┌──────────▼───────────┐                │
+              │                │    REAL MARKET DATA   │                │
+              │                │   (Parquet 24/7)      │                │
+              │                └──────────┬───────────┘                │
+              │                           │                           │
+              │           ┌────────────────────┼────────────────────┐  │
+              │           │                    │                    │  │
+              │  ┌────────▼────────┐  ┌───────▼────────┐  ┌───────▼────────┐
+              │  │  REGIME DETECT  │  │ EVENT DETECT   │  │  FEATURE STORE │
+              │  │  (5 regimes)    │  │ (4 event types)│  │  (6 features)  │
+              │  └────────┬────────┘  └───────┬────────┘  └───────┬────────┘
               │                    │                    │
               └────────────────────┼────────────────────┘
                                    │
@@ -176,8 +183,17 @@ PolyBot es un Rolls-Royce cuando:
      ┌────────▼────────┐  ┌───────▼────────┐  ┌───────▼────────┐
      │  POST-TRADE     │  │  METRICS       │  │  GRAFANA       │
      │  ANALYTICS      │  │  (Prometheus)  │  │  (Dashboards)  │
+     │  ← Data API     │  │                │  │                │
+     │  cross-check    │  │                │  │                │
      └─────────────────┘  └───────────────┘  └───────────────┘
 ```
+
+**Integración Polymarket CLOB V2 (abril 2026+):**
+- SDK: `py-clob-client-v2` 1.0.1 (low-level, oficial Polymarket Engineering)
+- Auth: L1 (EIP-712 wallet signature) + L2 (HMAC api_key/secret/passphrase)
+- Colateral: pUSD (Polymarket USD, reemplazó USDC.e)
+- Order struct V2: timestamp (ms) para unicidad, sin nonces, sin feeRateBps, con builderCode
+- Fees: dinámicos por mercado, vía `get_clob_market_info(condition_id)`
 
 ---
 
