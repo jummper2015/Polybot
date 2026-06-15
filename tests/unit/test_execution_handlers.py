@@ -566,3 +566,380 @@ class TestRealTradingHandler:
             market_id="market_002",
         )
         assert key1 != key2
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# R1.5 — paths sin cubrir en RealTradingHandler
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _make_response(status_code, body_text="", headers=None):
+    """httpx.Response-like mock para _parse_post_only_response."""
+    r = MagicMock()
+    r.status_code = status_code
+    r.text = body_text
+    r.headers = headers or {}
+    return r
+
+
+class TestRealHandlerPostOnly:
+    """_parse_post_only_response — 503 post-only mode parsing."""
+
+    def test_returns_retry_after_from_body(self):
+        body = '{"code":"post_only_mode","retry_after_seconds":15}'
+        result = RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text=body)
+        )
+        assert result == {"retry_after": 15.0}
+
+    def test_falls_back_to_header_when_body_seconds_missing(self):
+        body = '{"code":"post_only_mode"}'
+        result = RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text=body, headers={"Retry-After": "20"})
+        )
+        assert result == {"retry_after": 20.0}
+
+    def test_default_30s_when_no_body_seconds_no_header(self):
+        body = '{"code":"post_only_mode"}'
+        result = RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text=body)
+        )
+        assert result == {"retry_after": 30.0}
+
+    def test_invalid_retry_after_header_uses_default(self):
+        body = '{"code":"post_only_mode","retry_after_seconds":0}'
+        result = RealTradingHandler._parse_post_only_response(
+            _make_response(
+                503, body_text=body, headers={"Retry-After": "not-a-number"}
+            )
+        )
+        assert result == {"retry_after": 30.0}
+
+    def test_returns_none_when_code_missing(self):
+        body = '{"code":"other_error","message":"oops"}'
+        assert RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text=body)
+        ) is None
+
+    def test_returns_none_when_body_not_json(self):
+        assert RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text="not-json-body")
+        ) is None
+
+    def test_clamps_high_retry_to_120(self):
+        body = '{"code":"post_only_mode","retry_after_seconds":9999}'
+        result = RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text=body)
+        )
+        assert result == {"retry_after": 120.0}
+
+    def test_clamps_low_retry_to_1(self):
+        body = '{"code":"post_only_mode","retry_after_seconds":0.1}'
+        result = RealTradingHandler._parse_post_only_response(
+            _make_response(503, body_text=body)
+        )
+        assert result == {"retry_after": 1.0}
+
+
+class TestRealHandlerTokenAndPrice:
+    """_get_token_and_price — extracción de token + precio según side."""
+
+    def _handler(self):
+        clob = AsyncMock()
+        redis = make_mock_redis()
+        repo = make_mock_repo()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+        return RealTradingHandler(
+            clob_client=clob,
+            repository=repo,
+            redis=redis,
+            notifier=notifier,
+            audit_logger=audit,
+        ), redis
+
+    @pytest.mark.asyncio
+    async def test_buy_yes_returns_yes_token_and_price(self):
+        handler, _ = self._handler()
+        token, price = await handler._get_token_and_price(
+            "market_001", SignalType.BUY_YES,
+        )
+        assert token == "yes_token_001"
+        assert price == 0.65
+
+    @pytest.mark.asyncio
+    async def test_buy_no_inverts_price(self):
+        handler, redis = self._handler()
+        redis.get_market = AsyncMock(return_value=MagicMock(
+            asset=MagicMock(value="BTC"),
+            window=MagicMock(value="5m"),
+            yes_token_id="y", no_token_id="n",
+        ))
+        token, price = await handler._get_token_and_price(
+            "market_001", SignalType.BUY_NO,
+        )
+        assert token == "n"
+        # 1.0 - 0.65 = 0.35
+        assert price == 0.35
+
+    @pytest.mark.asyncio
+    async def test_no_ws_state_uses_default_05(self):
+        handler, redis = self._handler()
+        redis.get_ws_state = AsyncMock(return_value=None)
+        _, price = await handler._get_token_and_price(
+            "market_001", SignalType.BUY_YES,
+        )
+        assert price == 0.5
+
+    @pytest.mark.asyncio
+    async def test_market_missing_raises(self):
+        handler, redis = self._handler()
+        redis.get_market = AsyncMock(return_value=None)
+        with pytest.raises(ValueError, match="no encontrado"):
+            await handler._get_token_and_price(
+                "market_xxx", SignalType.BUY_YES,
+            )
+
+
+class TestRealHandlerCreatePosition:
+    """_create_real_position — construcción de Position desde una Order filled."""
+
+    def _handler_and_order(self, market=...):
+        clob = AsyncMock()
+        redis = make_mock_redis()
+        if market is not ...:
+            redis.get_market = AsyncMock(return_value=market)
+        repo = make_mock_repo()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+        handler = RealTradingHandler(
+            clob_client=clob,
+            repository=repo,
+            redis=redis,
+            notifier=notifier,
+            audit_logger=audit,
+        )
+        from src.domain.entities.order import Order
+        from src.domain.enums.order_side import OrderSide
+        from src.domain.enums.order_status import OrderStatus
+        from src.domain.enums.trading_mode import TradingMode
+        order = Order(
+            id="ord_001",
+            market_id="market_001",
+            side=OrderSide.YES,
+            amount=10.0,
+            target_price=0.65,
+            fill_price=0.66,
+            slippage=0.01,
+            status=OrderStatus.FILLED,
+            mode=TradingMode.REAL,
+            strategy="StratX",
+            reason="entry",
+        )
+        return handler, order
+
+    @pytest.mark.asyncio
+    async def test_with_market_in_redis(self):
+        market = MagicMock(
+            asset=MagicMock(value="ETH"),
+            window=MagicMock(value="15m"),
+        )
+        handler, order = self._handler_and_order(market=market)
+        pos = await handler._create_real_position(order, "market_001")
+        assert pos.asset == "ETH"
+        assert pos.window == "15m"
+        assert pos.entry_price == 0.66
+        assert pos.mode == "real"
+
+    @pytest.mark.asyncio
+    async def test_without_market_uses_unknown(self):
+        handler, order = self._handler_and_order(market=None)
+        pos = await handler._create_real_position(order, "market_001")
+        assert pos.asset == "UNKNOWN"
+        assert pos.window == "UNKNOWN"
+
+
+class TestRealHandlerExit:
+    """execute_exit — happy + retry + failure."""
+
+    def _handler(self, *, create_order_response=None, side_effect=None):
+        clob = AsyncMock()
+        if side_effect:
+            clob.create_order = AsyncMock(side_effect=side_effect)
+        else:
+            clob.create_order = AsyncMock(return_value=create_order_response or {
+                "price": "0.70",
+                "status": "FILLED",
+                "orderID": "exit_order_id",
+            })
+        repo = make_mock_repo()
+        redis = make_mock_redis()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+        handler = RealTradingHandler(
+            clob_client=clob,
+            repository=repo,
+            redis=redis,
+            notifier=notifier,
+            audit_logger=audit,
+        )
+        return handler, clob, repo, notifier
+
+    @pytest.mark.asyncio
+    async def test_happy_path_yes(self):
+        handler, clob, repo, notifier = self._handler()
+        position = make_position(side="YES", entry_price=0.50, shares=20.0)
+
+        result = await handler.execute_exit(position, reason="target_reached")
+
+        assert result.success is True
+        assert result.mode == "real"
+        clob.create_order.assert_awaited_once()
+        args = clob.create_order.call_args.kwargs
+        assert args["side"] == "SELL"
+        assert args["size"] == 20.0
+        repo.save_position.assert_awaited()
+        notifier.send_exit_alert.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_happy_path_no_side_uses_buy_no_token(self):
+        handler, clob, _, _ = self._handler()
+        position = make_position(side="NO", entry_price=0.40, shares=25.0)
+
+        result = await handler.execute_exit(position, reason="stop_loss")
+        assert result.success is True
+        # _get_token_and_price con BUY_NO devuelve no_token_id del mock
+        # (que es el yes_token por defecto del fixture, pero el flujo igual cierra)
+        clob.create_order.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_exit_failure_returns_failed_result(self):
+        import httpx
+        # Error de red persistente → retry agota y devuelve error
+        handler, clob, repo, notifier = self._handler(
+            side_effect=httpx.ConnectError("network down")
+        )
+        position = make_position(side="YES", shares=10.0)
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await handler.execute_exit(position, reason="timeout")
+
+        assert result.success is False
+        # No notifier de exit cuando falla
+        notifier.send_exit_alert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_exit_no_notifier(self):
+        handler, clob, repo, _ = self._handler()
+        handler._notifier = None
+        position = make_position(side="YES", shares=10.0)
+
+        result = await handler.execute_exit(position, reason="manual")
+        assert result.success is True
+
+
+class TestRealHandlerHedge:
+    """execute_hedge — delega a execute_entry con BUY_NO y respeta cap."""
+
+    @pytest.mark.asyncio
+    async def test_hedge_delegates_to_execute_entry(self):
+        clob = AsyncMock()
+        clob.create_order = AsyncMock(return_value={
+            "price": "0.40", "status": "FILLED", "orderID": "hedge_id",
+        })
+        repo = make_mock_repo()
+        redis = make_mock_redis()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+        handler = RealTradingHandler(
+            clob_client=clob, repository=repo, redis=redis,
+            notifier=notifier, audit_logger=audit,
+        )
+
+        captured = {}
+
+        async def fake_execute_entry(signal, market_id, amount):
+            captured["signal_type"] = signal.type
+            captured["amount"] = amount
+            captured["market_id"] = market_id
+            return MagicMock(success=True)
+
+        handler.execute_entry = fake_execute_entry
+        position = make_position(side="YES", strategy="strat-y")
+
+        await handler.execute_hedge(position, hedge_amount=5.0)
+
+        assert captured["signal_type"] == SignalType.BUY_NO
+        assert captured["amount"] == 5.0
+        assert captured["market_id"] == position.market_id
+
+    @pytest.mark.asyncio
+    async def test_hedge_caps_amount_at_max(self):
+        from src.execution.real_handler import MAX_ORDER_AMOUNT_PUSD
+        clob = AsyncMock()
+        repo = make_mock_repo()
+        redis = make_mock_redis()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+        handler = RealTradingHandler(
+            clob_client=clob, repository=repo, redis=redis,
+            notifier=notifier, audit_logger=audit,
+        )
+
+        captured = {}
+
+        async def fake_execute_entry(signal, market_id, amount):
+            captured["amount"] = amount
+            return MagicMock(success=True)
+
+        handler.execute_entry = fake_execute_entry
+        position = make_position(side="YES")
+
+        await handler.execute_hedge(position, hedge_amount=MAX_ORDER_AMOUNT_PUSD * 2)
+        assert captured["amount"] == MAX_ORDER_AMOUNT_PUSD
+
+
+class TestRealHandlerRedeem:
+    """redeem_resolved_position — éxito + fallo."""
+
+    def _handler(self, *, redeem_response=None, side_effect=None):
+        clob = AsyncMock()
+        if side_effect:
+            clob.redeem_position = AsyncMock(side_effect=side_effect)
+        else:
+            clob.redeem_position = AsyncMock(
+                return_value=redeem_response or {"redeemed_amount": 20.0}
+            )
+        repo = make_mock_repo()
+        redis = make_mock_redis()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+        return RealTradingHandler(
+            clob_client=clob, repository=repo, redis=redis,
+            notifier=notifier, audit_logger=audit,
+        ), clob, repo
+
+    @pytest.mark.asyncio
+    async def test_redeem_success(self):
+        handler, clob, repo = self._handler()
+        position = make_position(side="YES", shares=20.0, amount=10.0)
+
+        result = await handler.redeem_resolved_position(position, "yes_tok")
+
+        assert result.success is True
+        assert result.mode == "real"
+        clob.redeem_position.assert_awaited_once_with(
+            token_id="yes_tok", market_id=position.market_id,
+        )
+        repo.save_position.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_redeem_failure(self):
+        import httpx
+        handler, _, _ = self._handler(
+            side_effect=httpx.ConnectError("network")
+        )
+        position = make_position(side="YES", shares=20.0)
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await handler.redeem_resolved_position(position, "yes_tok")
+        assert result.success is False

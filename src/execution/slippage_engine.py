@@ -42,6 +42,44 @@ logger = structlog.get_logger(__name__)
 
 
 # ==========================================================================
+# CLOB V2 FEE EXTRACTOR
+# ==========================================================================
+
+
+def taker_fee_bps_from_market_info(market_info: dict | None) -> float:
+    """Extrae el taker-fee en bps desde la respuesta de get_clob_market_info.
+
+    CLOB V2 estructura los fees por mercado en `market_info["fd"]`:
+      {"r": <numerador>, "e": <exponente>, "to": <takerOnly bool>}
+    El fee efectivo del taker en formato decimal es r / 10^e.
+    Lo convertimos a bps multiplicando por 10_000.
+
+    Si `to=False`, en V2 maker y taker pagan; tratamos `r` como fee de taker
+    igualmente (es el lado que ejecuta inmediato). Si falta `fd` o las claves
+    no son numéricas, devolvemos 0.0 con log DEBUG — fail-safe: nunca subimos
+    una estimación por un fee que no pudimos parsear.
+    """
+    if not market_info or not isinstance(market_info, dict):
+        return 0.0
+    fd = market_info.get("fd")
+    if not fd or not isinstance(fd, dict):
+        logger.debug("taker_fee_no_fd", reason="missing fd in market_info")
+        return 0.0
+    try:
+        rate = float(fd["r"])
+        exponent = int(fd["e"])
+    except (KeyError, TypeError, ValueError):
+        logger.debug("taker_fee_parse_error", fd_keys=list(fd.keys()))
+        return 0.0
+    if exponent < 0 or exponent > 18:
+        # Fuera de rango razonable — protegemos contra valores corruptos.
+        logger.debug("taker_fee_exponent_out_of_range", exponent=exponent)
+        return 0.0
+    fee_decimal = rate / (10 ** exponent)
+    return fee_decimal * 10_000.0
+
+
+# ==========================================================================
 # SLIPPAGE ESTIMATE
 # ==========================================================================
 
@@ -95,6 +133,12 @@ class SlippageEstimate:
 
     volatility: float = 0.0
     """Volatility at time of estimate."""
+
+    taker_fee_bps: float = 0.0
+    """Taker fee from CLOB V2 market info (bps). 0.0 = no fee applied."""
+
+    taker_fee_price: float = 0.0
+    """Taker fee converted to price units (taker_fee_bps / 10_000 * mid)."""
 
     @property
     def effective_price(self) -> float:
@@ -477,6 +521,7 @@ class SlippageEngine:
         side: str = "entry",
         volatility: float | None = None,
         regime: str | None = None,
+        taker_fee_bps: float = 0.0,
     ) -> SlippageEstimate:
         """Estimate slippage for an order with all runtime factors.
 
@@ -488,6 +533,10 @@ class SlippageEngine:
             volatility: Annualized realized volatility (0.0-1.0+). None -> no adjustment.
             regime: Market regime label (TREND/CHOP/PANIC/ILLIQUID/EVENT_DRIVEN).
                     None -> no adjustment.
+            taker_fee_bps: CLOB V2 taker fee in bps for this market (default 0.0 =
+                no fee adjustment, preserves legacy behavior). Use
+                taker_fee_bps_from_market_info(info) to extract from
+                ClobClient.get_market_info_cached(condition_id).
 
         Returns:
             SlippageEstimate with base + adjusted values.
@@ -513,6 +562,15 @@ class SlippageEngine:
 
         combined = vol_mult * regime_mult * cal_mult
 
+        # -- 3. CLOB V2 taker fee (additive, not multiplicative) ------
+        # El fee se cobra en el momento de la ejecución como una resta directa
+        # sobre el precio efectivo del taker. Se suma a la magnitud del slippage
+        # ajustado preservando el signo (positivo en entry, negativo en exit).
+        mid = base.mid_price if base.mid_price > 0 else 0.0
+        fee_price = (taker_fee_bps / 10_000.0) * mid if taker_fee_bps > 0 else 0.0
+        sign = 1.0 if base.slippage >= 0 else -1.0
+        fee_signed = sign * fee_price
+
         return SlippageEstimate(
             base_estimate=base,
             fill_price=base.fill_price,
@@ -521,13 +579,15 @@ class SlippageEngine:
             fill_ratio=base.fill_ratio,
             vol_multiplier=vol_mult,
             regime_multiplier=regime_mult,
-            adjusted_slippage=round(base.slippage * combined, 6),
-            adjusted_p50_slippage=round(base.p50_slippage * combined, 6),
-            adjusted_p95_slippage=round(base.p95_slippage * combined, 6),
-            adjusted_p99_slippage=round(base.p99_slippage * combined, 6),
+            adjusted_slippage=round(base.slippage * combined + fee_signed, 6),
+            adjusted_p50_slippage=round(base.p50_slippage * combined + fee_signed, 6),
+            adjusted_p95_slippage=round(base.p95_slippage * combined + fee_signed, 6),
+            adjusted_p99_slippage=round(base.p99_slippage * combined + fee_signed, 6),
             calibration_multiplier=cal_mult,
             regime=regime or "UNKNOWN",
             volatility=volatility or 0.0,
+            taker_fee_bps=round(taker_fee_bps, 4),
+            taker_fee_price=round(fee_price, 6),
         )
 
     def record_actual(

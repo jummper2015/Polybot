@@ -27,6 +27,7 @@ KEY_WS_LAST_PRICE = "ws:price:{market_id}"
 KEY_ORDERBOOK     = "orderbook:{market_id}"
 KEY_MARKET_META   = "market:meta:{market_id}"
 KEY_DISCOVERY_CURSOR = "discovery:cursor"
+KEY_CLOB_MARKET_INFO = "clob:market_info:{condition_id}"
 
 
 class RedisClient:
@@ -159,6 +160,32 @@ class RedisClient:
         key = KEY_MARKET_META.format(market_id=market_id)
         data = await self._redis.get(key)
         return orjson.loads(data) if data else {}
+
+    # ──────────────────────────────────────────────────────────────────
+    # CLOB V2 Market Info (fees dinámicos por mercado)
+    # ──────────────────────────────────────────────────────────────────
+
+    async def set_clob_market_info(
+        self,
+        condition_id: str,
+        info: dict,
+        ttl_seconds: int = 300,
+    ) -> None:
+        """
+        Cachea la respuesta de ClobClient.get_clob_market_info para un mercado.
+        TTL 5 min por defecto: fees dinámicos pueden cambiar, pero recalcularlos
+        en cada estimación es costoso.
+        """
+        key = KEY_CLOB_MARKET_INFO.format(condition_id=condition_id)
+        await self._redis.setex(key, ttl_seconds, orjson.dumps(info).decode())
+
+    async def get_clob_market_info(self, condition_id: str) -> dict | None:
+        """
+        Recupera la info de mercado cacheada. None si no existe o expiró.
+        """
+        key = KEY_CLOB_MARKET_INFO.format(condition_id=condition_id)
+        data = await self._redis.get(key)
+        return orjson.loads(data) if data else None
 
     # ──────────────────────────────────────────────────────────────────
     # Discovery Cursor (keyset pagination)

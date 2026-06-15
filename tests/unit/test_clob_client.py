@@ -21,10 +21,12 @@ def make_mock_key_manager():
     km.api_passphrase = "test_api_passphrase"
     km.private_key = "0xabc123"
     km.wallet_address = "0x1234567890abcdef1234567890abcdef12345678"
+    km.builder_code = ""
+    km.signature_type = 1
     return km
 
 
-def make_mock_clob_client(mock_sdk=None) -> PolymarketCLOBClient:
+def make_mock_clob_client(mock_sdk=None, redis_client=None):
     """Builds a PolymarketCLOBClient with the SDK constructor patched out."""
     km = make_mock_key_manager()
 
@@ -38,9 +40,12 @@ def make_mock_clob_client(mock_sdk=None) -> PolymarketCLOBClient:
             "src.infrastructure.polymarket.clob_client.httpx.AsyncClient"
         ) as MockHTTP:
             MockHTTP.return_value = AsyncMock()
-            client = PolymarketCLOBClient(key_manager=km)
+            client = PolymarketCLOBClient(
+                key_manager=km,
+                redis_client=redis_client,
+            )
 
-    return client, sdk_instance
+    return client, sdk_instance, MockClobClient
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -89,7 +94,7 @@ class TestGetMarketInfo:
         sdk = MagicMock()
         sdk.get_clob_market_info = MagicMock()  # reference for arg verification
 
-        client, _ = make_mock_clob_client(mock_sdk=sdk)
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk)
 
         expected = {
             "mts": "0.01",
@@ -125,7 +130,7 @@ class TestGetMarketInfo:
         sdk = MagicMock()
         sdk.get_clob_market_info = MagicMock()
 
-        client, _ = make_mock_clob_client(mock_sdk=sdk)
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk)
         condition_id = "0x625d0091f4c647e5497bd9b03f8526bd486d6c339380b8046e4dd5b3373046b7"
 
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
@@ -143,7 +148,7 @@ class TestGetMarketInfo:
         sdk = MagicMock()
         sdk.get_clob_market_info = MagicMock()
 
-        client, _ = make_mock_clob_client(mock_sdk=sdk)
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk)
 
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             mock_to_thread.return_value = {
@@ -171,7 +176,7 @@ class TestGetMarketInfo:
         sdk = MagicMock()
         sdk.get_clob_market_info = MagicMock()
 
-        client, _ = make_mock_clob_client(mock_sdk=sdk)
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk)
 
         obj = MarketInfoObj()
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
@@ -191,7 +196,7 @@ class TestGetMarketInfo:
         sdk = MagicMock()
         sdk.get_clob_market_info = MagicMock()
 
-        client, _ = make_mock_clob_client(mock_sdk=sdk)
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk)
 
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             mock_to_thread.side_effect = RuntimeError("SDK network timeout")
@@ -205,7 +210,7 @@ class TestGetMarketInfo:
         sdk = MagicMock()
         sdk.get_clob_market_info = MagicMock()
 
-        client, _ = make_mock_clob_client(mock_sdk=sdk)
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk)
 
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
             mock_to_thread.return_value = {
@@ -224,5 +229,108 @@ class TestGetMarketInfo:
         assert isinstance(fd["to"], bool)
         # Maker = no fees in V2 (to=True means only taker pays)
         assert fd["to"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# R1.7 — signature_type explícito al SDK
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestSignatureTypePropagation:
+
+    def test_signature_type_passed_to_sdk_constructor(self):
+        """El ClobClient del SDK debe recibir signature_type explícito (no None)."""
+        _, _, mock_ctor = make_mock_clob_client()
+        kwargs = mock_ctor.call_args.kwargs
+        assert "signature_type" in kwargs
+        assert kwargs["signature_type"] == 1  # default POLY_PROXY del mock
+
+    def test_signature_type_custom_value_propagates(self):
+        """Override del signature_type en KeyManager se refleja en el SDK."""
+        km = make_mock_key_manager()
+        km.signature_type = 3  # POLY_1271
+
+        with patch(
+            "src.infrastructure.polymarket.clob_client.ClobClient"
+        ) as MockClobClient:
+            MockClobClient.return_value = MagicMock()
+            with patch(
+                "src.infrastructure.polymarket.clob_client.httpx.AsyncClient"
+            ) as MockHTTP:
+                MockHTTP.return_value = AsyncMock()
+                PolymarketCLOBClient(key_manager=km)
+
+        kwargs = MockClobClient.call_args.kwargs
+        assert kwargs["signature_type"] == 3
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# R1.7 — get_market_info_cached
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestGetMarketInfoCached:
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_calls_sdk_and_stores(self):
+        """Sin entrada en cache: consulta SDK, guarda en Redis con TTL fijo."""
+        from src.infrastructure.polymarket.clob_client import (
+            CLOB_MARKET_INFO_TTL_SECONDS,
+        )
+
+        sdk = MagicMock()
+        sdk.get_clob_market_info = MagicMock()
+        redis = MagicMock()
+        redis.get_clob_market_info = AsyncMock(return_value=None)  # cache miss
+        redis.set_clob_market_info = AsyncMock()
+
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk, redis_client=redis)
+
+        expected = {"mts": "0.01", "fd": {"r": "100", "e": "4", "to": True}}
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            mock_to_thread.return_value = expected
+            result = await client.get_market_info_cached("0xabc")
+
+        assert result == expected
+        redis.get_clob_market_info.assert_awaited_once_with("0xabc")
+        redis.set_clob_market_info.assert_awaited_once()
+        kwargs = redis.set_clob_market_info.call_args.kwargs
+        assert kwargs["condition_id"] == "0xabc"
+        assert kwargs["info"] == expected
+        assert kwargs["ttl_seconds"] == CLOB_MARKET_INFO_TTL_SECONDS
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_sdk(self):
+        """Con entrada en cache: no llama al SDK ni reescribe Redis."""
+        sdk = MagicMock()
+        sdk.get_clob_market_info = MagicMock()
+        cached = {"mts": "0.001", "fd": {"r": "50", "e": "4", "to": True}}
+        redis = MagicMock()
+        redis.get_clob_market_info = AsyncMock(return_value=cached)
+        redis.set_clob_market_info = AsyncMock()
+
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk, redis_client=redis)
+
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            result = await client.get_market_info_cached("0xdef")
+
+        assert result == cached
+        mock_to_thread.assert_not_called()  # SDK no se invoca
+        redis.set_clob_market_info.assert_not_awaited()  # no se reescribe el cache
+
+    @pytest.mark.asyncio
+    async def test_without_redis_falls_back_to_sdk(self):
+        """Sin redis_client el método degrada a una llamada directa al SDK."""
+        sdk = MagicMock()
+        sdk.get_clob_market_info = MagicMock()
+        client, _, _ = make_mock_clob_client(mock_sdk=sdk, redis_client=None)
+
+        expected = {"mts": "0.01"}
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            mock_to_thread.return_value = expected
+            result = await client.get_market_info_cached("0xghi")
+
+        assert result == expected
+        mock_to_thread.assert_called_once()
 
 

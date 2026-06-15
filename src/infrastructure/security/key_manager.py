@@ -14,6 +14,12 @@ ENV_API_SECRET      = "POLYMARKET_API_SECRET"
 ENV_API_PASSPHRASE  = "POLYMARKET_API_PASSPHRASE"
 ENV_WALLET_ADDRESS  = "POLYMARKET_WALLET_ADDRESS"
 ENV_BUILDER_CODE    = "POLYMARKET_BUILDER_CODE"
+ENV_SIGNATURE_TYPE  = "POLYMARKET_SIGNATURE_TYPE"
+
+# Valores válidos de signature_type según el SDK py-clob-client-v2:
+#   0 = EOA, 1 = POLY_PROXY (default), 2 = GNOSIS_SAFE, 3 = POLY_1271
+VALID_SIGNATURE_TYPES = {0, 1, 2, 3}
+DEFAULT_SIGNATURE_TYPE = 1
 
 
 class KeyManager:
@@ -80,6 +86,34 @@ class KeyManager:
         Se genera en https://polymarket.com/settings.
         """
         return os.environ.get(ENV_BUILDER_CODE, "")
+
+    @cached_property
+    def signature_type(self) -> int:
+        """
+        Tipo de firma EIP-712 a usar contra el CLOB V2.
+          0 = EOA, 1 = POLY_PROXY (default), 2 = GNOSIS_SAFE, 3 = POLY_1271.
+
+        Se pasa explícito al SDK para no depender del default interno, que
+        puede cambiar entre versiones de py-clob-client-v2.
+        """
+        raw = os.environ.get(
+            ENV_SIGNATURE_TYPE, str(DEFAULT_SIGNATURE_TYPE)
+        ).strip()
+        try:
+            value = int(raw)
+        except ValueError:
+            raise EnvironmentError(
+                f"{ENV_SIGNATURE_TYPE}='{raw}' no es un entero. "
+                f"Valores válidos: {sorted(VALID_SIGNATURE_TYPES)} "
+                f"(default {DEFAULT_SIGNATURE_TYPE})."
+            )
+        if value not in VALID_SIGNATURE_TYPES:
+            raise EnvironmentError(
+                f"{ENV_SIGNATURE_TYPE}={value} fuera de rango. "
+                f"Valores válidos: {sorted(VALID_SIGNATURE_TYPES)} "
+                f"(0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE, 3=POLY_1271)."
+            )
+        return value
 
     def _validate_env(self) -> None:
         """

@@ -21,6 +21,7 @@ from src.execution.slippage_engine import (
     SlippageTrackerConfig,
     VolatilityAdjuster,
     VolatilityConfig,
+    taker_fee_bps_from_market_info,
 )
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -588,4 +589,118 @@ class TestSlippageEngineIntegration:
         )
         assert est.adjusted_p50_slippage == pytest.approx(
             est.base_estimate.p50_slippage, abs=0.001
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# R1.7 — CLOB V2 taker fee extractor + fee-aware estimation
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class TestTakerFeeExtractor:
+
+    def test_full_fee_details_taker_only(self):
+        """fd = {r=200, e=4, to=True} → 200 / 10^4 = 2% → 200 bps."""
+        info = {"fd": {"r": "200", "e": "4", "to": True}}
+        assert taker_fee_bps_from_market_info(info) == pytest.approx(200.0)
+
+    def test_full_fee_details_maker_and_taker(self):
+        """to=False también devuelve el fee (en V2 ambos lados pagan)."""
+        info = {"fd": {"r": "100", "e": "4", "to": False}}
+        assert taker_fee_bps_from_market_info(info) == pytest.approx(100.0)
+
+    def test_missing_fd_returns_zero(self):
+        assert taker_fee_bps_from_market_info({"mts": "0.01"}) == 0.0
+
+    def test_none_input_returns_zero(self):
+        assert taker_fee_bps_from_market_info(None) == 0.0
+
+    def test_empty_dict_returns_zero(self):
+        assert taker_fee_bps_from_market_info({}) == 0.0
+
+    def test_malformed_fd_returns_zero(self):
+        """Si fd no es dict, devolver 0 sin lanzar."""
+        assert taker_fee_bps_from_market_info({"fd": "not a dict"}) == 0.0
+
+    def test_missing_keys_returns_zero(self):
+        assert taker_fee_bps_from_market_info({"fd": {"to": True}}) == 0.0
+
+    def test_non_numeric_rate_returns_zero(self):
+        assert taker_fee_bps_from_market_info(
+            {"fd": {"r": "abc", "e": "4", "to": True}}
+        ) == 0.0
+
+    def test_negative_exponent_rejected(self):
+        assert taker_fee_bps_from_market_info(
+            {"fd": {"r": "100", "e": "-1", "to": True}}
+        ) == 0.0
+
+    def test_huge_exponent_rejected(self):
+        assert taker_fee_bps_from_market_info(
+            {"fd": {"r": "100", "e": "99", "to": True}}
+        ) == 0.0
+
+
+class TestSlippageEngineFeeAware:
+
+    @pytest.fixture
+    def engine(self):
+        return SlippageEngine()
+
+    def test_zero_fee_is_noop(self, engine):
+        """taker_fee_bps=0.0 (default) → estimación idéntica al legado."""
+        tick = _make_tick()
+        baseline = engine.estimate(tick, 10.0, "BTC", volatility=0.10, regime="CHOP")
+        with_zero = engine.estimate(
+            tick, 10.0, "BTC", volatility=0.10, regime="CHOP", taker_fee_bps=0.0,
+        )
+        assert with_zero.adjusted_slippage == baseline.adjusted_slippage
+        assert with_zero.adjusted_p95_slippage == baseline.adjusted_p95_slippage
+        assert with_zero.taker_fee_bps == 0.0
+        assert with_zero.taker_fee_price == 0.0
+
+    def test_fee_increases_adjusted_slippage_entry(self, engine):
+        """En entry el slippage es positivo; añadir fee suma magnitud."""
+        tick = _make_tick()
+        baseline = engine.estimate(tick, 10.0, "BTC")
+        with_fee = engine.estimate(tick, 10.0, "BTC", taker_fee_bps=200.0)
+
+        mid = baseline.base_estimate.mid_price
+        expected_fee_price = (200.0 / 10_000.0) * mid
+
+        assert with_fee.taker_fee_bps == 200.0
+        assert with_fee.taker_fee_price == pytest.approx(expected_fee_price, abs=1e-6)
+        assert with_fee.adjusted_slippage == pytest.approx(
+            baseline.adjusted_slippage + expected_fee_price, abs=1e-5
+        )
+        assert with_fee.adjusted_p95_slippage > baseline.adjusted_p95_slippage
+
+    def test_fee_preserves_exit_sign(self, engine):
+        """En exit el slippage es negativo; el fee suma magnitud preservando signo."""
+        tick = _make_tick()
+        baseline = engine.estimate(tick, 10.0, "BTC", side="exit")
+        with_fee = engine.estimate(tick, 10.0, "BTC", side="exit", taker_fee_bps=150.0)
+
+        # Si baseline era negativo, with_fee también debe serlo (más negativo).
+        assert (with_fee.adjusted_slippage <= baseline.adjusted_slippage) == (
+            baseline.adjusted_slippage <= 0
+        )
+        assert with_fee.taker_fee_bps == 150.0
+
+    def test_fee_works_with_volatility_and_regime(self, engine):
+        """El fee se aplica de forma aditiva tras vol*regime."""
+        tick = _make_tick()
+        no_fee = engine.estimate(
+            tick, 10.0, "BTC", volatility=0.25, regime="PANIC",
+        )
+        with_fee = engine.estimate(
+            tick, 10.0, "BTC", volatility=0.25, regime="PANIC", taker_fee_bps=100.0,
+        )
+        mid = no_fee.base_estimate.mid_price
+        expected_extra = (100.0 / 10_000.0) * mid
+
+        assert with_fee.vol_multiplier == no_fee.vol_multiplier
+        assert with_fee.regime_multiplier == no_fee.regime_multiplier
+        assert with_fee.adjusted_slippage == pytest.approx(
+            no_fee.adjusted_slippage + expected_extra, abs=1e-5
         )

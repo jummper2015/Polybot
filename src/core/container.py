@@ -247,7 +247,10 @@ class Container:
             )
         else:
             from src.infrastructure.polymarket.clob_client import PolymarketCLOBClient
-            clob = PolymarketCLOBClient(key_manager=self.key_manager)
+            clob = PolymarketCLOBClient(
+                key_manager=self.key_manager,
+                redis_client=self.redis,
+            )
             circuit_breaker = CLOBCircuitBreaker(
                 config=CircuitBreakerConfig(
                     failure_threshold=5,
@@ -655,7 +658,10 @@ class Container:
             from src.infrastructure.polymarket.clob_client import (
                 PolymarketCLOBClient,
             )
-            clob = PolymarketCLOBClient(key_manager=self.key_manager)
+            clob = PolymarketCLOBClient(
+                key_manager=self.key_manager,
+                redis_client=self.redis,
+            )
 
             circuit_breaker = CLOBCircuitBreaker(
                 config=CircuitBreakerConfig(

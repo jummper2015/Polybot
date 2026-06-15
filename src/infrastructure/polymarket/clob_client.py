@@ -24,6 +24,7 @@ seguro porque el SDK maneja la deduplicación vía timestamp+salt.
 """
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
@@ -36,6 +37,12 @@ from py_clob_client_v2.clob_types import (
 )
 
 from src.infrastructure.security.key_manager import KeyManager
+
+if TYPE_CHECKING:
+    from src.infrastructure.cache.redis_client import RedisClient
+
+CLOB_MARKET_INFO_TTL_SECONDS = 300
+# 5 min — los fees dinámicos cambian con baja frecuencia.
 
 logger = structlog.get_logger(__name__)
 
@@ -78,9 +85,16 @@ class PolymarketCLOBClient:
     compatible con el patrón de retry del RealTradingHandler.
     """
 
-    def __init__(self, key_manager: KeyManager, chain_id: int = CHAIN_ID):
+    def __init__(
+        self,
+        key_manager: KeyManager,
+        chain_id: int = CHAIN_ID,
+        redis_client: "RedisClient | None" = None,
+    ):
         self._keys     = key_manager
         self._chain_id = chain_id
+        # opt-in: si None, get_market_info_cached degrada a SDK directo.
+        self._redis    = redis_client
 
         # Construye ApiCreds desde el KeyManager
         creds = ApiCreds(
@@ -89,12 +103,16 @@ class PolymarketCLOBClient:
             api_passphrase = self._keys.api_passphrase,
         )
 
-        # Inicializa el ClobClient del SDK con L2 auth
+        # Inicializa el ClobClient del SDK con L2 auth.
+        # signature_type explícito: no confiar en el default del SDK porque
+        # puede cambiar entre versiones (regla del skill polymarket-clob-audit).
+        sig_type = self._keys.signature_type
         self._sdk = ClobClient(
-            host     = CLOB_BASE_URL,
-            chain_id = chain_id,
-            key      = self._keys.private_key,
-            creds    = creds,
+            host           = CLOB_BASE_URL,
+            chain_id       = chain_id,
+            key            = self._keys.private_key,
+            creds          = creds,
+            signature_type = sig_type,
         )
 
         # Cliente HTTP persistente (para redeem y balance)
@@ -109,6 +127,7 @@ class PolymarketCLOBClient:
             chain_id=chain_id,
             wallet=_mask_wallet(self._keys.wallet_address),
             sdk_version="py-clob-client-v2",
+            signature_type=sig_type,
         )
 
     # ------------------------------------------------------------------
@@ -316,6 +335,100 @@ class PolymarketCLOBClient:
             has_fees="fd" in result,
         )
         return result
+
+    async def get_market_info_cached(self, condition_id: str) -> dict:
+        """
+        Igual que `get_market_info` pero respaldado por Redis con TTL.
+
+        Si el cliente se construyó sin `redis_client`, degrada a una llamada
+        directa al SDK (sin cache). Si hay Redis, intenta primero el cache; en
+        miss, consulta el SDK y guarda con TTL fijo.
+
+        Fees dinámicos (CLOB V2) cambian con baja frecuencia respecto al
+        ritmo de las estimaciones de slippage; el cache evita decenas de
+        llamadas REST por minuto al CLOB.
+        """
+        if self._redis is not None:
+            cached = await self._redis.get_clob_market_info(condition_id)
+            if cached is not None:
+                logger.debug(
+                    "clob_market_info_cache_hit",
+                    condition_id=condition_id[:20],
+                )
+                return cached
+
+        info = await self.get_market_info(condition_id)
+
+        if self._redis is not None:
+            await self._redis.set_clob_market_info(
+                condition_id=condition_id,
+                info=info,
+                ttl_seconds=CLOB_MARKET_INFO_TTL_SECONDS,
+            )
+            logger.debug(
+                "clob_market_info_cache_set",
+                condition_id=condition_id[:20],
+                ttl_seconds=CLOB_MARKET_INFO_TTL_SECONDS,
+            )
+
+        return info
+
+    # ------------------------------------------------------------------
+    # READ-ONLY — Auth probes & cuenta
+    # ------------------------------------------------------------------
+
+    async def assert_auth(self) -> dict:
+        """
+        Verifica que la wallet y las credenciales L1+L2 son válidas.
+
+        Llama a `assert_level_1_auth` (firma EIP-712 dummy con la wallet)
+        y `assert_level_2_auth` (HMAC con api_key/secret/passphrase) del SDK.
+        Si alguno falla, propaga la excepción del SDK; el caller decide.
+
+        Returns:
+            dict con {"wallet": <address>, "l1": True, "l2": True} si OK.
+        """
+        wallet = await asyncio.to_thread(self._sdk.get_address)
+        await asyncio.to_thread(self._sdk.assert_level_1_auth)
+        await asyncio.to_thread(self._sdk.assert_level_2_auth)
+        logger.info(
+            "clob_auth_verified",
+            wallet=_mask_wallet(wallet),
+            l1=True,
+            l2=True,
+        )
+        return {"wallet": wallet, "l1": True, "l2": True}
+
+    async def get_open_orders(self) -> list[dict]:
+        """
+        Lista órdenes abiertas en el CLOB para la wallet actual.
+
+        Read-only. No coloca ni cancela nada.
+        """
+        response = await asyncio.to_thread(self._sdk.get_open_orders)
+        if isinstance(response, list):
+            return [_ensure_dict(item) for item in response]
+        return [_ensure_dict(response)] if response else []
+
+    async def get_trades(self, limit: int | None = None) -> list[dict]:
+        """
+        Trades históricos del usuario autenticado vía CLOB SDK.
+
+        Args:
+            limit: máximo número de trades a devolver tras la llamada
+                   (el SDK puede no paginar — truncamos cliente-side).
+
+        Returns:
+            Lista de trades como dicts.
+        """
+        response = await asyncio.to_thread(self._sdk.get_trades)
+        trades = response if isinstance(response, list) else (
+            [response] if response else []
+        )
+        trades = [_ensure_dict(t) for t in trades]
+        if limit is not None and limit > 0:
+            trades = trades[:limit]
+        return trades
 
     # ------------------------------------------------------------------
     # CIERRE
