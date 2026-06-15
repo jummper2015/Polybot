@@ -2,6 +2,10 @@
 
 # ── CRÍTICO: secretos ─────────────────────────────────────────────────
 .claude/skills/settings.json
+.claude/settings.json
+.claude/settings.local.json
+docs_historicos/.claude/
+docs_historicos/.claudesave/
 .env
 *.pem
 *.key
