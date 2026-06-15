@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-06-07T13:19:24.906731+00:00",
+  "generated_at": "2026-06-14T19:56:25.708656+00:00",
   "mode": "quick",
   "data_source": "parquet",
   "parquet_dir": "data/parquet",
-  "n_ticks": 5000,
+  "n_ticks": 15091,
   "balance": 1000.0,
   "top_config": {
     "ma_window": 20,
@@ -21,10 +21,22 @@
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
       "position_size_pusd": 5,
-      "avg_sharpe": -1.8613,
+      "avg_sharpe": -1.673,
       "avg_win_rate": 0.0,
       "avg_profit_factor": 0.0,
-      "robustness_score": 0.2261
+      "robustness_score": 0.2241
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.0,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 45,
+      "position_size_pusd": 5,
+      "avg_sharpe": -1.6684,
+      "avg_win_rate": 0.0,
+      "avg_profit_factor": 0.0,
+      "robustness_score": 0.2241
     },
     {
       "ma_window": 20,
@@ -33,22 +45,10 @@
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
       "position_size_pusd": 10,
-      "avg_sharpe": -1.8613,
+      "avg_sharpe": -1.673,
       "avg_win_rate": 0.0,
       "avg_profit_factor": 0.0,
-      "robustness_score": 0.225
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -2.5,
-      "exit_zscore": -0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 60,
-      "position_size_pusd": 5,
-      "avg_sharpe": -1.8613,
-      "avg_win_rate": 0.0,
-      "avg_profit_factor": 0.0,
-      "robustness_score": 0.2239
+      "robustness_score": 0.2232
     }
   ],
   "full_ranking": [
@@ -59,8 +59,18 @@
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
       "position_size_pusd": 5,
-      "robustness_score": 0.2261,
-      "avg_sharpe": -1.8613
+      "robustness_score": 0.2241,
+      "avg_sharpe": -1.673
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.0,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 45,
+      "position_size_pusd": 5,
+      "robustness_score": 0.2241,
+      "avg_sharpe": -1.6684
     },
     {
       "ma_window": 20,
@@ -69,8 +79,18 @@
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
       "position_size_pusd": 10,
-      "robustness_score": 0.225,
-      "avg_sharpe": -1.8613
+      "robustness_score": 0.2232,
+      "avg_sharpe": -1.673
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.0,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 45,
+      "position_size_pusd": 10,
+      "robustness_score": 0.2232,
+      "avg_sharpe": -1.6684
     },
     {
       "ma_window": 20,
@@ -79,8 +99,18 @@
       "stop_loss_pct": 0.08,
       "timeout_minutes": 60,
       "position_size_pusd": 5,
-      "robustness_score": 0.2239,
-      "avg_sharpe": -1.8613
+      "robustness_score": 0.2221,
+      "avg_sharpe": -1.673
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.0,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 60,
+      "position_size_pusd": 5,
+      "robustness_score": 0.2221,
+      "avg_sharpe": -1.6684
     },
     {
       "ma_window": 20,
@@ -89,226 +119,138 @@
       "stop_loss_pct": 0.08,
       "timeout_minutes": 60,
       "position_size_pusd": 10,
-      "robustness_score": 0.223,
-      "avg_sharpe": -1.8613
+      "robustness_score": 0.2213,
+      "avg_sharpe": -1.673
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.0,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 60,
+      "position_size_pusd": 10,
+      "robustness_score": 0.2213,
+      "avg_sharpe": -1.6684
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 45,
+      "position_size_pusd": 5,
+      "robustness_score": 0.2167,
+      "avg_sharpe": -1.6705
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 45,
+      "position_size_pusd": 10,
+      "robustness_score": 0.2159,
+      "avg_sharpe": -1.6705
     },
     {
       "ma_window": 10,
-      "entry_zscore": -2.0,
-      "exit_zscore": 0.0,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
       "position_size_pusd": 5,
       "robustness_score": 0.2148,
-      "avg_sharpe": -2.0352
+      "avg_sharpe": -1.7402
+    },
+    {
+      "ma_window": 20,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 60,
+      "position_size_pusd": 5,
+      "robustness_score": 0.2148,
+      "avg_sharpe": -1.6705
     },
     {
       "ma_window": 10,
-      "entry_zscore": -2.0,
-      "exit_zscore": 0.0,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
       "position_size_pusd": 10,
       "robustness_score": 0.2139,
-      "avg_sharpe": -2.0352
-    },
-    {
-      "ma_window": 10,
-      "entry_zscore": -2.0,
-      "exit_zscore": 0.0,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 60,
-      "position_size_pusd": 5,
-      "robustness_score": 0.213,
-      "avg_sharpe": -2.0352
+      "avg_sharpe": -1.7402
     },
     {
       "ma_window": 20,
       "entry_zscore": -2.5,
       "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 5,
-      "robustness_score": 0.213,
-      "avg_sharpe": -1.8654
+      "timeout_minutes": 60,
+      "position_size_pusd": 10,
+      "robustness_score": 0.2139,
+      "avg_sharpe": -1.6705
     },
     {
       "ma_window": 10,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 60,
+      "position_size_pusd": 5,
+      "robustness_score": 0.213,
+      "avg_sharpe": -1.7402
+    },
+    {
+      "ma_window": 20,
       "entry_zscore": -2.0,
-      "exit_zscore": 0.0,
+      "exit_zscore": 0.5,
+      "stop_loss_pct": 0.08,
+      "timeout_minutes": 45,
+      "position_size_pusd": 5,
+      "robustness_score": 0.2129,
+      "avg_sharpe": -1.6411
+    },
+    {
+      "ma_window": 10,
+      "entry_zscore": -2.5,
+      "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
       "timeout_minutes": 60,
       "position_size_pusd": 10,
       "robustness_score": 0.2121,
-      "avg_sharpe": -2.0352
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -2.5,
-      "exit_zscore": 0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 10,
-      "robustness_score": 0.2121,
-      "avg_sharpe": -1.8654
+      "avg_sharpe": -1.7402
     },
     {
       "ma_window": 20,
       "entry_zscore": -2.0,
-      "exit_zscore": -0.5,
+      "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
       "timeout_minutes": 45,
-      "position_size_pusd": 5,
-      "robustness_score": 0.2112,
-      "avg_sharpe": -1.853
+      "position_size_pusd": 10,
+      "robustness_score": 0.2119,
+      "avg_sharpe": -1.6411
     },
     {
       "ma_window": 20,
-      "entry_zscore": -2.5,
+      "entry_zscore": -2.0,
       "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
       "timeout_minutes": 60,
       "position_size_pusd": 5,
       "robustness_score": 0.211,
-      "avg_sharpe": -1.8654
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -1.5,
-      "exit_zscore": -0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 5,
-      "robustness_score": 0.211,
-      "avg_sharpe": -1.6446
+      "avg_sharpe": -1.6411
     },
     {
       "ma_window": 20,
       "entry_zscore": -2.0,
-      "exit_zscore": -0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 10,
-      "robustness_score": 0.2102,
-      "avg_sharpe": -1.853
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -1.5,
-      "exit_zscore": -0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 10,
-      "robustness_score": 0.2102,
-      "avg_sharpe": -1.6446
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -2.5,
       "exit_zscore": 0.5,
       "stop_loss_pct": 0.08,
       "timeout_minutes": 60,
       "position_size_pusd": 10,
-      "robustness_score": 0.2101,
-      "avg_sharpe": -1.8654
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -2.5,
-      "exit_zscore": 0.0,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 5,
-      "robustness_score": 0.2092,
-      "avg_sharpe": -1.9194
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -2.0,
-      "exit_zscore": -0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 60,
-      "position_size_pusd": 5,
-      "robustness_score": 0.2092,
-      "avg_sharpe": -1.853
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -1.5,
-      "exit_zscore": -0.5,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 60,
-      "position_size_pusd": 5,
-      "robustness_score": 0.2092,
-      "avg_sharpe": -1.6446
-    },
-    {
-      "ma_window": 20,
-      "entry_zscore": -2.5,
-      "exit_zscore": 0.0,
-      "stop_loss_pct": 0.08,
-      "timeout_minutes": 45,
-      "position_size_pusd": 10,
-      "robustness_score": 0.2084,
-      "avg_sharpe": -1.9194
+      "robustness_score": 0.2102,
+      "avg_sharpe": -1.6411
     }
-  ],
-  "walk_forward_validation": {
-    "method": "temporal_split_70_30",
-    "note": "70% train (earliest ticks), 30% test (latest ticks)",
-    "results": {
-      "BTC": {
-        "total_ticks": 15091,
-        "train_ticks": 10563,
-        "test_ticks": 4528,
-        "train": {
-          "trades": 0,
-          "winners": 0,
-          "losers": 0,
-          "sharpe": 0.0,
-          "win_rate": 0.0,
-          "profit_factor": 0.0,
-          "max_drawdown": 0.0,
-          "total_pnl": 0.0
-        },
-        "test": {
-          "trades": 0,
-          "winners": 0,
-          "losers": 0,
-          "sharpe": 0.0,
-          "win_rate": 0.0,
-          "profit_factor": 0.0,
-          "max_drawdown": 0.0,
-          "total_pnl": 0.0
-        },
-        "oos_is_sharpe_ratio": 0.0
-      },
-      "ETH": {
-        "total_ticks": 14041,
-        "train_ticks": 9828,
-        "test_ticks": 4213,
-        "train": {
-          "trades": 78,
-          "winners": 0,
-          "losers": 78,
-          "sharpe": -3.273,
-          "win_rate": 0.0,
-          "profit_factor": 0.0,
-          "max_drawdown": 0.049,
-          "total_pnl": -44.6247
-        },
-        "test": {
-          "trades": 30,
-          "winners": 0,
-          "losers": 30,
-          "sharpe": -3.6045,
-          "win_rate": 0.0,
-          "profit_factor": 0.0,
-          "max_drawdown": 0.0208,
-          "total_pnl": -16.1201
-        },
-        "oos_is_sharpe_ratio": 1.1013
-      }
-    }
-  }
+  ]
 }

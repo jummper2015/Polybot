@@ -28,6 +28,39 @@ WINDOW_DURATION: dict[Window, tuple[int, int]] = {
     Window.M15: (840, 960),    # 15m ± 60 segundos
 }
 
+# B5 fix: patrones para detectar markets live de Polymarket (Up/Down crypto)
+# que rotan cada 5 o 15 minutos. Ejemplos:
+#   "Bitcoin Up or Down on June 14, 3:35PM ET"
+#   "Ethereum Up or Down on June 14, 3:35PM ET"
+#   "Bitcoin Price - June 14 3:35PM ET"
+#   "Ethereum Price - June 14 3:35PM ET"
+LIVE_UP_DOWN_CRYPTO_PATTERN = _re.compile(
+    r"\b(bitcoin|btc|ethereum|eth)\b\s+up\s+or\s+down\b",
+    _re.IGNORECASE,
+)
+
+LIVE_PRICE_ET_PATTERN = _re.compile(
+    r"\b(bitcoin|btc|ethereum|eth)\b[\s\w-]*?\bprice\b[\s\w-]*?"
+    r"(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*et\b)",
+    _re.IGNORECASE,
+)
+
+
+def _is_live_crypto_market(raw: dict) -> bool:
+    """Detecta markets live crypto (Up/Down o Price crypto) de Polymarket.
+
+    B5: estos markets tienen el formato "Bitcoin Up or Down on [date] [time] ET"
+    y rotan cada 5 o 15 minutos. El filtro previo (slug con -5m-/H:MM-H:MM)
+    no los capturaba.
+    """
+    title = raw.get("title", "") or raw.get("question", "")
+    slug = raw.get("slug", "")
+    text = f"{title} {slug}"
+    return bool(
+        LIVE_UP_DOWN_CRYPTO_PATTERN.search(text)
+        or LIVE_PRICE_ET_PATTERN.search(text)
+    )
+
 
 class MarketService:
     """
@@ -369,14 +402,38 @@ class MarketService:
             start = self._parse_datetime_safe(raw.get("start_date_iso", ""))
             end   = self._parse_datetime_safe(raw.get("end_date_iso", ""))
             if start is None or end is None:
-                return False
+                # B5: sin fechas puede ser un market live crypto (Up/Down).
+                return self._matches_live_crypto_window(raw, window)
             duration_secs = (end - start).total_seconds()
 
             min_secs, max_secs = WINDOW_DURATION[window]
-            return min_secs <= duration_secs <= max_secs
+            if min_secs <= duration_secs <= max_secs:
+                return True
+            # B5: fechas fuera de rango puede ser live crypto.
+            return self._matches_live_crypto_window(raw, window)
 
         except (KeyError, ValueError, TypeError):
+            return self._matches_live_crypto_window(raw, window)
+
+    def _matches_live_crypto_window(self, raw: dict, window: Window) -> bool:
+        """
+        B5: Verifica si un market live crypto (Up/Down o Price crypto)
+        corresponde a la ventana solicitada. Estos markets rotan cada 5 o
+        15 minutos, pero NO usan el patrón de slug -5m-/-15m- ni rangos
+        H:MM-H:MM en el título.
+
+        Acepta M5 por defecto (los markets live crypto más comunes en
+        Polymarket son de 5 min). Para M15 sólo se acepta si el slug
+        contiene marcador explícito.
+        """
+        if not _is_live_crypto_market(raw):
             return False
+        slug = raw.get("slug", "")
+        if window == Window.M5:
+            return True
+        if window == Window.M15:
+            return "-15m-" in slug or "-15-minute-" in slug
+        return False
 
     @staticmethod
     def _parse_datetime_safe(date_str: str) -> datetime | None:

@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-06-14T19:59:46.545572+00:00",
+  "data_source": "parquet",
+  "parquet_dir": "data/parquet",
+  "initial_balance": 1000.0,
+  "params": {
+    "ma_window": 20,
+    "entry_zscore": -2.5,
+    "exit_zscore": -0.5,
+    "stop_loss_pct": 0.08,
+    "timeout_minutes": 45,
+    "position_size_pusd": 5
+  },
+  "criteria": {
+    "sharpe_min": 0.8,
+    "profit_factor_min": 1.2,
+    "win_rate_min": 0.45,
+    "max_drawdown_max": 0.2
+  },
+  "datasets": [
+    {
+      "asset": "BTC",
+      "window": "5m",
+      "ticks_loaded": 15091,
+      "sharpe": 0.0,
+      "profit_factor": 0.0,
+      "win_rate": 0.0,
+      "max_drawdown": 0.0,
+      "total_trades": 0,
+      "total_pnl": 0.0,
+      "criteria_passed": false,
+      "criteria_detail": {
+        "sharpe": {
+          "value": 0.0,
+          "min": 0.8,
+          "pass": false
+        },
+        "profit_factor": {
+          "value": 0.0,
+          "min": 1.2,
+          "pass": false
+        },
+        "win_rate": {
+          "value": 0.0,
+          "min": 0.45,
+          "pass": false
+        },
+        "max_drawdown": {
+          "value": 0.0,
+          "max": 0.2,
+          "pass": true
+        }
+      },
+      "skip_reason": null
+    },
+    {
+      "asset": "BTC",
+      "window": "15m",
+      "ticks_loaded": 15091,
+      "sharpe": 0.0,
+      "profit_factor": 0.0,
+      "win_rate": 0.0,
+      "max_drawdown": 0.0,
+      "total_trades": 0,
+      "total_pnl": 0.0,
+      "criteria_passed": false,
+      "criteria_detail": {
+        "sharpe": {
+          "value": 0.0,
+          "min": 0.8,
+          "pass": false
+        },
+        "profit_factor": {
+          "value": 0.0,
+          "min": 1.2,
+          "pass": false
+        },
+        "win_rate": {
+          "value": 0.0,
+          "min": 0.45,
+          "pass": false
+        },
+        "max_drawdown": {
+          "value": 0.0,
+          "max": 0.2,
+          "pass": true
+        }
+      },
+      "skip_reason": null
+    },
+    {
+      "asset": "ETH",
+      "window": "5m",
+      "ticks_loaded": 14041,
+      "sharpe": -3.3461,
+      "profit_factor": 0.0,
+      "win_rate": 0.0,
+      "max_drawdown": 0.0654,
+      "total_trades": 108,
+      "total_pnl": -60.7448,
+      "criteria_passed": false,
+      "criteria_detail": {
+        "sharpe": {
+          "value": -3.34605132395347,
+          "min": 0.8,
+          "pass": false
+        },
+        "profit_factor": {
+          "value": 0.0,
+          "min": 1.2,
+          "pass": false
+        },
+        "win_rate": {
+          "value": 0.0,
+          "min": 0.45,
+          "pass": false
+        },
+        "max_drawdown": {
+          "value": 0.06542316461313329,
+          "max": 0.2,
+          "pass": true
+        }
+      },
+      "skip_reason": null
+    },
+    {
+      "asset": "ETH",
+      "window": "15m",
+      "ticks_loaded": 14041,
+      "sharpe": -3.3461,
+      "profit_factor": 0.0,
+      "win_rate": 0.0,
+      "max_drawdown": 0.0654,
+      "total_trades": 108,
+      "total_pnl": -60.7448,
+      "criteria_passed": false,
+      "criteria_detail": {
+        "sharpe": {
+          "value": -3.34605132395347,
+          "min": 0.8,
+          "pass": false
+        },
+        "profit_factor": {
+          "value": 0.0,
+          "min": 1.2,
+          "pass": false
+        },
+        "win_rate": {
+          "value": 0.0,
+          "min": 0.45,
+          "pass": false
+        },
+        "max_drawdown": {
+          "value": 0.06542316461313329,
+          "max": 0.2,
+          "pass": true
+        }
+      },
+      "skip_reason": null
+    }
+  ]
+}
