@@ -1,0 +1,554 @@
+{
+  "title": "PolyBot — Queue Position (P9.3)",
+  "uid": "polybot-queue-position",
+  "tags": [
+    "polybot",
+    "p9.3",
+    "execution",
+    "queue-position"
+  ],
+  "timezone": "browser",
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Maker Decisions (Last 5m)",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(polybot_queue_maker_vs_taker_decisions_total{mode=\"MAKER\"}[5m]))",
+          "legendFormat": "Maker",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(polybot_queue_maker_vs_taker_decisions_total{mode=\"TAKER\"}[5m]))",
+          "legendFormat": "Taker",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red"
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Avg P(fill) — Entry",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "avg(polybot_queue_maker_fill_probability{side=\"entry\"})",
+          "legendFormat": "P(fill)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.50
+              },
+              {
+                "color": "green",
+                "value": 0.80
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Avg P(fill) — Exit",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "avg(polybot_queue_maker_fill_probability{side=\"exit\"})",
+          "legendFormat": "P(fill)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.50
+              },
+              {
+                "color": "green",
+                "value": 0.80
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Avg Confidence",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "avg(polybot_queue_confidence{})",
+          "legendFormat": "Confidence",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.50
+              },
+              {
+                "color": "green",
+                "value": 0.80
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "P(fill) Distribution by Regime",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(polybot_queue_maker_fill_probability_bucket[5m])) by (le, regime))",
+          "legendFormat": "P50 {{regime}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(polybot_queue_maker_fill_probability_bucket[5m])) by (le, regime))",
+          "legendFormat": "P95 {{regime}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Adverse Selection Cost by Side & Regime",
+      "gridPos": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(polybot_queue_adverse_selection_bps_bucket[5m])) by (le, side, regime))",
+          "legendFormat": "P95 {{side}}/{{regime}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(polybot_queue_adverse_selection_bps_bucket[5m])) by (le, side, regime))",
+          "legendFormat": "P50 {{side}}/{{regime}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Expected Fill Time (seconds)",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(polybot_queue_maker_expected_time_seconds_bucket[5m])) by (le, side))",
+          "legendFormat": "P50 {{side}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(polybot_queue_maker_expected_time_seconds_bucket[5m])) by (le, side))",
+          "legendFormat": "P95 {{side}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "bargauge",
+      "title": "Maker vs Taker — Savings Potential",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(polybot_queue_maker_savings_pct_bucket[15m])) by (le, side))",
+          "legendFormat": "P95 {{side}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(polybot_queue_maker_savings_pct_bucket[15m])) by (le, side))",
+          "legendFormat": "P50 {{side}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 30
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Cost Ratio (maker/taker) — Lower is Better",
+      "gridPos": {
+        "x": 6,
+        "y": 12,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(polybot_queue_maker_cost_ratio_bucket[5m])) by (le, side))",
+          "legendFormat": "P95 {{side}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(polybot_queue_maker_cost_ratio_bucket[5m])) by (le, side))",
+          "legendFormat": "P50 {{side}}",
+          "refId": "B"
+        },
+        {
+          "expr": "0.95",
+          "legendFormat": "MAKER threshold (0.95)",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Avg Savings % (Maker)",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "avg(polybot_queue_maker_savings_pct{side=\"entry\"})",
+          "legendFormat": "Entry",
+          "refId": "A"
+        },
+        {
+          "expr": "avg(polybot_queue_maker_savings_pct{side=\"exit\"})",
+          "legendFormat": "Exit",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 5
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Taker Volume Rate (USDC/s)",
+      "gridPos": {
+        "x": 18,
+        "y": 12,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "avg(polybot_queue_turnover_volume_sec{})",
+          "legendFormat": "Rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 4,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "orange",
+                "value": 0.001
+              },
+              {
+                "color": "green",
+                "value": 0.01
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "Recent Maker/Taker Decisions",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 6
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(polybot_queue_maker_vs_taker_decisions_total[1h])) by (mode, side)",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "center"
+          }
+        }
+      },
+      "options": {
+        "showTypeIcons": false
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

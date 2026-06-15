@@ -1,0 +1,773 @@
+{
+  "title": "PolyBot — Regime Awareness (P11.1)",
+  "uid": "polybot-regime",
+  "tags": [
+    "polybot",
+    "p11.1",
+    "regime",
+    "strategy-switching"
+  ],
+  "timezone": "browser",
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Regime — BTC 5m",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"5m\",regime=\"chop\"}",
+          "legendFormat": "CHOP",
+          "refId": "A"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"5m\",regime=\"trend\"}",
+          "legendFormat": "TREND",
+          "refId": "B"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"5m\",regime=\"panic\"}",
+          "legendFormat": "PANIC",
+          "refId": "C"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"5m\",regime=\"illiquid\"}",
+          "legendFormat": "ILLIQUID",
+          "refId": "D"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"5m\",regime=\"event_driven\"}",
+          "legendFormat": "EVENT",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "—",
+                  "color": "text"
+                },
+                "1": {
+                  "text": "ACTIVE"
+                }
+              }
+            }
+          ],
+          "noValue": "No data"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "value",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Regime — BTC 15m",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"15m\",regime=\"chop\"}",
+          "legendFormat": "CHOP",
+          "refId": "A"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"15m\",regime=\"trend\"}",
+          "legendFormat": "TREND",
+          "refId": "B"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"15m\",regime=\"panic\"}",
+          "legendFormat": "PANIC",
+          "refId": "C"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"15m\",regime=\"illiquid\"}",
+          "legendFormat": "ILLIQUID",
+          "refId": "D"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"BTC\",window=\"15m\",regime=\"event_driven\"}",
+          "legendFormat": "EVENT",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "—",
+                  "color": "text"
+                },
+                "1": {
+                  "text": "ACTIVE"
+                }
+              }
+            }
+          ],
+          "noValue": "No data"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "value",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Regime — ETH 5m",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"5m\",regime=\"chop\"}",
+          "legendFormat": "CHOP",
+          "refId": "A"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"5m\",regime=\"trend\"}",
+          "legendFormat": "TREND",
+          "refId": "B"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"5m\",regime=\"panic\"}",
+          "legendFormat": "PANIC",
+          "refId": "C"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"5m\",regime=\"illiquid\"}",
+          "legendFormat": "ILLIQUID",
+          "refId": "D"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"5m\",regime=\"event_driven\"}",
+          "legendFormat": "EVENT",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "—",
+                  "color": "text"
+                },
+                "1": {
+                  "text": "ACTIVE"
+                }
+              }
+            }
+          ],
+          "noValue": "No data"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "value",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Regime — ETH 15m",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"15m\",regime=\"chop\"}",
+          "legendFormat": "CHOP",
+          "refId": "A"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"15m\",regime=\"trend\"}",
+          "legendFormat": "TREND",
+          "refId": "B"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"15m\",regime=\"panic\"}",
+          "legendFormat": "PANIC",
+          "refId": "C"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"15m\",regime=\"illiquid\"}",
+          "legendFormat": "ILLIQUID",
+          "refId": "D"
+        },
+        {
+          "expr": "polybot_regime_current{asset=\"ETH\",window=\"15m\",regime=\"event_driven\"}",
+          "legendFormat": "EVENT",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "—",
+                  "color": "text"
+                },
+                "1": {
+                  "text": "ACTIVE"
+                }
+              }
+            }
+          ],
+          "noValue": "No data"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "value",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Regime Timeline — All Markets",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_current{regime=\"trend\"}",
+          "legendFormat": "TREND — {{asset}}/{{window}}",
+          "refId": "A"
+        },
+        {
+          "expr": "polybot_regime_current{regime=\"chop\"}",
+          "legendFormat": "CHOP — {{asset}}/{{window}}",
+          "refId": "B"
+        },
+        {
+          "expr": "polybot_regime_current{regime=\"panic\"}",
+          "legendFormat": "PANIC — {{asset}}/{{window}}",
+          "refId": "C"
+        },
+        {
+          "expr": "polybot_regime_current{regime=\"illiquid\"}",
+          "legendFormat": "ILLIQUID — {{asset}}/{{window}}",
+          "refId": "D"
+        },
+        {
+          "expr": "polybot_regime_current{regime=\"event_driven\"}",
+          "legendFormat": "EVENT — {{asset}}/{{window}}",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "spanNulls": true,
+            "drawStyle": "line",
+            "pointSize": 5,
+            "showPoints": "auto",
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "gauge",
+      "title": "Regime Confidence — Current",
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_confidence{}",
+          "legendFormat": "{{asset}}/{{window}} — {{regime}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.4
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "green",
+                "value": 0.9
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Regime Classifications Rate — by Asset & Regime",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(polybot_regime_classifications_total{regime=\"trend\"}[5m])",
+          "legendFormat": "TREND — {{asset}}/{{window}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(polybot_regime_classifications_total{regime=\"chop\"}[5m])",
+          "legendFormat": "CHOP — {{asset}}/{{window}}",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(polybot_regime_classifications_total{regime=\"panic\"}[5m])",
+          "legendFormat": "PANIC — {{asset}}/{{window}}",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(polybot_regime_classifications_total{regime=\"illiquid\"}[5m])",
+          "legendFormat": "ILLIQUID — {{asset}}/{{window}}",
+          "refId": "D"
+        },
+        {
+          "expr": "rate(polybot_regime_classifications_total{regime=\"event_driven\"}[5m])",
+          "legendFormat": "EVENT — {{asset}}/{{window}}",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "piechart",
+      "title": "Regime Distribution — All Markets (Last 15m)",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(polybot_regime_classifications_total[15m])) by (regime)",
+          "legendFormat": "{{regime}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "displayLabels": [
+          "percent",
+          "name"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Orchestrator Status",
+      "gridPos": {
+        "x": 18,
+        "y": 12,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "expr": "polybot_regime_orchestrator_enabled{}",
+          "legendFormat": "Enabled",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DISABLED",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "ENABLED",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "noValue": "Unknown"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Regime Classifications (Total)",
+      "gridPos": {
+        "x": 18,
+        "y": 15,
+        "w": 6,
+        "h": 2
+      },
+      "targets": [
+        {
+          "expr": "sum(polybot_regime_classifications_total{})",
+          "legendFormat": "Total",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Strategy Active vs Skipped — by Regime",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(polybot_strategy_active_in_regime_total{strategy=\"BuyAboveThreshold\"}[5m])",
+          "legendFormat": "BAT Active — {{regime}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(polybot_strategy_skipped_by_regime_total{strategy=\"BuyAboveThreshold\"}[5m])",
+          "legendFormat": "BAT Skipped — {{regime}}",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(polybot_strategy_active_in_regime_total{strategy=\"MeanReversion\"}[5m])",
+          "legendFormat": "MR Active — {{regime}}",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(polybot_strategy_skipped_by_regime_total{strategy=\"MeanReversion\"}[5m])",
+          "legendFormat": "MR Skipped — {{regime}}",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "bargauge",
+      "title": "Strategy Skips — Total by Regime",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(polybot_strategy_skipped_by_regime_total{strategy=\"BuyAboveThreshold\"}) by (regime)",
+          "legendFormat": "BAT — {{regime}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(polybot_strategy_skipped_by_regime_total{strategy=\"MeanReversion\"}) by (regime)",
+          "legendFormat": "MR — {{regime}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

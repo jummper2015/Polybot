@@ -1,0 +1,24 @@
+# monitoring/grafana/dashboards/dashboards.yml
+#
+# Provider file-based para auto-carga de dashboards.
+# Grafana lee este YAML al arrancar y carga todos los .json del directorio
+# `/etc/grafana/provisioning/dashboards`.
+#
+# El intervalo `updateIntervalSeconds` releva cambios en disco para iterar
+# sin reiniciar el contenedor.
+
+apiVersion: 1
+
+providers:
+  - name:                 "polybot"
+    orgId:                1
+    folder:               "PolyBot"
+    folderUid:            "polybot"
+    type:                 "file"
+    disableDeletion:      false
+    editable:             true
+    updateIntervalSeconds: 30
+    allowUiUpdates:       false
+    options:
+      path:           /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

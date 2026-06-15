@@ -1,0 +1,689 @@
+{
+  "title": "PolyBot — Liquidity-Aware Sizing (P11.3)",
+  "uid": "polybot-liquidity",
+  "tags": [
+    "polybot",
+    "p11.3",
+    "liquidity",
+    "sizing",
+    "execution"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 100,
+      "title": "Liquidity Multiplier — BTC",
+      "type": "gauge",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_multiplier{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "Multiplier"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.25
+              },
+              {
+                "color": "yellow",
+                "value": 0.50
+              },
+              {
+                "color": "light-green",
+                "value": 0.75
+              },
+              {
+                "color": "green",
+                "value": 0.90
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 101,
+      "title": "Liquidity Multiplier — ETH",
+      "type": "gauge",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_multiplier{asset=\"ETH\",side=\"entry\"}",
+          "legendFormat": "Multiplier"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.25
+              },
+              {
+                "color": "yellow",
+                "value": 0.50
+              },
+              {
+                "color": "light-green",
+                "value": 0.75
+              },
+              {
+                "color": "green",
+                "value": 0.90
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 102,
+      "title": "Depth Coverage",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_depth_coverage{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "BTC"
+        },
+        {
+          "refId": "B",
+          "expr": "polybot_liquidity_depth_coverage{asset=\"ETH\",side=\"entry\"}",
+          "legendFormat": "ETH"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 103,
+      "title": "Spread Factor",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_spread_factor{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "BTC"
+        },
+        {
+          "refId": "B",
+          "expr": "polybot_liquidity_spread_factor{asset=\"ETH\",side=\"entry\"}",
+          "legendFormat": "ETH"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0.6,
+          "max": 1,
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.70
+              },
+              {
+                "color": "yellow",
+                "value": 0.85
+              },
+              {
+                "color": "green",
+                "value": 0.95
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 104,
+      "title": "Volume Factor",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_volume_factor{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "BTC"
+        },
+        {
+          "refId": "B",
+          "expr": "polybot_liquidity_volume_factor{asset=\"ETH\",side=\"entry\"}",
+          "legendFormat": "ETH"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0.5,
+          "max": 1,
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.60
+              },
+              {
+                "color": "yellow",
+                "value": 0.80
+              },
+              {
+                "color": "green",
+                "value": 0.95
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 105,
+      "title": "Size Reductions — Total",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 3
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(polybot_liquidity_size_reductions_total{})",
+          "legendFormat": "Total Reductions"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 200,
+      "title": "Liquidity Multiplier Timeline — by Asset",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_multiplier{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "BTC"
+        },
+        {
+          "refId": "B",
+          "expr": "polybot_liquidity_multiplier{asset=\"ETH\",side=\"entry\"}",
+          "legendFormat": "ETH"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "spanNulls": true,
+            "showPoints": "auto",
+            "pointSize": 5,
+            "stacking": {
+              "mode": "none"
+            },
+            "lineInterpolation": "stepAfter"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "min",
+            "max",
+            "mean",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 201,
+      "title": "Size Reductions — by Reason",
+      "type": "bargauge",
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(polybot_liquidity_size_reductions_total{asset=\"BTC\"}) by (reason)",
+          "legendFormat": "BTC — {{reason}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(polybot_liquidity_size_reductions_total{asset=\"ETH\"}) by (reason)",
+          "legendFormat": "ETH — {{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 300,
+      "title": "Depth Coverage Timeline",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_depth_coverage{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "BTC Depth Coverage"
+        },
+        {
+          "refId": "B",
+          "expr": "polybot_liquidity_depth_coverage{asset=\"ETH\",side=\"entry\"}",
+          "legendFormat": "ETH Depth Coverage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto",
+            "lineInterpolation": "stepAfter"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 301,
+      "title": "Depth Coverage Distribution",
+      "type": "bargauge",
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_depth_coverage{side=\"entry\"}",
+          "legendFormat": "{{asset}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 50,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "vertical",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 302,
+      "title": "BTC Factors Breakdown",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 18,
+        "y": 14,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polybot_liquidity_multiplier{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "Multiplier"
+        },
+        {
+          "refId": "B",
+          "expr": "polybot_liquidity_spread_factor{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "Spread Factor"
+        },
+        {
+          "refId": "C",
+          "expr": "polybot_liquidity_volume_factor{asset=\"BTC\",side=\"entry\"}",
+          "legendFormat": "Volume Factor"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1.05,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": true,
+            "showPoints": "never",
+            "lineInterpolation": "stepAfter"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 400,
+      "title": "Size Reductions Rate — by Reason (5m)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(polybot_liquidity_size_reductions_total{asset=\"BTC\"}[5m])",
+          "legendFormat": "BTC — {{reason}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(polybot_liquidity_size_reductions_total{asset=\"ETH\"}[5m])",
+          "legendFormat": "ETH — {{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 15,
+            "spanNulls": true,
+            "showPoints": "auto",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  }
+}
