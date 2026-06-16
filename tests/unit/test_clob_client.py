@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.infrastructure.polymarket.clob_client import (
+    CTF_CONTRACT_ADDRESS,
+    CLOBRedeemNotSupportedError,
     PolymarketCLOBClient,
     _ensure_dict,
     _mask_wallet,
@@ -334,3 +336,55 @@ class TestGetMarketInfoCached:
         mock_to_thread.assert_called_once()
 
 
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# redeem_position — CLOB V2 redeem es on-chain via CTF
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestRedeemPositionV2:
+    """
+    CLOB V2 (abril 2026) eliminó el endpoint REST `/redeem`. La redención
+    de tokens ganadores se hace on-chain via CTF (Conditional Tokens
+    Framework). Hasta que se implemente la integración web3, el método
+    debe fallar rápido sin tocar la red.
+    """
+
+    def test_redeem_not_supported_error_is_not_implemented(self):
+        """CLOBRedeemNotSupportedError extiende NotImplementedError."""
+        assert issubclass(CLOBRedeemNotSupportedError, NotImplementedError)
+
+    def test_ctf_contract_address_documented(self):
+        """El address oficial del CTF en Polygon Mainnet está documentado."""
+        assert CTF_CONTRACT_ADDRESS == "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+
+    @pytest.mark.asyncio
+    async def test_redeem_position_raises_clob_redeem_not_supported(self):
+        """redeem_position lanza CLOBRedeemNotSupportedError."""
+        client, sdk, _ = make_mock_clob_client()
+
+        with pytest.raises(CLOBRedeemNotSupportedError) as exc_info:
+            await client.redeem_position(
+                token_id="0xtoken123",
+                market_id="0xcondition456",
+            )
+
+        msg = str(exc_info.value)
+        # El mensaje guía al desarrollador hacia el flujo correcto (CTF)
+        assert "CTF" in msg
+        assert "redeemPositions" in msg
+
+    @pytest.mark.asyncio
+    async def test_redeem_position_does_not_touch_network(self):
+        """Falla antes de cualquier llamada HTTP o SDK."""
+        client, sdk, _ = make_mock_clob_client()
+        # Si el SDK o el HTTP client se invocaran, los AsyncMock lo registrarían.
+        with pytest.raises(CLOBRedeemNotSupportedError):
+            await client.redeem_position(token_id="t", market_id="m")
+
+        # No se llama al SDK
+        sdk.get_address.assert_not_called()
+        # No se hace POST: _http es un AsyncMock; verificamos await_count == 0
+        post_method = client._http.post
+        if hasattr(post_method, "await_count"):
+            assert post_method.await_count == 0

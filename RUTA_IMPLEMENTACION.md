@@ -192,6 +192,33 @@ Esto es lo que hay que hacer AHORA para tener un sistema sin fisuras. Cada tarea
 
 ---
 
+### R2.0-redeem — Redeem on-chain via CTF 🔴 NUEVO BLOQUEANTE (2026-06-16)
+
+**Problema:** durante la auditoría del flujo de redeem (priorizada por el objetivo #3 del usuario "reclamar ganancias acumuladas por cada evento") se descubrió que `PolymarketCLOBClient.redeem_position` llamaba a un endpoint REST `POST /redeem` que **no existe en CLOB V2**. La redención en V2 se hace on-chain via Conditional Tokens Framework (CTF), llamando al método `redeemPositions(...)` del contrato `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` en Polygon Mainnet.
+
+**Fix aplicado en R2.0-redeem (audit):**
+- `clob_client.py`: nueva excepción `CLOBRedeemNotSupportedError(NotImplementedError)`; `redeem_position` falla rápido con mensaje guía hacia CTF.
+- `real_handler.py`: `_call_with_retry` no reintenta `NotImplementedError`; `redeem_resolved_position` emite `AuditAction.REAL_REDEEM_FAILED` con `reason="ctf_onchain_required"`.
+- `audit_log.py`: nuevo `REAL_REDEEM_FAILED`.
+- Tests: +4 (`TestRedeemPositionV2`) +1 reescrito (`test_redeem_ctf_unsupported_fail_fast`).
+- Suite total: **1,369/1,369**.
+
+Detalle completo en `AUDIT_REPORT.md § R2.0-redeem`.
+
+**PENDIENTE (R2.0-redeem-impl — requiere RFC, NO incluido en este audit):**
+
+- [ ] RFC: añadir `web3.py` a `requirements.txt` (justificar maintenance + async).
+- [ ] `src/infrastructure/polymarket/ctf_redeemer.py` con wrapper sobre `ConditionalTokens.redeemPositions`.
+- [ ] Lógica de cálculo de `indexSets` por outcome ganador (observable post-resolution en Data API).
+- [ ] Gas estimation + dry-run + tx receipt + retry on chain reorg.
+- [ ] Decidir: llamar CTF directo vs. usar "thin collateral adapter" para auto-wrap pUSD.
+- [ ] Property tests Hypothesis sobre cálculo de `indexSets`.
+- [ ] Audit log de tx hash + gas + pUSD recibido.
+
+**Impacto:** R3.x (real trading) NO puede completar ciclo entry→exit→redeem hasta resolver R2.0-redeem-impl. No es seguro escalar capital más allá de un canary minúsculo sin esto.
+
+---
+
 ### R2.1 — Checklist Pre-Real-Trading (Pasos 3-6) ⛔ BLOQUEADO (2026-06-14)
 
 **Estado actual del checklist P7.3:**

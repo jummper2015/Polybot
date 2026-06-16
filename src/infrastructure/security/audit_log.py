@@ -19,6 +19,7 @@ class AuditAction(str, Enum):
     REAL_EXIT_SUCCESS   = "real_exit_success"
     REAL_REDEEM_ATTEMPT = "real_redeem_attempt"
     REAL_REDEEM_SUCCESS = "real_redeem_success"
+    REAL_REDEEM_FAILED  = "real_redeem_failed"
     REAL_TRADING_ENABLED  = "real_trading_enabled"
     REAL_TRADING_DISABLED = "real_trading_disabled"
     GUARDRAIL_TRIGGERED = "guardrail_triggered"

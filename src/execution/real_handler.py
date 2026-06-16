@@ -26,7 +26,10 @@ from src.infrastructure.observability.metrics import (
     REAL_ORDER_RETRIES,
 )
 from src.infrastructure.observability.tracing import get_tracer
-from src.infrastructure.polymarket.clob_client import PolymarketCLOBClient
+from src.infrastructure.polymarket.clob_client import (
+    CLOBRedeemNotSupportedError,
+    PolymarketCLOBClient,
+)
 from src.infrastructure.security.audit_log import AuditAction, AuditLogger
 from src.infrastructure.security.circuit_breaker import (
     CLOBCircuitBreaker,
@@ -534,18 +537,37 @@ class RealTradingHandler(IExecutionHandler):
             market_id=position.market_id,
         )
 
-        api_response, error = await self._call_with_retry(
-            operation="redeem",
-            order_id=redeem_order_id,
-            fn=lambda: self._clob.redeem_position(
-                token_id=token_id,
-                market_id=position.market_id,
-            ),
-            log=log,
-        )
+        try:
+            api_response, error = await self._call_with_retry(
+                operation="redeem",
+                order_id=redeem_order_id,
+                fn=lambda: self._clob.redeem_position(
+                    token_id=token_id,
+                    market_id=position.market_id,
+                ),
+                log=log,
+            )
+        except CLOBRedeemNotSupportedError as exc:
+            # Defensa en profundidad: si por cualquier razón
+            # CLOBRedeemNotSupportedError escapa del _call_with_retry,
+            # la capturamos aquí. El camino normal la convierte en
+            # (None, error_msg) via el `except NotImplementedError`.
+            error = str(exc) or type(exc).__name__
+            api_response = None
 
         if error:
-            log.error("redeem_failed", error=error)
+            reason = (
+                "ctf_onchain_required"
+                if "CTF" in error or "redeemPositions" in error
+                else "redeem_failed"
+            )
+            log.error("redeem_failed", error=error, reason=reason)
+            await self._audit.log(
+                action=AuditAction.REAL_REDEEM_FAILED,
+                details={"reason": reason, "error": error[:200]},
+                market_id=position.market_id,
+                amount=position.amount,
+            )
             return self._failed_result(
                 position.market_id, None,
                 position.amount, 0.0, error
@@ -668,6 +690,18 @@ class RealTradingHandler(IExecutionHandler):
                         pass
 
                 return response, None
+
+            except NotImplementedError as e:
+                # Operación no soportada por el camino actual (ej. redeem
+                # en CLOB V2 requiere CTF on-chain). No tiene sentido
+                # reintentar — falla rápido con mensaje preservado.
+                error_msg = str(e) or type(e).__name__
+                log.error(
+                    "operation_not_supported",
+                    operation=operation,
+                    error=error_msg,
+                )
+                return None, error_msg
 
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code

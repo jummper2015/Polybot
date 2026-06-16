@@ -1,7 +1,98 @@
 # AUDIT_REPORT.md — PolyBot Security Audit
 
-**Última auditoría:** 2026-06-15 (R2.1-smoke — End-to-End Pipeline Verification)
-**Auditoría anterior:** 2026-06-15 (R2.1 — Wallet Connectivity Verification)
+**Última auditoría:** 2026-06-16 (R2.0-redeem — Auditoría redeem CLOB V2)
+**Auditoría anterior:** 2026-06-15 (R2.1-smoke — End-to-End Pipeline Verification)
+
+---
+
+## 🔴 R2.0-redeem — Auditoría redeem CLOB V2 (Junio 2026)
+
+**Fecha:** 2026-06-16
+**Alcance:** verificar el flujo de redención de tokens ganadores en CLOB V2 (`PolymarketCLOBClient.redeem_position`, `RealTradingHandler.redeem_resolved_position`). Activado por la prioridad del usuario "objetivo #3: el bot debe ser capaz de reclamar las ganancias acumuladas por cada evento".
+
+### Hallazgo CRÍTICO — endpoint REST `/redeem` no existe en V2
+
+El código en `src/infrastructure/polymarket/clob_client.py:252` hacía:
+
+```python
+await self._http.post("/redeem", json={"token_id": ..., "market_id": ...},
+                      headers={"POLY_ADDRESS": wallet})
+```
+
+**Esto está roto en CLOB V2 (abril 2026):**
+
+| Verificación | Resultado |
+|---|---|
+| Docs oficiales (`https://docs.polymarket.com/llms.txt`) | ❌ Ningún endpoint REST `/redeem` listado; sólo el endpoint público `/api-reference/core/get-user-combo-activity` que **reporta** redeem events |
+| Guía `/trading/ctf/redeem.md` | ✅ Confirma: "Exchange winning tokens for pUSD after market resolution" se hace **on-chain via CTF** |
+| Contrato (`/resources/contracts.md`) | ✅ CTF en Polygon: `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` (Gnosis CTF estándar) |
+| SDK `py-clob-client-v2` 1.0.1 — métodos disponibles | ❌ NO existe `redeem_position`, `redeem`, `redeemPositions` ni equivalente |
+
+**Llamada correcta documentada:**
+
+```
+ConditionalTokens(0x4D97...0476045).redeemPositions(
+  collateralToken = pUSD (0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB),
+  parentCollectionId = bytes32(0),
+  conditionId = market.condition_id,
+  indexSets = [1, 2]  # cubre ambos outcomes; redime la posición ganadora
+)
+```
+
+La capa correcta es un **thin collateral adapter** (citado por docs) que burns ERC1155 outcome tokens, recibe USDC.e como colateral, wrappea a pUSD y devuelve a la wallet automáticamente.
+
+### Impacto si no se corrige
+
+- En producción, la primera llamada a `redeem_resolved_position` haría `POST https://clob.polymarket.com/redeem` → 404 / 405.
+- Tras los 3 reintentos del `_call_with_retry`, el handler reportaba fallo con un error críptico (`HTTP 404`).
+- **No habría reclamación efectiva** de ganancias por mercado resuelto — viola directamente el objetivo #3 del usuario.
+- En el peor caso, podría parecer "fallo intermitente" (porque el endpoint sí responde, sólo con 404) y disfrazarse como un problema de red.
+
+### Fix aplicado (conservador, cero efectos en cadena)
+
+| Cambio | Archivo | Línea | Detalle |
+|---|---|---|---|
+| Nueva excepción `CLOBRedeemNotSupportedError(NotImplementedError)` | `clob_client.py` | 52 | Marca explícitamente que el camino REST no existe |
+| Constante `CTF_CONTRACT_ADDRESS` documentada | `clob_client.py` | 50 | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` |
+| `redeem_position` ahora hace `raise CLOBRedeemNotSupportedError(...)` | `clob_client.py` | 252 | Mensaje guía al desarrollador hacia `redeemPositions` on-chain |
+| `_call_with_retry` no reintenta `NotImplementedError` | `real_handler.py` | 672 | Falla rápido; sin retries innecesarios; log claro |
+| `redeem_resolved_position` emite `REAL_REDEEM_FAILED` con `reason="ctf_onchain_required"` | `real_handler.py` | 537 | Audit log distinto de errores de red |
+| `AuditAction.REAL_REDEEM_FAILED` añadido | `audit_log.py` | 22 | Permite distinguir fallos de redeem en analytics |
+
+### Tests añadidos (4 nuevos)
+
+`tests/unit/test_clob_client.py::TestRedeemPositionV2`:
+- `test_redeem_not_supported_error_is_not_implemented` — verifica jerarquía de excepciones.
+- `test_ctf_contract_address_documented` — verifica el address exacto del CTF.
+- `test_redeem_position_raises_clob_redeem_not_supported` — mensaje guía contiene "CTF" y "redeemPositions".
+- `test_redeem_position_does_not_touch_network` — confirma cero llamadas SDK/HTTP.
+
+`tests/unit/test_execution_handlers.py::TestRealHandlerRedeem`:
+- `test_redeem_ctf_unsupported_fail_fast` — handler NO reintenta, emite `REAL_REDEEM_FAILED` con `reason="ctf_onchain_required"`.
+- `test_redeem_network_failure` — comportamiento de red mantenido (reintenta hasta agotar y devuelve failure).
+
+### Verificación
+
+- ✅ `pytest tests/unit/test_clob_client.py::TestRedeemPositionV2 -xvs` → 4/4.
+- ✅ `pytest tests/unit/test_execution_handlers.py -x -q` → 64/64.
+- ✅ `pytest -x -q` (suite completa) → **1,369/1,369** (sin regresiones, +4 nuevos).
+- ✅ `ruff check` sobre los archivos modificados → limpio (sin nuevos hallazgos).
+- ✅ Cero efectos en cadena durante la auditoría (todos los tests usan `AsyncMock`).
+
+### Fuera de alcance (defer — requiere RFC)
+
+**R2.0-redeem-impl**: implementación efectiva del redeem on-chain via CTF.
+
+Requisitos para esa iteración:
+1. Añadir `web3.py` a `requirements.txt` con justificación (chain de mantenimiento, async support).
+2. Crear `src/infrastructure/polymarket/ctf_redeemer.py` con wrapper sobre `ConditionalTokens.redeemPositions`.
+3. Resolver el `indexSets` correcto por mercado (depende de `outcome` ganador — observable post-resolution en Data API).
+4. Gas estimation en MATIC + dry-run + tx receipt + retry on chain reorg.
+5. Decidir entre: (a) llamar directo al CTF, o (b) usar el "thin collateral adapter" para auto-wrap a pUSD (preferible para UX, requiere encontrar el address en docs).
+6. Property tests Hypothesis sobre cálculo de `indexSets` por outcome.
+7. Audit log de tx hash, gas used, pUSD recibido.
+
+Hasta que esta iteración se cierre, R3.x (real trading) **no puede completar el ciclo entry→exit→redeem** y por tanto no es seguro escalar capital más allá de un canary minúsculo.
 
 ---
 

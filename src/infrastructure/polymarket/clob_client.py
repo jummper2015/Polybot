@@ -49,6 +49,20 @@ logger = structlog.get_logger(__name__)
 CLOB_BASE_URL = "https://clob.polymarket.com"
 CHAIN_ID      = 137  # Polygon Mainnet
 
+# CTF (Conditional Tokens Framework) — redemption contract on Polygon.
+# Documentado en https://docs.polymarket.com/trading/ctf/redeem.md
+CTF_CONTRACT_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+
+
+class CLOBRedeemNotSupportedError(NotImplementedError):
+    """
+    Marca que la redención de posiciones ganadoras no es soportada por
+    el camino REST. CLOB V2 redime on-chain via CTF (ver constante
+    CTF_CONTRACT_ADDRESS). Se lanza desde `redeem_position` para que el
+    handler de ejecución pueda devolver un fallo controlado sin tocar la
+    cadena ni golpear un endpoint que no existe.
+    """
+
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -255,23 +269,28 @@ class PolymarketCLOBClient:
         market_id:  str,
     ) -> dict:
         """
-        Redime tokens ganadores después de la resolución del mercado.
+        Redime tokens ganadores tras la resolución del mercado.
 
-        El SDK no expone un método redeem directo. Usamos la API REST
-        con autenticación básica (wallet address en header).
+        ⚠️ CLOB V2 (abril 2026): NO existe endpoint REST `/redeem`. La
+        redención se hace **on-chain via CTF** (Conditional Tokens
+        Framework), llamando a `redeemPositions(collateralToken,
+        parentCollectionId, conditionId, indexSets)` en el contrato
+        `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` (Polygon Mainnet).
+
+        El SDK `py-clob-client-v2` no expone este flujo on-chain (no es
+        parte del CLOB; es contrato CTF). Requiere `web3.py` + firma con
+        la private key + gas en MATIC. Implementación tracked en
+        `RUTA_IMPLEMENTACION.md § R2.0-redeem`.
+
+        Falla rápido aquí (cero efectos en cadena, cero llamadas a un
+        endpoint inexistente) en vez de fallar silenciosamente.
         """
-        wallet = await asyncio.to_thread(self._sdk.get_address)
-
-        response = await self._http.post(
-            "/redeem",
-            json={
-                "token_id":  token_id,
-                "market_id": market_id,
-            },
-            headers={"POLY_ADDRESS": wallet},
+        raise CLOBRedeemNotSupportedError(
+            "CLOB V2 redemption is on-chain via CTF "
+            "(contract 0x4D97DCd97eC945f40cF65F87097ACe5EA0476045, "
+            "method redeemPositions). The legacy REST /redeem endpoint "
+            "does not exist in V2. See RUTA_IMPLEMENTACION.md § R2.0-redeem."
         )
-        response.raise_for_status()
-        return response.json()
 
     async def get_balance(self) -> float:
         """

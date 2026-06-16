@@ -900,11 +900,11 @@ class TestRealHandlerHedge:
 
 
 class TestRealHandlerRedeem:
-    """redeem_resolved_position — éxito + fallo."""
+    """redeem_resolved_position — V2 requiere CTF on-chain (fail-fast)."""
 
     def _handler(self, *, redeem_response=None, side_effect=None):
         clob = AsyncMock()
-        if side_effect:
+        if side_effect is not None:
             clob.redeem_position = AsyncMock(side_effect=side_effect)
         else:
             clob.redeem_position = AsyncMock(
@@ -920,21 +920,46 @@ class TestRealHandlerRedeem:
         ), clob, repo
 
     @pytest.mark.asyncio
-    async def test_redeem_success(self):
-        handler, clob, repo = self._handler()
+    async def test_redeem_ctf_unsupported_fail_fast(self):
+        """
+        En CLOB V2 el redeem es on-chain via CTF; el camino REST tira
+        `CLOBRedeemNotSupportedError`. El handler debe (a) NO reintentar,
+        (b) devolver `success=False`, (c) emitir audit log con razón
+        `ctf_onchain_required`.
+        """
+        from src.infrastructure.polymarket.clob_client import (
+            CLOBRedeemNotSupportedError,
+        )
+
+        handler, clob, repo = self._handler(
+            side_effect=CLOBRedeemNotSupportedError("redeemPositions CTF required")
+        )
         position = make_position(side="YES", shares=20.0, amount=10.0)
 
-        result = await handler.redeem_resolved_position(position, "yes_tok")
+        # Patch audit logger para capturar la entrada
+        handler._audit.log = AsyncMock()
 
-        assert result.success is True
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await handler.redeem_resolved_position(position, "yes_tok")
+
+        assert result.success is False
         assert result.mode == "real"
-        clob.redeem_position.assert_awaited_once_with(
-            token_id="yes_tok", market_id=position.market_id,
-        )
-        repo.save_position.assert_awaited()
+        # NO reintentamos: redeem_position se llama UNA sola vez
+        assert clob.redeem_position.await_count == 1
+        # NO se invoca asyncio.sleep para retry
+        assert mock_sleep.await_count == 0
+        # Audit log refleja el motivo CTF
+        audit_calls = handler._audit.log.await_args_list
+        redeem_failed_calls = [
+            c for c in audit_calls
+            if c.kwargs.get("action").value == "real_redeem_failed"
+        ]
+        assert len(redeem_failed_calls) == 1
+        assert redeem_failed_calls[0].kwargs["details"]["reason"] == "ctf_onchain_required"
 
     @pytest.mark.asyncio
-    async def test_redeem_failure(self):
+    async def test_redeem_network_failure(self):
+        """Errores de red genéricos: reintenta y termina en failure."""
         import httpx
         handler, _, _ = self._handler(
             side_effect=httpx.ConnectError("network")

@@ -1,8 +1,8 @@
 # RECORRIDO ACTUAL — PolyBot v4.0
 
-> **Auditoría completa:** 2026-06-07  
-> **Tests:** 1,125 recolectados, 1,124 pasando, 1 corregido  
-> **Conclusión:** El sistema está TÉCNICAMENTE COMPLETO. Toca pulir y validar.
+> **Última auditoría:** 2026-06-16 (R2.0-redeem — flujo CTF on-chain)
+> **Tests:** 1,369 pasando (+4 nuevos en R2.0-redeem; antes 1,365)
+> **Conclusión:** El sistema está TÉCNICAMENTE COMPLETO para paper. Falta el redeem on-chain via CTF (R2.0-redeem-impl) antes de poder cerrar el ciclo entry→exit→redeem en real.
 
 ---
 
@@ -139,6 +139,8 @@ PolyBot ha completado **todas las fases planificadas** (F1-F11), con 1,125 tests
 | ~~Dashboard P11.4 Event-Driven~~ ✅ | — | Completado 2026-06-14 |
 | ~~Cobertura tests críticos~~ ✅ | — | Completado 2026-06-14 (95.73% en módulos objetivo) |
 | ~~Wallet connectivity verification (read-only)~~ ✅ | — | Completado 2026-06-15 — `scripts/verify_polymarket_connectivity.py` + 25 tests |
+| ~~Audit redeem CLOB V2~~ ✅ | — | Completado 2026-06-16 — fail-fast + audit log; impl on-chain pendiente como R2.0-redeem-impl |
+| Implementar redeem on-chain CTF (R2.0-redeem-impl) | 🔴 NUEVO | Requiere RFC + `web3.py`. Bloquea cerrar ciclo entry→exit→redeem en real |
 | Checklist pre-real-trading (pasos 3-6) | ⛔ BLOQUEADO | AUDIT_REPORT.md § R2.1 (2026-06-14) — MR sin edge en parquets reales |
 
 ---
@@ -188,6 +190,38 @@ Al levantar `docker compose up -d`, Grafana monta `./monitoring/grafana/dashboar
 | Data Recording (P8.1) | `polybot-recording` | 12 | Ticks/seg, gaps, salud del recorder |
 
 Cambios al provisioning recargan en ≤ 30s (`updateIntervalSeconds: 30`).
+
+---
+
+## 🔴 R2.0-redeem — Auditoría redeem CLOB V2 (snapshot 2026-06-16)
+
+**Hallazgo:** `PolymarketCLOBClient.redeem_position` llamaba a `POST https://clob.polymarket.com/redeem`, **endpoint que no existe en CLOB V2** (abril 2026). La docs oficial (`/trading/ctf/redeem.md`) y la lista de métodos del SDK `py-clob-client-v2` 1.0.1 confirman que la redención es **on-chain via CTF**:
+
+```
+ConditionalTokens(0x4D97DCd97eC945f40cF65F87097ACe5EA0476045).redeemPositions(
+  collateralToken = pUSD (0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB),
+  parentCollectionId = bytes32(0),
+  conditionId = market.condition_id,
+  indexSets = [1, 2]  # cubre ambos outcomes
+)
+```
+
+**Riesgo evitado:** sin este fix, en producción el primer redeem habría devuelto 404, agotado los 3 retries y reportado un error genérico de red — **fallo silencioso disfrazado**, violando "errores deben ser visibles, trazables y accionables".
+
+**Fix aplicado (cero efectos en cadena):**
+
+| Cambio | Archivo |
+|---|---|
+| `CLOBRedeemNotSupportedError(NotImplementedError)` + constante `CTF_CONTRACT_ADDRESS` | `src/infrastructure/polymarket/clob_client.py` |
+| `redeem_position` ahora hace `raise CLOBRedeemNotSupportedError(...)` con mensaje guía | `src/infrastructure/polymarket/clob_client.py:252` |
+| `_call_with_retry` no reintenta `NotImplementedError` (falla rápido) | `src/execution/real_handler.py:672` |
+| `redeem_resolved_position` emite `REAL_REDEEM_FAILED` con `reason="ctf_onchain_required"` cuando aplica | `src/execution/real_handler.py:537` |
+| Nuevo `AuditAction.REAL_REDEEM_FAILED` | `src/infrastructure/security/audit_log.py:22` |
+| +4 tests (`TestRedeemPositionV2`) +1 reescrito (`test_redeem_ctf_unsupported_fail_fast`) | `tests/unit/test_clob_client.py`, `tests/unit/test_execution_handlers.py` |
+
+**Resultado:** 1,369/1,369 tests verde, lint limpio sobre los archivos tocados. Detalle completo en `AUDIT_REPORT.md § R2.0-redeem`.
+
+**Pendiente (R2.0-redeem-impl — requiere RFC):** implementación efectiva on-chain — añadir `web3.py`, crear `src/infrastructure/polymarket/ctf_redeemer.py`, resolver `indexSets` por outcome ganador, gas estimation, tx receipt, audit log on-chain. Ver `RUTA_IMPLEMENTACION.md § R2.0-redeem`.
 
 ---
 
