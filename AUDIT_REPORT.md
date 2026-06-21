@@ -341,7 +341,7 @@ El `record_live_data.py` capturó **markets longevos** en vez de los markets **M
 | B2 | Tooling de validación sintético | ✅ resuelto con `scripts/backtest_real.py` |
 | B3 | Recording inactivo 13 días | ❌ pendiente |
 | B4 | Discovery captura markets longevos en vez de M5/M15 cripto | ✅ **fix aplicado en `record_live_data.py`** (`_matches_window`) |
-| **B5** | **Polymarket no tiene markets BTC/ETH M5/M15 abiertos ahora** | ❌ **nuevo, externo** |
+| **B5** | ~~Polymarket no tiene markets BTC/ETH M5/M15 abiertos~~ → **falso positivo de auditoría 2026-06-14**: el discovery del script usaba el endpoint equivocado. Endpoint correcto (`/events/keyset?tag=crypto`) expone 54 markets `*-updown-*` activos. | ✅ **resuelto 2026-06-21** (fix + 4 tests no-regresión) |
 
 ### B4 — Fix de discovery filter (2026-06-14)
 
@@ -362,17 +362,42 @@ Tras corregir B4, se hizo audit en vivo contra `gamma-api.polymarket.com`:
 - `GET /events?tag_id=620&active=true&closed=false` → **0 eventos**.
 - `GET /events?tag_id=102322&active=true&closed=false` (Ethereum Prices) → **0 eventos**.
 
-**Conclusión:** Polymarket actualmente NO está publicando markets BTC/ETH M5/M15 nuevos. Esto es **externo al bot**. Ningún fix de código resuelve esto.
+**Conclusión (2026-06-14, ahora obsoleta):** la auditoría usó endpoints que no coinciden con el discovery canónico del bot; ver re-check abajo.
 
-Implicaciones:
-- No tiene sentido reactivar recording hasta que vuelvan a aparecer.
-- R1.2-ter (re-optimizar MR full) requiere parquets nuevos → bloqueado por B5.
-- R2.1 sigue **⛔ BLOQUEADO**.
+### B5 — Re-check 2026-06-21: falso positivo
 
-Posibles caminos (decisión del usuario):
-1. **Esperar** a que Polymarket reabra esos markets (algunos son ciclos de fin de semana / horarios de NY).
-2. **Cambiar de target**: identificar qué markets activos sí encajan con la filosofía del bot (p. ej. markets daily, o eventos políticos cortos) y replantear el alcance del checklist.
-3. **Modo "demo only"**: aceptar que real trading queda en suspenso. Foco en R2.3 (stress test), R2.4 (latency), R3.2 (alertas), R4 (portfolio) sin escalar capital.
+Los endpoints usados en la auditoría B5 inicial no son el discovery real del bot. `PolymarketHTTPClient.get_active_markets` consume **`GET /events/keyset?tag=crypto&active=true&closed=false&limit=100&order=volume24hr&sort=desc`** desde R1.x (commit del cliente HTTP). El bloqueo se debía a que `scripts/record_live_data.py` se quedó en el endpoint anterior (`GET /markets?_limit=500`) tras el merge de market_filters.
+
+Verificación contra Polymarket producción el 2026-06-21:
+
+| Endpoint | Markets devueltos | Updown |
+|---|---|---|
+| `GET /markets?active=true&closed=false&_limit=500` (el que usaba el script) | 20 | **0** |
+| `GET /events/keyset?tag=crypto&active=true&closed=false&limit=100&order=volume24hr&sort=desc` (canónico) | 100 events / **641 markets** | **54** |
+
+Ejemplos (slugs reales):
+- `btc-updown-5m-1782077100`, `btc-updown-5m-1782084600`, `btc-updown-15m-1782100800`
+- `eth-updown-5m-1782076800`, `eth-updown-15m-1782100800`
+- `bnb-updown-5m-...`, `doge-updown-5m-...`, `xrp-updown-5m-...`
+
+**Fix aplicado:**
+- `scripts/record_live_data.py` — nuevo helper `_fetch_crypto_events_paginated()` que replica el patrón del HTTP client (keyset pagination, `PolymarketAdapter.parse_rest_market`). `find_markets_for_asset` y `find_live_crypto_markets` ambos lo usan.
+- Conserva `endDate`/`conditionId` camelCase (varios helpers downstream los leen así).
+- Tests refactorizados al shape `{"events":[...], "next_cursor": ...}`.
+- Nuevo `TestFindMarketsForAsset` con 4 casos: updown vs longevidad (rechaza GTA-VI), paginación `next_cursor`, respuesta vacía, top-volume per window.
+
+**Smoke live (paper, sin .env):**
+- `find_markets_for_asset("BTC")` → 10 markets, todos cripto M5/M15/H4 reales.
+- `find_live_crypto_markets("BTC")` → 56 markets en cola.
+- `find_live_crypto_markets("ETH")` → 45 markets en cola.
+
+**Lecciones de auditoría:**
+- Antes de declarar un bloqueo "externo", auditar **el endpoint real que usa el bot en producción**, no un endpoint adyacente.
+- El test de discovery debe asegurar paridad con `PolymarketHTTPClient.get_active_markets`. El nuevo `TestFindMarketsForAsset::test_finds_updown_5m_rejects_longevity_market` cubre exactamente esa regresión.
+
+**Implicaciones:**
+- B3 (recording) y R1.2-ter (re-optimizar MR full) ya no están bloqueados.
+- R2.1 → objetivo #3 desbloqueado para validación operativa.
 
 ### Próximas acciones (re-priorizadas)
 

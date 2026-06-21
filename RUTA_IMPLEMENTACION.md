@@ -245,14 +245,11 @@ Detalle completo en `AUDIT_REPORT.md § R2.0-redeem`.
 R1.2-bis y auditoría de discovery ejecutados el 2026-06-14 (ver `AUDIT_REPORT.md § R2.1`). Hallazgos:
 
 - ✅ **B4 — fix aplicado**: `scripts/record_live_data.py` ahora usa el filtro `_matches_window` portado de `MarketService`. Acepta solo markets con slug `-5m-`/`-15m-` o rango horario coherente; rechaza binarios longevos.
-- ❌ **B5 — nuevo, externo**: tras el fix, audit en vivo contra Gamma API muestra **0 events BTC/ETH activos con M5/M15** (`tag_id=620` btc y `tag_id=102322` eth-prices vacíos). Polymarket no está publicando estos markets ahora mismo.
-- ❌ **B3**: hasta que B5 se resuelva, recording no tiene markets que grabar.
-- ❌ **R1.2-ter**: re-optimizar full requiere parquets nuevos → bloqueado por B5.
+- ✅ **B5 — falso positivo confirmado el 2026-06-21**: el bloqueo era el endpoint usado por el discovery, no Polymarket. `scripts/record_live_data.py` consultaba `GET /markets?_limit=500` (20 markets generales, 0 updown). El endpoint correcto (`GET /events/keyset?tag=crypto`, paridad con `PolymarketHTTPClient.get_active_markets`) expone **54 markets `*-updown-*` activos**. Fix + 4 tests no-regresión (`TestFindMarketsForAsset`) en commit subsiguiente.
+- ✅ **B3**: con discovery corregido, recording vuelve a tener markets que grabar.
+- ✅ **R1.2-ter**: re-optimizar full ya no está bloqueado por B5 — basta relanzar `scripts/record_live_data.py --all` con el script corregido para regenerar parquets.
 
-**Decisión pendiente del usuario** (ver `AUDIT_REPORT.md § R2.1 > B5`):
-1. Esperar a que Polymarket reabra markets M5/M15 cripto.
-2. Cambiar alcance del bot (markets daily, eventos políticos).
-3. Modo "demo only" — saltar a R2.3/R2.4/R3.2/R4 sin escalar capital.
+**Estado:** B5 cerrado. La decisión "esperar / cambiar alcance / demo-only" queda obsoleta — el alcance M5/M15 cripto es alcanzable hoy.
 
 ---
 
@@ -270,13 +267,13 @@ R1.2-bis y auditoría de discovery ejecutados el 2026-06-14 (ver `AUDIT_REPORT.m
 - [x] Run con `--force-fake-signal`: exit `0`, **1 orden paper ejecutada, fill_price=0.493001, slippage=0.0005**. Cadena slippage→fill→persistencia funciona.
 
 **Lo que SIGUE bloqueado**:
-- ⛔ Objetivo #3 (M5/M15 rotación + redeem): bloqueado por B5 externo.
+- ✅ ~~Objetivo #3 (M5/M15 rotación + redeem): bloqueado por B5 externo~~ → **B5 resuelto 2026-06-21**. Objetivo desbloqueado para validación operativa (pendiente: relanzar recording + ciclo entry/exit/redeem real en paper sobre markets `*-updown-*`).
 - ⛔ Pasos 5 y 6 del checklist P7.3 (paper marathon con reporte versionado, real trading).
 
 **Próximos pasos posibles** (decisión del usuario, no autorizados por este smoke):
-- Re-correr `run_paper_marathon.py` 100 ciclos para tener reporte versionado en `data/reports/`.
+- Relanzar `scripts/record_live_data.py --all` con el discovery corregido para capturar parquets cripto M5/M15 reales.
+- Re-correr `run_paper_marathon.py` 100 ciclos sobre los parquets nuevos para tener reporte versionado en `data/reports/`.
 - Cargar `.env` real + correr `verify_polymarket_connectivity.py` para cerrar el step 1 del checklist con credenciales reales.
-- Esperar a B5 o cambiar alcance (ver decisión pendiente arriba).
 
 ---
 

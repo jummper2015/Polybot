@@ -1,8 +1,8 @@
 # RECORRIDO ACTUAL — PolyBot v4.0
 
-> **Última auditoría:** 2026-06-16 (R2.0-redeem — flujo CTF on-chain)
-> **Tests:** 1,369 pasando (+4 nuevos en R2.0-redeem; antes 1,365)
-> **Conclusión:** El sistema está TÉCNICAMENTE COMPLETO para paper. Falta el redeem on-chain via CTF (R2.0-redeem-impl) antes de poder cerrar el ciclo entry→exit→redeem en real.
+> **Última auditoría:** 2026-06-21 (B5-recheck — discovery cripto via `/events/keyset?tag=crypto`)
+> **Tests:** 1,373 pasando (+4 nuevos en `TestFindMarketsForAsset` para non-regresión B5; antes 1,369)
+> **Conclusión:** B5 era **falso positivo**. El endpoint correcto (`/events/keyset?tag=crypto`, ya usado por `PolymarketHTTPClient.get_active_markets`) expone **54 markets `*-updown-*` activos** ahora mismo. El bloqueo era de `scripts/record_live_data.py`, que consultaba `/markets?_limit=500` (devuelve 20 markets generales sin cripto M5/M15). Con el fix, R2.1 — objetivo #3 (rotación M5/M15 + redeem por evento) — queda **desbloqueado para validación operativa**.
 
 ---
 
@@ -167,10 +167,36 @@ Sweep MR QUICK (324 combos × 4 datasets, ~62s) ejecutado sobre `data/parquet/`.
 - ✅ **B4 resuelto**: `scripts/record_live_data.py:find_markets_for_asset` ahora filtra por window M5/M15 (port de `MarketService._matches_window`).
 - ❌ **B5 — externo**: tras el fix, Gamma API no expone markets BTC/ETH M5/M15 abiertos (`tag_id=620` y `102322` con `active=true&closed=false` retornan 0).
 
-**Conclusión:** ningún fix de código abre R2.1. Decisión estratégica pendiente del usuario:
-1. Esperar a que Polymarket reabra esos markets.
-2. Cambiar alcance del bot.
-3. Modo demo-only (saltar a R2.3/R2.4/R3.2/R4 sin escalar capital).
+**Conclusión (snapshot 2026-06-14):** ningún fix de código abre R2.1.
+
+### B5-recheck (2026-06-21) — Falso positivo confirmado
+
+La hipótesis "B5 = bloqueo externo" era incorrecta. La causa real era el endpoint usado por `scripts/record_live_data.py`:
+
+- ❌ **Endpoint anterior** — `GET /markets?active=true&closed=false&_limit=500`
+  - Verificado contra producción: devuelve **20 markets generales**, **0 contienen "updown" en slug**.
+- ✅ **Endpoint correcto** — `GET /events/keyset?active=true&closed=false&tag=crypto&limit=100&order=volume24hr&sort=desc`
+  - Verificado contra producción: **100 events / 641 markets / 54 con slug `*-updown-*`** (BTC, ETH, BNB, DOGE, XRP).
+  - Es el **mismo endpoint** que `src/infrastructure/polymarket/http_client.py:get_active_markets` ya consume desde R1.x. El script de discovery quedó atrás.
+
+**Fix aplicado (2026-06-21):**
+
+| Cambio | Archivo |
+|---|---|
+| Nuevo `_fetch_crypto_events_paginated()` (keyset pagination, `PolymarketAdapter.parse_rest_market`) | `scripts/record_live_data.py:260` |
+| `find_markets_for_asset` y `find_live_crypto_markets` ahora consumen `/events/keyset?tag=crypto` (paridad con `http_client`) | `scripts/record_live_data.py:330,381` |
+| Lectura tolerante `condition_id` ↔ `conditionId`, `endDate` ↔ `end_date_iso` | `scripts/record_live_data.py:340,403` |
+| Mocks de tests refactorizados al shape `{"events":[{"markets":[...]}], "next_cursor": ...}` | `tests/unit/test_live_crypto_discovery.py:78-127` |
+| Nuevo `TestFindMarketsForAsset` (4 tests: updown vs longevidad, paginación, vacío, top-volume) | `tests/unit/test_live_crypto_discovery.py:307+` |
+
+**Verificación operativa (smoke live, 2026-06-21):**
+- `find_markets_for_asset("BTC")` → 10 markets, incluye `btc-updown-5m-1782077100`, `btc-updown-5m-1782084600`, `btc-updown-4h-1782100800`.
+- `find_live_crypto_markets("BTC")` → 56 markets cripto en cola.
+- `find_live_crypto_markets("ETH")` → 45 markets cripto en cola.
+- Tests: `tests/unit/test_live_crypto_discovery.py` 50/50 verde.
+- Ruff: paridad con baseline preexistente (no introduce nuevos warnings).
+
+**Impacto en R2.1:** objetivo #3 (rotación M5/M15 + redeem por evento) **desbloqueado** para validación operativa. Próximo paso natural: relanzar `scripts/record_live_data.py --all` para capturar parquets con datos cripto M5/M15 reales y rehacer el sweep MR.
 
 Detalle: `AUDIT_REPORT.md § R2.1 > B5`.
 
@@ -254,7 +280,7 @@ ConditionalTokens(0x4D97DCd97eC945f40cF65F87097ACe5EA0476045).redeemPositions(
 - `PolymarketCLOBClient.assert_auth()` / `get_open_orders()` / `get_trades(limit)` — wrappers async sobre el SDK síncrono. CERO efectos en cadena.
 - `DataAPIClient.get_activity(limit, activity_type)` — `GET /activity` para cross-check público vs L2.
 - 25 tests (`tests/unit/test_verify_connectivity.py`). Cubre happy path, fallo de auth, wallet vacía, init de clientes con clave hex inválida, env faltante, salida JSON, exit codes.
-- **No requiere que B5 esté resuelto** — funciona en cualquier momento si hay credenciales válidas.
+- **Independiente del estado de B5** — funciona en cualquier momento con credenciales válidas (B5 quedó resuelto el 2026-06-21).
 
 **R2.1-smoke — End-to-End pipeline verification (2026-06-15):**
 
@@ -277,7 +303,7 @@ Decisión estratégica: en lugar de esperar a que B5 se resuelva, se ejercita el
   - Run con `--force-fake-signal --force-amount 10`: exit `0`, **1 orden ejecutada en paper, fill_price=0.493001, slippage=0.0005** sobre el bid real 0.4925. La cadena slippage → fill → persistencia DB → balance funciona end-to-end.
 
 - **Lo que NO valida**:
-  - Objetivo #3 (rotación M5/M15 + redeem por evento). Sigue ⛔ BLOQUEADO por B5.
+  - Objetivo #3 (rotación M5/M15 + redeem por evento). ~~Sigue ⛔ BLOQUEADO por B5~~ → **B5 resuelto el 2026-06-21** (falso positivo, ver § R1.2-bis B5-recheck). Pendiente ahora: rehacer captura de parquets con el discovery corregido y validar el ciclo de rotación end-to-end.
   - Real trading (no toca credenciales L1/L2, no firma órdenes en cadena).
   - Edge de la estrategia (MR no genera señales sobre markets longevos; eso es el comportamiento correcto).
 

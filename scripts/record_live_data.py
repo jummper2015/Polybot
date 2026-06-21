@@ -47,6 +47,7 @@ import websockets
 
 from src.infrastructure.data.schema import datetime_to_ns
 from src.infrastructure.data.storage import MultiAssetRecorder
+from src.infrastructure.polymarket.adapters import PolymarketAdapter
 from src.infrastructure.polymarket.market_filters import (
     detect_asset as _detect_asset,
     is_live_crypto_market,
@@ -256,6 +257,75 @@ def _matches_window(raw: dict, *, window: str) -> bool:
     return False
 
 
+async def _fetch_crypto_events_paginated(
+    client: httpx.AsyncClient,
+    max_pages: int = 10,
+) -> list[dict]:
+    """Recorre /events/keyset?tag=crypto con paginación y devuelve los
+    markets aplanados, normalizados con ``PolymarketAdapter.parse_rest_market``.
+
+    Mismo endpoint y parámetros que ``PolymarketHTTPClient.get_active_markets``
+    (única fuente de verdad para discovery cripto). El endpoint anterior
+    ``/markets?_limit=500`` devolvía ~20 markets generales sin priorizar
+    cripto y excluía sistemáticamente los ``*-updown-*`` activos.
+    """
+    normalized: list[dict] = []
+    after_cursor: str | None = None
+    pages = 0
+
+    while pages < max_pages:
+        params: dict[str, str] = {
+            "active": "true",
+            "closed": "false",
+            "tag":    "crypto",
+            "limit":  "100",
+            "order":  "volume24hr",
+            "sort":   "desc",
+        }
+        if after_cursor:
+            params["after_cursor"] = after_cursor
+
+        response = await client.get(
+            f"{GAMMA_BASE_URL}/events/keyset",
+            params=params,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if isinstance(data, dict):
+            events = data.get("events") or data.get("markets") or []
+            next_cursor = data.get("next_cursor")
+        else:
+            # Legacy/flat fallback: lista de eventos.
+            events = data if isinstance(data, list) else []
+            next_cursor = None
+
+        for event in events:
+            for raw in (event.get("markets") or []):
+                try:
+                    parsed = PolymarketAdapter.parse_rest_market(raw)
+                except Exception:
+                    continue
+                if not parsed.get("condition_id") or not parsed.get("tokens"):
+                    continue
+                # Conservar el slug y endDate camelCase que el caller original
+                # esperaba ver (varios helpers leen ``endDate`` directamente).
+                parsed["endDate"] = (
+                    raw.get("endDate")
+                    or raw.get("end_date")
+                    or parsed.get("end_date_iso", "")
+                )
+                parsed["conditionId"] = parsed["condition_id"]
+                normalized.append(parsed)
+
+        pages += 1
+        if not next_cursor:
+            break
+        after_cursor = next_cursor
+
+    return normalized
+
+
 async def find_markets_for_asset(
     asset: str,
     windows: tuple[str, ...] = ("5m", "15m"),
@@ -265,50 +335,44 @@ async def find_markets_for_asset(
 
     Rechaza binarios longevos (ej. *Will bitcoin hit $1m before GTA VI?*)
     aplicando el mismo filtro de ventana que el ``MarketService`` de
-    producción. Solo retorna markets con `active=True` y `closed=False`.
+    producción y consultando el mismo endpoint ``/events/keyset?tag=crypto``
+    (no ``/markets?_limit=500``, que excluía los ``*-updown-*`` activos).
     """
     async with httpx.AsyncClient(timeout=30) as client:
-        keywords = ["bitcoin", "btc"] if asset == "BTC" else ["ethereum", "eth"]
-        response = await client.get(
-            f"{GAMMA_BASE_URL}/markets",
-            params={"active": "true", "closed": "false", "_limit": "500"},
-        )
-        response.raise_for_status()
-        all_markets = response.json()
+        all_markets = await _fetch_crypto_events_paginated(client)
 
-        # Group by window, keep highest-volume markets per window.
-        by_window: dict[str, list[dict]] = {w: [] for w in windows}
-        seen: set[str] = set()
+    keywords = ["bitcoin", "btc"] if asset == "BTC" else ["ethereum", "eth"]
+    by_window: dict[str, list[dict]] = {w: [] for w in windows}
+    seen: set[str] = set()
 
-        for m in all_markets:
-            cid = m.get("conditionId", "")
-            if not cid or cid in seen:
-                continue
-            q = m.get("question", "").lower()
-            if not any(k in q for k in keywords):
-                continue
-            for w in windows:
-                if _matches_window(m, window=w):
-                    by_window[w].append(m)
-                    seen.add(cid)
-                    break
-
-        # Sort each window bucket by volume descending and pick top N.
-        result: list[dict] = []
+    for m in all_markets:
+        cid = m.get("condition_id") or m.get("conditionId") or ""
+        if not cid or cid in seen:
+            continue
+        q = (m.get("question", "") or "").lower()
+        if not any(k in q for k in keywords):
+            continue
         for w in windows:
-            bucket = sorted(
-                by_window[w],
-                key=lambda m: float(m.get("volume24hr", m.get("volume", 0)) or 0),
-                reverse=True,
-            )
-            result.extend(bucket[:max_per_window])
+            if _matches_window(m, window=w):
+                by_window[w].append(m)
+                seen.add(cid)
+                break
 
-        return result
+    result: list[dict] = []
+    for w in windows:
+        bucket = sorted(
+            by_window[w],
+            key=lambda m: float(m.get("volume24hr", m.get("volume", 0)) or 0),
+            reverse=True,
+        )
+        result.extend(bucket[:max_per_window])
+
+    return result
 
 
 async def find_live_crypto_markets(asset: str) -> list[dict]:
     """Find Polymarket live crypto markets (Up/Down o Price crypto) que
-    están por abrir o acaban de abrir.
+    están por abrir o acaban de abrir, vía ``/events/keyset?tag=crypto``.
 
     A diferencia de ``find_markets_for_asset``, que solo busca markets
     actualmente activos, esta función busca los markets programados
@@ -322,42 +386,31 @@ async def find_live_crypto_markets(asset: str) -> list[dict]:
         relevo en la rotación automática.
     """
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            f"{GAMMA_BASE_URL}/markets",
-            params={
-                "active": "true",
-                "closed": "false",
-                "order": "endDate",
-                "ascending": "true",
-                "_limit": "500",
-            },
-        )
-        response.raise_for_status()
-        all_markets = response.json()
+        all_markets = await _fetch_crypto_events_paginated(client)
 
-        candidates: list[dict] = []
-        seen: set[str] = set()
-        for m in all_markets:
-            cid = m.get("conditionId", "")
-            if not cid or cid in seen:
-                continue
-            if not is_live_crypto_market(m):
-                continue
-            if _detect_asset(m) != asset:
-                continue
-            seen.add(cid)
-            candidates.append(m)
+    candidates: list[dict] = []
+    seen: set[str] = set()
+    for m in all_markets:
+        cid = m.get("condition_id") or m.get("conditionId") or ""
+        if not cid or cid in seen:
+            continue
+        if not is_live_crypto_market(m):
+            continue
+        if _detect_asset(m) != asset:
+            continue
+        seen.add(cid)
+        candidates.append(m)
 
-        def _end_key(m: dict) -> float:
-            end_str = m.get("endDate") or ""
-            try:
-                end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-                return end_dt.timestamp()
-            except (ValueError, TypeError):
-                return float("inf")  # Sin fecha válida → al final
+    def _end_key(m: dict) -> float:
+        end_str = m.get("endDate") or m.get("end_date_iso") or ""
+        try:
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            return end_dt.timestamp()
+        except (ValueError, TypeError):
+            return float("inf")  # Sin fecha válida → al final
 
-        candidates.sort(key=_end_key)
-        return candidates
+    candidates.sort(key=_end_key)
+    return candidates
 
 
 def select_next_market_for_rotation(
