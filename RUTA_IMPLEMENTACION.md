@@ -251,6 +251,31 @@ R1.2-bis y auditoría de discovery ejecutados el 2026-06-14 (ver `AUDIT_REPORT.m
 
 **Estado:** B5 cerrado. La decisión "esperar / cambiar alcance / demo-only" queda obsoleta — el alcance M5/M15 cripto es alcanzable hoy.
 
+### R1.2-ter — Sweep MR con datos cripto reales (2026-06-21)
+
+**Construido:**
+- Recording 30 min cripto M5/M15 real: 1.33M ticks, 27 markets únicos, auto-rotate funcional (commit `bb9cb1c`).
+- Sweep MR QUICK 324 combos × 4 datasets × 200K ticks (17 min): TOP-1 robusto `ma=10, ez=-1.5, xz=0.5, sl=15%, tm=45m, ps=5 USDC`.
+
+**Resultado:**
+- BTC Sharpe **0.785** (límite del 0.8 protocolo), 2,789 trades, MaxDD 0.7%, PF 57.04, WR 89.4%.
+- ETH Sharpe **0.389** (por debajo del umbral), 4,545 trades, MaxDD 0.7%, PF 24.69, WR 87.2%.
+- Promedio Sharpe 0.587, robustness 0.818.
+
+**Caveats reconocidos:**
+- Single-fold (no walk-forward).
+- `ParquetDataLoader` no filtra por window — `BTC_5m == BTC_15m` (dataset etiquetado dos veces). Refactor futuro: añadir filtro real de window.
+- Datos cubren 30 min de un día. No representativo de regímenes.
+
+**Próximos pasos en orden:**
+1. **Recording extendido** — relanzar `record_live_data.py --all --duration-hours 8+` para acumular varios regímenes / liquidez intradía.
+2. **Walk-forward** — `src/quantitative/walk_forward.py` sobre los nuevos parquets, ≥ 5 folds, criterio: parámetros estables (varianza < 30%), Sharpe OOS > 0.8 en mediana.
+3. **Monte Carlo** — `src/quantitative/monte_carlo.py` ≥ 1000 trayectorias sobre los trades del walk-forward; P5 PnL > 0, P(ruina) < 1%.
+4. **Out-of-sample hold-out** — 30% del histórico fuera del set de optimización; Sharpe > 0.5; diferencia con walk-forward < 40%.
+5. Solo entonces → paper marathon + canary.
+
+Nada de esto pasa a real hasta que los 4 puntos anteriores estén verdes **y** R1.5 (cobertura) y R1.7 (auditoría CLOB V2) cerrados.
+
 ---
 
 ### R2.1-smoke — Sub-task: End-to-End pipeline verification ✅ COMPLETADO (2026-06-15)

@@ -200,6 +200,48 @@ La hipótesis "B5 = bloqueo externo" era incorrecta. La causa real era el endpoi
 
 Detalle: `AUDIT_REPORT.md § R2.1 > B5`.
 
+### R1.2-ter (2026-06-21) — Recording fresh + sweep MR sobre cripto real
+
+**Recording 30 min post-B5-fix** (`scripts/record_live_data.py --all --duration-hours 0.5 --auto-rotate`):
+
+| | BTC | ETH | Total |
+|---|---|---|---|
+| Ticks capturados | 932,527 | 399,755 | **1,332,282** |
+| Markets únicos | 14 | 13 | 27 |
+| Parquets generados | 1,332 | 1,333 | 2,665 |
+| std mid_price | 0.05–0.22 | 0.04–0.26 | régimen realista |
+| Spread medio | 0.012 | 0.011 | tight |
+| Sesiones (auto-rotate) | 33 (M5 5:35→6:15 ET + M15 + 4h) | — | — |
+
+Versionado en `data/parquet/asset=BTC/year=2026/month=06/day=21/` y `asset=ETH/.../day=21/` (commit `bb9cb1c`).
+Backup del manifest pre-B5 en `manifest_pre_b5_fix_2026-06-01.json`.
+
+**Sweep MR QUICK con datos reales** (`optimize_mr.py --quick --parquet-dir data/parquet/ --n-ticks 200000`, 17 min, 324 combos × 4 datasets):
+
+Resultado top-1 robusto: `ma=10, entry_z=-1.5, exit_z=0.5, sl=15%, timeout=45min, pos=5 USDC`.
+
+| Métrica | BTC | ETH | Promedio | Umbral protocolo |
+|---|---|---|---|---|
+| Sharpe | 0.785 | 0.389 | 0.587 | > 0.8 |
+| Win Rate | 89.4% | 87.2% | 88.3% | > 45% |
+| Profit Factor | 57.04 | 24.69 | 40.86 | > 1.2 |
+| Max Drawdown | 0.7% | 0.7% | 0.7% | < 20% |
+| Trades | 2,789 | 4,545 | — | (significancia ✓) |
+| Robustness score | — | — | 0.818 | — |
+
+**Evaluación honesta vs `strategy-validation-protocol`:**
+
+- ✅ **Cambio cualitativo vs R1.2-bis** (0/324 combos → 324/324 con trades, Sharpe –1.67 → +0.587).
+- ✅ PF, WR, MaxDD pasan los umbrales del skill por amplio margen.
+- ⚠️ **Sharpe promedio 0.587 < 0.8** (umbral del skill). BTC en el límite (0.785), ETH por debajo (0.389).
+- ⚠️ **No es walk-forward** — esto es un sweep de un solo fold. El protocolo exige ≥ 5 folds antes de validar.
+- ⚠️ **Limitación del loader**: `ParquetDataLoader.load(asset, window=...)` no filtra por window, solo etiqueta. Resultado: `BTC_5m == BTC_15m` (mismo dataset, distinta etiqueta) y lo mismo en ETH. Efectivamente son 2 datasets, no 4. El `robustness_score=0.818` está inflado por este pareo. Refactor futuro (no urgente): añadir filtro real de window en el loader.
+- ⚠️ Datos cubren 30 min de un solo día. No representativo de regímenes distintos (alta/baja vol, weekend, etc.).
+
+**Decisión:** mantener el `optimal_params_mr_real.json` actualizado como **referencia preliminar**, pero **no declarar MR validado**. Faltan los eslabones 1 (walk-forward 5+ folds), 2 (Monte Carlo 1000+ trayectorias), 3 (out-of-sample hold-out) antes de pasar al paper marathon y canary.
+
+Output completo: `data/optimization/sweep_mr_*_20260621_224802.csv` (4 CSVs, uno por dataset etiquetado).
+
 ---
 
 ## 📈 GRAFANA — Dashboards auto-provisionados
