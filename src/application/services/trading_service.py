@@ -1,6 +1,7 @@
 # src/application/services/trading_service.py
 
 import asyncio
+import os
 from datetime import datetime
 
 import structlog
@@ -33,8 +34,17 @@ logger = structlog.get_logger(__name__)
 # Intervalo entre ciclos de cada mercado (segundos)
 CYCLE_INTERVAL_SECONDS = 30
 
-# Intervalo de re-discovery de mercados (segundos)
-DISCOVERY_INTERVAL_SECONDS = 3600
+# Intervalo de re-discovery de mercados (segundos).
+#
+# R2.2 (paper-verify): bajado de 3600s -> 60s. Los markets live crypto
+# M5/M15 rotan cada 5-15 min; discovery 1x/hora dejaba mercados expirados
+# en Redis activos hasta el siguiente ciclo (ventana ciega de hasta 1h).
+# 60s alinea la rotación con la granularidad M5 (12 re-discoveries por
+# ventana M5 + 4 re-discoveries por ventana M15 = coste despreciable vs
+# la visibilidad que da). Override via env POLYBOT_DISCOVERY_INTERVAL_S.
+DISCOVERY_INTERVAL_SECONDS = int(
+    os.environ.get("POLYBOT_DISCOVERY_INTERVAL_S", "60")
+)
 
 
 class TradingService:
