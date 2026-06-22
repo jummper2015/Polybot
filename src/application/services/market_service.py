@@ -2,6 +2,7 @@
 
 import re as _re
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -13,6 +14,11 @@ from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.window import Window
 from src.infrastructure.cache.redis_client import RedisClient
 from src.infrastructure.observability.metrics import MARKETS_ACTIVE, MARKETS_DISCOVERED
+
+if TYPE_CHECKING:
+    # Import sólo para type-checker — evita circular import en runtime
+    # (MarketTick -> WSClient -> container -> market_service).
+    from src.domain.value_objects.market_tick import MarketTick
 
 logger = structlog.get_logger(__name__)
 
@@ -198,7 +204,7 @@ class MarketService:
             return cached
         return await self._repo.get_market_by_id(market_id)
 
-    async def get_market_tick(self, market_id: str) -> "MarketTick | None":  # noqa: F821
+    async def get_market_tick(self, market_id: str) -> "MarketTick | None":
         """
         Obtiene el tick más reciente del mercado. Delega en el market data port.
         Thin wrapper para que TradingService no acceda a atributos privados.
@@ -475,11 +481,11 @@ class MarketService:
         """
         tokens = raw.get("tokens", [])
         # Busca el token "positivo": Yes o Up
-        yes_token = next(
+        yes_token: dict[str, Any] = next(
             (t for t in tokens if t.get("outcome") in ("Yes", "Up")), {}
         )
         # Busca el token "negativo": No o Down
-        no_token = next(
+        no_token: dict[str, Any] = next(
             (t for t in tokens if t.get("outcome") in ("No", "Down")), {}
         )
 

@@ -72,8 +72,8 @@ class RedisClient:
             asset=market.asset.value,
             window=market.window.value,
         )
-        await self._redis.sadd(list_key, market.id)
-        await self._redis.expire(list_key, ttl_seconds)
+        await self._redis.sadd(list_key, market.id)  # type: ignore[misc]
+        await self._redis.expire(list_key, ttl_seconds)  # type: ignore[misc]  # noqa: E501
 
     async def get_market(self, market_id: str) -> Market | None:
         """Recupera un market desde Redis. Devuelve None si no existe o expiró."""
@@ -112,7 +112,7 @@ class RedisClient:
         for a in assets:
             for w in windows:
                 list_key = KEY_ACTIVE_LIST.format(asset=a, window=w)
-                market_ids = await self._redis.smembers(list_key)
+                market_ids = await self._redis.smembers(list_key)  # type: ignore[misc]  # noqa: E501
 
                 for mid in market_ids:
                     # redis-py >= 4.0 devuelve str; versiones antiguas devuelven bytes
@@ -159,7 +159,7 @@ class RedisClient:
         existentes — no sobrescribe campos que no se incluyen en updates.
         """
         key = KEY_MARKET_META.format(market_id=market_id)
-        existing = await self._redis.get(key)
+        existing = await self._redis.get(key)  # type: ignore[misc]  # noqa: E501
         data = orjson.loads(existing) if existing else {}
         data.update(updates)
         await self._redis.setex(key, ttl_seconds, orjson.dumps(data).decode())
@@ -237,7 +237,7 @@ class RedisClient:
     async def delete_ws_state(self, market_id: str) -> None:
         """Elimina el estado WS al desuscribirse."""
         key = KEY_WS_STATE.format(market_id=market_id)
-        await self._redis.delete(key)
+        await self._redis.delete(key)  # type: ignore[misc]  # noqa: E501
 
     # ──────────────────────────────────────────────────────────────────
     # Paper Trading Balance & Prices
@@ -280,8 +280,8 @@ class RedisClient:
             data["best_ask"] = str(best_ask)
         if volume_24h > 0:
             data["volume_24h"] = str(volume_24h)
-        await self._redis.hset(key, mapping=data)
-        await self._redis.expire(key, 300)  # 5 minutos
+        await self._redis.hset(key, mapping=data)  # type: ignore[misc]
+        await self._redis.expire(key, 300)  # 5 minutos  # type: ignore[misc]  # noqa: E501
 
     async def get_last_tick_price(self, market_id: str) -> dict | None:
         """
@@ -291,7 +291,7 @@ class RedisClient:
         best_bid, best_ask, volume_24h. None if no data or expired.
         """
         key  = KEY_WS_LAST_PRICE.format(market_id=market_id)
-        data = await self._redis.hgetall(key)
+        data = await self._redis.hgetall(key)  # type: ignore[misc]  # noqa: E501
         return {
             k.decode() if isinstance(k, bytes) else k:
             float(v.decode() if isinstance(v, bytes) else v)
