@@ -19,6 +19,8 @@ aiogram==3.7.0
 sqlalchemy==2.0.30
 asyncpg==0.29.0
 alembic==1.13.1
+psycopg2-binary>=2.9.9      # Alembic sync driver (create_async_engine fallback)
+pyarrow>=15.0.0             # Parquet loader for quant.post_trade pipeline
 
 # ── Cache / State ────────────────────────────────────────────────────
 redis[hiredis]==5.0.4

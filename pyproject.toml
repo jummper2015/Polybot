@@ -24,6 +24,8 @@ dependencies = [
     "sqlalchemy==2.0.30",
     "asyncpg==0.29.0",
     "alembic==1.13.1",
+    "psycopg2-binary>=2.9.9",   # Sync driver para alembic upgrade head
+    "pyarrow>=15.0.0",          # Parquet loader (quant.post_trade → walk_forward)
 
     # ── Redis ─────────────────────────────────────────────────────
     "redis[hiredis]==5.0.4",
