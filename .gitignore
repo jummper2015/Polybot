@@ -59,6 +59,10 @@ logs/
 # ── Node / Frontend ─────────────────────────────────────────────────
 node_modules/
 
+# ── TypeScript incremental build cache ─────────────────────────────
+*.tsbuildinfo
+
+
 # ── OS ────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
