@@ -135,3 +135,86 @@ export interface RegimeInfo {
   strategies_inactive: string[];
   orchestrator_enabled: boolean;
 }
+
+// ── Quant Metrics (R1.3-dashboard) ────────────────────────────────────
+export interface ExitReasonStats {
+  reason: string;
+  count: number;
+  pct_of_trades: number;
+  total_pnl: number;
+  avg_pnl: number;
+  win_rate: number;
+}
+
+export interface RegimeStatsRow {
+  regime: string;
+  count: number;
+  total_pnl: number;
+  win_rate: number;
+}
+
+export interface QuantMetrics {
+  total_trades: number;
+  expectancy_usdc: number;
+  expectancy_pct: number;
+  profit_factor: number;
+  sharpe_estimate: number;
+  max_consecutive_wins: number;
+  max_consecutive_losses: number;
+  best_trade: number;
+  worst_trade: number;
+  avg_winner: number;
+  avg_loser: number;
+  avg_duration_ticks: number;
+  best_exit_reason: string;
+  worst_exit_reason: string;
+  best_regime: string;
+  worst_regime: string;
+  by_exit_reason: ExitReasonStats[];
+  by_regime: RegimeStatsRow[];
+  updated_at: string;
+}
+
+// ── Risk Engine activity (R1.3-dashboard) ─────────────────────────────
+export interface RiskRuleStat {
+  rule: string;
+  deny_count: number;
+  priority: number;
+}
+
+export interface RiskActivity {
+  rules: RiskRuleStat[];
+  allow_count: number;
+  deny_count: number;
+  drawdown_pct: number;
+  exposure_pct: number;
+  mode: string;
+  updated_at: string;
+}
+
+// ── Event Detector activity (R1.3-dashboard, P11.4) ──────────────────
+export interface EventTypeCount {
+  asset: string;
+  event_type: string;
+  severity: string;
+  count: number;
+}
+
+export interface EventActionCount {
+  asset: string;
+  action: string;
+  count: number;
+}
+
+export interface ActiveHalt {
+  asset: string;
+  market_id: string;
+}
+
+export interface EventActivity {
+  by_type: EventTypeCount[];
+  by_action: EventActionCount[];
+  halt_entries: number;
+  active_halts: ActiveHalt[];
+  updated_at: string;
+}

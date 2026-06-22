@@ -829,3 +829,142 @@ body {
     width: 100%;
   }
 }
+
+/* ── Quant Metrics card (R1.3-dashboard) ──────────────────────────── */
+.qm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px;
+  padding: 8px 0 12px;
+}
+
+.qm-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-elev, #1a1f2e);
+  border: 1px solid var(--border, #2a2f3e);
+  font-size: 13px;
+}
+
+.qm-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.qm-label {
+  color: var(--text-muted, #8892a4);
+}
+
+.qm-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.qm-value.positive { color: #22c55e; }
+.qm-value.negative { color: #ef4444; }
+.qm-value.neutral  { color: var(--text, #e4e6ed); }
+
+.qm-subsection {
+  margin-top: 14px;
+}
+
+.qm-subheader {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted, #8892a4);
+  margin-bottom: 6px;
+}
+
+.data-table.compact th,
+.data-table.compact td {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* ── Risk panel ──────────────────────────────────────────────────── */
+.risk-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+
+.risk-stat {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-elev, #1a1f2e);
+  border: 1px solid var(--border, #2a2f3e);
+  font-size: 12px;
+}
+
+.risk-stat span { color: var(--text-muted, #8892a4); }
+.risk-stat strong { font-variant-numeric: tabular-nums; }
+
+.risk-gauges {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 4px 0 12px;
+}
+
+.risk-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--bg-elev, #1a1f2e);
+  border: 1px solid var(--border, #2a2f3e);
+}
+
+.risk-bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.risk-bar-bg {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: #0f1219;
+  overflow: hidden;
+}
+
+.risk-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.risk-bar-limit {
+  position: absolute;
+  top: -2px;
+  height: 14px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.risk-bar-sub {
+  font-size: 10px;
+}
+
+.count-badge.muted {
+  background: #2a2f3e;
+  color: var(--text-muted, #8892a4);
+}
+
+@media (max-width: 768px) {
+  .qm-grid { grid-template-columns: 1fr; }
+  .risk-summary { grid-template-columns: 1fr; }
+  .risk-gauges { grid-template-columns: 1fr; }
+}

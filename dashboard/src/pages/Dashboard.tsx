@@ -5,6 +5,9 @@ import { EquityChart } from '../components/EquityChart';
 import { MarketsTable } from '../components/MarketsTable';
 import { TradesTable } from '../components/TradesTable';
 import { RegimePanel } from '../components/RegimePanel';
+import { QuantMetricsCard } from '../components/QuantMetricsCard';
+import { RiskActivityPanel } from '../components/RiskActivityPanel';
+import { EventPanel } from '../components/EventPanel';
 import { Spinner } from '../components/Common';
 import { usePolling } from '../hooks/useApi';
 import type { DashboardSummary } from '../types';
@@ -78,6 +81,17 @@ export const Dashboard: React.FC = () => {
       {/* Regime Panel (P11.1) */}
       <section className="section">
         <RegimePanel />
+      </section>
+
+      {/* Quant + Risk row (R1.3-dashboard) */}
+      <section className="bottom-grid">
+        <QuantMetricsCard />
+        <RiskActivityPanel />
+      </section>
+
+      {/* Event Detector (P11.4) — cierra R1.3 */}
+      <section className="section">
+        <EventPanel />
       </section>
 
       {/* Tables */}
