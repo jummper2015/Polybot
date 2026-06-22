@@ -1,5 +1,6 @@
 # src/interfaces/api/routers/dashboard.py
 
+import math
 from datetime import datetime, timezone
 
 import structlog
@@ -8,6 +9,34 @@ from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+
+# ── Caps para NaN/inf guard (R2.2-paper-verify Fix #4) ─────────────
+# Magic numbers extraídos a constantes para que el rationale sea visible
+# al lado del helper (`_finite_float`) y no quede inline en cada call site.
+
+PROFIT_FACTOR_ABS_CAP = 999.0
+"""
+Cap absoluto para profit_factor.
+
+Rationale: convencion de la industria. Un PF ≥ 999 es indistinguible
+para trading purposes (significa "0 losses con N wins" o edge perfecto).
+Cualquier valor mayor -> UI lo muestra igual; capping evita overflow
+y mantiene legibilidad en el dashboard.
+"""
+
+SHARPE_ABS_CAP = 10.0
+"""
+Cap absoluto para sharpe_estimate.
+
+Rationale: en MR crypto M5/M15 (ventanas de 5-15 min), el annualized
+Sharpe de un edge robusto típicamente cae en [1.5, 5]. Sharpe > 10
+indica o bien un edge extraordinario (no observado en backtests reales
+de PolyBot hasta la fecha) o un artefacto de cálculo (stdev ≈ 0 con
+n pequeno, division issues). Cap defensivo a 10 evita que el dashboard
+muestre valores cosméticos que enmascararian un bug cuantitativo.
+Override via env (no implementado aun — ver R3.x).
+"""
 
 
 # ── Schemas de respuesta del dashboard ───────────────────────────────
@@ -515,6 +544,68 @@ def _gauge_value(gauge, labels: dict | None = None) -> float:
     return 0.0
 
 
+def _finite_float(
+    value: float | None,
+    *,
+    default: float = 0.0,
+    abs_cap:   float | None = None,
+    precision: int   = 4,
+) -> float:
+    """
+    Sanea NaN / +inf / -inf / None a un float JSON-serializable.
+
+    Por qué:
+        JSON no permite literales NaN/inf. Pydantic v2 strict mode (FastAPI)
+        rechaza con ValidationError -> HTTP 500 en el endpoint. En el bot
+        esto pasa cuando PostTradeAnalyzer produce metricas no-finitas:
+
+        - sharpe_estimate con n=1 trade -> 0/0 = NaN
+        - profit_factor con 0 losses -> inf
+        - expectancy_pct con 0 trades inicial -> division issues
+
+    Comportamiento (orden de prioridad):
+        - None o no-numerico -> default.
+        - NaN -> default (sin información útil).
+        - +inf / -inf CON abs_cap -> cap con mismo signo (sirve para
+          sharpe bounded a ±10, profit_factor bounded a ±999).
+        - +inf / -inf SIN abs_cap -> default.
+        - abs(value) > abs_cap -> cap con mismo signo.
+        - Resto -> round(value, precision).
+
+    Args:
+        value:     float candidato (puede ser None).
+        default:   reemplazo para None / NaN / inf-sin-cap / no-numerico
+                   (default 0.0).
+        abs_cap:   limite de magnitud; None = sin cap. Se aplica tanto a
+                   inf como a magnitudes fuera de rango.
+        precision: decimales para round() (default 4, igual que el resto
+                   del endpoint).
+
+    Returns:
+        float finito serializable.
+    """
+    try:
+        v = float(value) if value is not None else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+    # NaN: sin información. Siempre default.
+    if math.isnan(v):
+        return float(default)
+
+    # ±inf: default sin cap; cap con signo si se proporcion\u00f3.
+    if math.isinf(v):
+        if abs_cap is None:
+            return float(default)
+        return float(round(math.copysign(abs_cap, v), precision))
+
+    # Finito: respeta cap (defensivo para sharpe/profit_factor).
+    if abs_cap is not None and abs(v) > abs_cap:
+        v = math.copysign(abs_cap, v)
+
+    return round(v, precision)
+
+
 # ── Quant Metrics (R1.3-dashboard) ────────────────────────────────────
 
 @router.get(
@@ -590,21 +681,23 @@ async def get_quant_metrics(request: Request) -> QuantMetrics:
             updated_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    # PF inf → 999.0 cap para serialización JSON.
-    pf = report.profit_factor
-    if pf == float("inf"):
-        pf = 999.0
+    # Sane NaN/inf a JSON-serializable floats (ver _finite_float).
+    # Profit factor con 0 losses = inf → cap 999.0 (conserva signo).
+    # Sharpe con n=1 trade = 0/0 = NaN → default 0.0.
+    # Expectancy / avg_winner / worst_trade pueden ser NaN conPnLl samples
+    # degenerados \u2192 default 0.0.
+    pf = _finite_float(report.profit_factor, abs_cap=PROFIT_FACTOR_ABS_CAP)
 
     by_exit = [
         ExitReasonStats(
             reason=e.reason,
             count=e.count,
-            pct_of_trades=round(
-                e.count / max(1, report.total_trades) * 100, 1
+            pct_of_trades=_finite_float(
+                e.count / max(1, report.total_trades) * 100, precision=1
             ),
-            total_pnl=round(e.total_pnl, 4),
-            avg_pnl=round(e.avg_pnl, 4),
-            win_rate=round(e.win_rate, 4),
+            total_pnl=_finite_float(e.total_pnl),
+            avg_pnl=_finite_float(e.avg_pnl),
+            win_rate=_finite_float(e.win_rate),
         )
         for e in report.by_exit_reason
     ]
@@ -612,25 +705,29 @@ async def get_quant_metrics(request: Request) -> QuantMetrics:
         RegimeStatsRow(
             regime=r.regime,
             count=r.count,
-            total_pnl=round(r.total_pnl, 4),
-            win_rate=round(r.win_rate, 4),
+            total_pnl=_finite_float(r.total_pnl),
+            win_rate=_finite_float(r.win_rate),
         )
         for r in report.by_regime
     ]
 
     return QuantMetrics(
         total_trades=report.total_trades,
-        expectancy_usdc=round(report.expectancy, 4),
-        expectancy_pct=round(report.expectancy_pct, 4),
-        profit_factor=round(pf, 4),
-        sharpe_estimate=round(report.sharpe_estimate, 4),
+        expectancy_usdc=_finite_float(report.expectancy),
+        expectancy_pct=_finite_float(report.expectancy_pct),
+        profit_factor=pf,
+        # Sharpe cap defensivo (ver SHARPE_ABS_CAP rationale).
+        sharpe_estimate=_finite_float(report.sharpe_estimate, abs_cap=SHARPE_ABS_CAP),
         max_consecutive_wins=report.max_consecutive_wins,
         max_consecutive_losses=report.max_consecutive_losses,
-        best_trade=round(report.best_trade, 4),
-        worst_trade=round(report.worst_trade, 4),
-        avg_winner=round(report.avg_winner, 4),
-        avg_loser=round(report.avg_loser, 4),
-        avg_duration_ticks=round(report.avg_duration_ticks, 2),
+        best_trade=_finite_float(report.best_trade),
+        worst_trade=_finite_float(report.worst_trade),
+        avg_winner=_finite_float(report.avg_winner),
+        avg_loser=_finite_float(report.avg_loser),
+        # avg_duration_ticks: precision=2 (legacy del endpoint, segundos).
+        avg_duration_ticks=_finite_float(
+            report.avg_duration_ticks, precision=2
+        ),
         best_exit_reason=report.best_exit_reason,
         worst_exit_reason=report.worst_exit_reason,
         best_regime=report.best_regime,
