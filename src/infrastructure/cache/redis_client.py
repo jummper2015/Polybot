@@ -26,7 +26,6 @@ KEY_PAPER_BALANCE = "paper:balance"
 KEY_WS_LAST_PRICE = "ws:price:{market_id}"
 KEY_ORDERBOOK     = "orderbook:{market_id}"
 KEY_MARKET_META   = "market:meta:{market_id}"
-KEY_DISCOVERY_CURSOR = "discovery:cursor"
 KEY_CLOB_MARKET_INFO = "clob:market_info:{condition_id}"
 
 
@@ -83,6 +82,19 @@ class RedisClient:
         if not data:
             return None
         return self._deserialize(orjson.loads(data))
+
+    async def clear_active_markets_lists(self) -> None:
+        """
+        Borra todos los sets `markets:active:{asset}:{window}`.
+
+        Llamado al inicio de cada `discover_markets` para evitar que ids
+        de markets ya rotados (los crypto M5/M15 viven 5-15 min) sobrevivan
+        en el set y aparezcan en el dashboard sin sus blobs reales.
+        """
+        for a in Asset:
+            for w in Window:
+                list_key = KEY_ACTIVE_LIST.format(asset=a.value, window=w.value)
+                await self._redis.delete(list_key)
 
     async def get_active_markets(
         self,
@@ -186,24 +198,6 @@ class RedisClient:
         key = KEY_CLOB_MARKET_INFO.format(condition_id=condition_id)
         data = await self._redis.get(key)
         return orjson.loads(data) if data else None
-
-    # ──────────────────────────────────────────────────────────────────
-    # Discovery Cursor (keyset pagination)
-    # ──────────────────────────────────────────────────────────────────
-
-    async def set_discovery_cursor(self, cursor: str) -> None:
-        """
-        Persiste el último cursor de keyset pagination para discovery.
-        Permite retomar desde la última página en el próximo ciclo.
-        TTL de 2 horas — más que suficiente entre ciclos de discovery.
-        """
-        await self._redis.setex(
-            KEY_DISCOVERY_CURSOR, 7200, cursor
-        )
-
-    async def get_discovery_cursor(self) -> str | None:
-        """Recupera el último cursor de discovery, o None."""
-        return await self._redis.get(KEY_DISCOVERY_CURSOR)
 
     # ──────────────────────────────────────────────────────────────────
     # WebSocket State

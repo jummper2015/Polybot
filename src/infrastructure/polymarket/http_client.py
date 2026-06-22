@@ -89,15 +89,11 @@ class PolymarketHTTPClient(IMarketDataPort):
         """
         log = logger.bind(asset=asset, window=window)
         normalized: list[dict] = []
-        # Try to resume from last cursor (incremental discovery)
+        # Cursor is scoped to a single discover_markets call — never persisted
+        # between cycles. Keyset is ordered by volume24hr desc; the top
+        # crypto M5/M15 markets live on page 1 and must be re-fetched every
+        # discovery (their slugs rotate every 5/15 min).
         after_cursor: str | None = None
-        if self._redis:
-            try:
-                after_cursor = await self._redis.get_discovery_cursor()
-                if after_cursor:
-                    log.debug("resuming_from_cursor", cursor=after_cursor[:30])
-            except Exception:
-                pass
         pages_fetched = 0
         total_events = 0
         max_pages = 10  # Safety limit — prevents infinite loops
@@ -171,13 +167,6 @@ class PolymarketHTTPClient(IMarketDataPort):
                     events_this_page=len(events),
                     total_markets=len(normalized),
                 )
-
-            # ── Persist cursor for incremental discovery ────────────
-            if after_cursor and self._redis:
-                try:
-                    await self._redis.set_discovery_cursor(after_cursor)
-                except Exception:
-                    pass
 
             if pages_fetched >= max_pages and after_cursor:
                 log.warning(

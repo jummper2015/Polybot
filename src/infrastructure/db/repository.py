@@ -53,6 +53,12 @@ class SQLAlchemyRepository(IRepositoryPort):
 
                 if existing:
                     # Actualiza campos que pueden cambiar
+                    # asset/window también se actualizan: el filtro de
+                    # discovery puede reclasificar un market si su slug
+                    # cambia o si el filtro evoluciona — la nueva
+                    # clasificación debe ganar.
+                    existing.asset      = market.asset.value
+                    existing.window     = market.window.value
                     existing.status     = market.status.value
                     existing.yes_price  = market.yes_price
                     existing.no_price   = market.no_price

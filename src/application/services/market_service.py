@@ -96,6 +96,15 @@ class MarketService:
 
         discovered: list[Market] = []
 
+        # Limpia los sets `markets:active:{asset}:{window}` antes de
+        # repoblar. Sin esto, ids de markets rotados (M5/M15 cripto
+        # viven 5-15 min) sobreviven hasta que TTL expira y aparecen
+        # en el dashboard sin sus blobs reales.
+        try:
+            await self._redis.clear_active_markets_lists()
+        except Exception as e:
+            log.warning("clear_active_lists_failed", error=str(e))
+
         try:
             # 1. Obtiene TODOS los mercados crypto en UNA sola llamada API
             #    (los parámetros asset/window son ignorados por el endpoint /events,
@@ -357,22 +366,25 @@ class MarketService:
         """
         Verifica si la ventana temporal del mercado corresponde a la esperada.
 
-        Estrategia en 2 niveles:
-          1. Slug: busca "5m" o "15m" en el slug del mercado (más fiable).
-          2. Question: parsea el rango horario (ej: "9:30AM-9:35AM") para
-             calcular la duración y comparar con la ventana esperada.
-          3. Fallback: intenta usar start_date_iso/end_date_iso (solo para
-             mercados que no son "Up or Down", donde las fechas sí reflejan
-             la ventana real).
+        Estrategia en 3 niveles:
+          1. Slug autoritario: "-5m-"/"-15m-" deciden por sí solos.
+             Si slug indica una ventana, NUNCA se matchea con la otra.
+          2. Question: parsea el rango horario (ej: "9:30AM-9:35AM").
+          3. Fallback: start_date_iso/end_date_iso (mercados no live crypto).
         """
         slug = raw.get("slug", "")
         question = raw.get("question", "")
 
-        # ── Nivel 1: Slug contiene el timeframe explícito ──────────────
-        if window == Window.M5 and "-5m-" in slug:
-            return True
-        if window == Window.M15 and "-15m-" in slug:
-            return True
+        # ── Nivel 1: Slug es autoritario ───────────────────────────────
+        # Polymarket usa "*-updown-{5m|15m}-*" para todos los markets
+        # live crypto rotativos. El slug es la fuente de verdad: si dice
+        # 5m, no es 15m, y viceversa.
+        slug_is_5m = "-5m-" in slug
+        slug_is_15m = "-15m-" in slug or "-15-minute-" in slug
+        if slug_is_5m:
+            return window == Window.M5
+        if slug_is_15m:
+            return window == Window.M15
 
         # ── Nivel 2: Parsear rango horario en la pregunta ──────────
         # Formato: "9:30AM-9:35AM ET" o "9:30-9:35"
@@ -422,17 +434,19 @@ class MarketService:
         15 minutos, pero NO usan el patrón de slug -5m-/-15m- ni rangos
         H:MM-H:MM en el título.
 
-        Acepta M5 por defecto (los markets live crypto más comunes en
-        Polymarket son de 5 min). Para M15 sólo se acepta si el slug
-        contiene marcador explícito.
+        Defense-in-depth: si el slug indica explícitamente la otra ventana,
+        rechaza incluso aunque el branch coincida con `window`. Para markets
+        sin marcador de window en el slug, acepta M5 por defecto.
         """
         if not _is_live_crypto_market(raw):
             return False
         slug = raw.get("slug", "")
+        slug_is_5m = "-5m-" in slug
+        slug_is_15m = "-15m-" in slug or "-15-minute-" in slug
         if window == Window.M5:
-            return True
+            return not slug_is_15m
         if window == Window.M15:
-            return "-15m-" in slug or "-15-minute-" in slug
+            return slug_is_15m and not slug_is_5m
         return False
 
     @staticmethod
