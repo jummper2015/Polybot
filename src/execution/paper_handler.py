@@ -2,7 +2,7 @@
 
 import math
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import structlog
 from opentelemetry import trace
@@ -11,6 +11,7 @@ from src.application.ports.notification_port import INotificationPort
 from src.application.ports.repository_port import IRepositoryPort
 from src.domain.entities.order import Order
 from src.domain.entities.position import Position
+from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.order_side import OrderSide
 from src.domain.enums.order_status import OrderStatus
 from src.domain.enums.trading_mode import TradingMode
@@ -470,6 +471,199 @@ class PaperTradingHandler(IExecutionHandler):
         )
 
     # ------------------------------------------------------------------
+    # REDEEM SIMULATED (paper-only)
+    # ------------------------------------------------------------------
+
+    async def redeem_resolved_position(
+        self,
+        market_id: str,
+        winning_outcome: str,
+    ) -> TradeResult:
+        """
+        Simula la redención on-chain (CTF) de una posición paper cuando
+        Polymarket resuelve el mercado. En CLOB V2 el redeem real es
+        on-chain vía CTF (ver src/execution/real_handler.py); en paper
+        mode simulamos el payout sin tocar Polygon.
+
+        Modelo de payout (binary outcome markets):
+          - Si position.side == winning_outcome => payout = shares × 1.0
+            (cada share ganadora se liquida a 1 pUSD en CTF).
+          - Si position.side != winning_outcome => payout = 0
+            (shares perdedoras se quedan en 0).
+
+        Efectos secundarios (orden importante):
+          1. Verifica que el market está RESOLVED o EXPIRED en Redis
+             (single-source-of-truth local).
+          2. Auto-descubre la posición abierta para ese market_id en DB.
+          3. Calcula payout + persiste posición cerrada con PnL.
+          4. Acredita payout al paper balance + persiste en Redis.
+          5. Emite evento ``paper_redeem_simulated`` con tag
+             ``event=order.redeemed_simulated`` (mismo namespace que
+             paper_order_filled / paper_position_closed; consumido por
+             structlog → JSON → dashboard / trazabilidad).
+
+        Idempotencia:
+          - Si la posición ya está cerrada, devuelve success=False con
+            error "already_redeemed" (no double-claim).
+          - Si el mercado no existe o no está resuelto, success=False.
+          - Si winning_outcome ∉ {"YES","NO"}, success=False.
+
+        Payout:
+          payout_per_share = 1.0 if position.side == winning_outcome else 0.0
+          payout_usd = round(position.shares × payout_per_share, 4)
+
+        Por qué NO usamos DataAPIClient directamente aquí:
+          paper mode no tiene wallet real asociada \u2014 los shares se
+          crean via fill_simulator sin tocar Polygon. Por lo tanto no
+          podemos consultar a la Data API pública de Polymarket
+          (filtra por wallet address = string arbitraria inv\u00e1lida).
+          En su lugar usamos Redis como single-source-of-truth local
+          (el `MarketStatus` lo actualiza el discover_markets cuando
+          ve end_date_iso < now). Para real mode el equivalente es
+          `RealTradingHandler.redeem_resolved_position(position,
+          token_id)` que llama a `_clob.redeem_position` con CTF
+          on-chain (ver src/execution/real_handler.py L511).
+        """
+        log = logger.bind(
+            market_id=market_id,
+            winning_outcome=winning_outcome,
+            mode="paper",
+        )
+
+        # ── 1. Valida winning_outcome (case-insensitive, "YES"/"NO") ──
+        winning_outcome_norm = winning_outcome.upper().strip()
+        if winning_outcome_norm not in ("YES", "NO"):
+            error_msg = (
+                f"winning_outcome must be YES or NO, "
+                f"got '{winning_outcome}'"
+            )
+            log.warning("paper_redeem_invalid_outcome", error=error_msg)
+            return self._failed_result(market_id, None, 0.0, 0.0, error_msg)
+
+        # ── 2. Verifica que el mercado está resuelto/expirado ─────────
+        market = await self._redis.get_market(market_id)
+        if market is None:
+            error_msg = "market_not_found"
+            log.warning("paper_redeem_market_not_found", error=error_msg)
+            return self._failed_result(market_id, None, 0.0, 0.0, error_msg)
+
+        if market.status not in (MarketStatus.RESOLVED, MarketStatus.EXPIRED):
+            error_msg = (
+                f"market_not_resolved (status={market.status.value})"
+            )
+            log.info(
+                "paper_redeem_skipped_market_open",
+                status=market.status.value,
+            )
+            return self._failed_result(market_id, None, 0.0, 0.0, error_msg)
+
+        # ── 3. Auto-descubre la posición abierta para este market ─────
+        all_open = await self._repo.get_positions(
+            mode="paper", open_only=True
+        )
+        matching = [p for p in all_open if p.market_id == market_id]
+        if not matching:
+            error_msg = "no_open_position"
+            log.info("paper_redeem_no_open_position", error=error_msg)
+            return self._failed_result(market_id, None, 0.0, 0.0, error_msg)
+
+        position = matching[0]
+        # Doble check: si por alguna razón la posición ya está cerrada
+        # (race con un job externo que ya redimió), devuelve idempotente.
+        if not position.is_open:
+            error_msg = "already_redeemed"
+            log.info(
+                "paper_redeem_already_redeemed",
+                position_id=position.id,
+            )
+            return self._failed_result(market_id, None, 0.0, 0.0, error_msg)
+
+        # ── 4. Calcula payout ──────────────────────────────────────────
+        position_side = (position.side or "").upper().strip()
+        shares = float(position.shares or 0.0)
+        if position_side != winning_outcome_norm:
+            payout_per_share = 0.0
+            won = False
+        else:
+            payout_per_share = 1.0
+            won = True
+        payout_usd = round(shares * payout_per_share, 4)
+
+        # ── 5. Side effects (orden atómico: persist ANTES de acreditar) ──────
+        # Importante: cerrar+persistir la posición PRIMERO. Si crasheamos
+        # antes de acreditar el balance, la próxima invocación es idempotente:
+        # la posición aparece cerrada en DB, el redeem se reporta como
+        # already_redeemed (no_open_position) y el balance queda sin
+        # modificarse. Si acreditamos balance ANTES y crasheamos antes de
+        # guardar la posición, tenemos balance++ con posición aún abierta:
+        # inconsistente.
+        balance_before = self._balance
+
+        # Cierra la posición con exit_price = payout_per_share.
+        # Position.close() calcula (exit_price - entry_price) × shares
+        # como pnl, lo cual coincide con la lógica CTF:
+        #   - won:  pnl = (1.0 - entry_price) × shares > 0
+        #   - lost: pnl = (0.0 - entry_price) × shares = -amount
+        position.close(
+            exit_price=payout_per_share,
+            reason=(
+                f"redeemed: winning_outcome={winning_outcome_norm}, "
+                f"{'won' if won else 'lost'}"
+            ),
+        )
+        await self._repo.save_position(position)
+
+        # Acredita payout al balance virtual (puede ser 0 si lost).
+        self._balance += payout_usd
+        await self._redis.set_paper_balance(self._balance)
+
+        # Métricas: balance actualizado + posición cerrada + PnL global.
+        PAPER_BALANCE_GAUGE.set(self._balance)
+        PAPER_POSITIONS_OPEN.dec()
+        PNL_GAUGE.labels(mode="paper").set(
+            self._balance - self._initial_balance
+        )
+
+        # ── 6. Emite evento order.redeemed_simulated ─────────────────
+        # namespace = paper_redeem_simulated (mis structlog keys en handler)
+        # event     = order.redeemed_simulated (event_type en JSON/log stream)
+        log.info(
+            "paper_redeem_simulated",
+            event_type="order.redeemed_simulated",
+            position_id=position.id,
+            side=position_side,
+            shares=round(shares, 4),
+            payout=payout_usd,
+            payout_per_share=payout_per_share,
+            won=won,
+            balance_before=round(balance_before, 4),
+            balance_after=round(self._balance, 4),
+        )
+
+        # Notifica solo si ganó (loss redeem no es accionable).
+        if self._notifier is not None and won:
+            await self._notifier.send_exit_alert(
+                market_id=market_id,
+                reason="market_resolved_redeemed_paper",
+                pnl=position.pnl,
+                pnl_pct=position.pnl_pct,
+            )
+
+        return TradeResult(
+            order_id     = str(uuid.uuid4()),
+            market_id    = market_id,
+            side         = position_side,
+            amount       = payout_usd,
+            target_price = 1.0,
+            fill_price   = payout_per_share,
+            slippage     = 0.0,
+            pnl          = position.pnl,
+            success      = True,
+            mode         = "paper",
+            timestamp    = datetime.now(timezone.utc),
+        )
+
+    # ------------------------------------------------------------------
     # HELPERS INTERNOS
     # ------------------------------------------------------------------
 
@@ -768,11 +962,31 @@ class PaperTradingHandler(IExecutionHandler):
     def _failed_result(
         self,
         market_id:    str,
-        signal:       Signal,
+        signal:       Signal | None,
         amount:       float,
         target_price: float,
         error:        str,
     ) -> TradeResult:
+        """Construye un TradeResult de fallo.
+
+        ``signal`` es opcional (None cuando el fallo no proviene de una
+        Signal \u2014 ej. redeem_resolved_position). En paths normales
+        (entry/exit/hedge) el handler pasa el Signal; el redeem pasa None.
+        """
+        return TradeResult(
+            order_id     = str(uuid.uuid4()),
+            market_id    = market_id,
+            side         = signal.type.value if signal is not None else "UNKNOWN",
+            amount       = amount,
+            target_price = target_price,
+            fill_price   = target_price,
+            slippage     = 0.0,
+            pnl          = None,
+            success      = False,
+            mode         = "paper",
+            timestamp    = datetime.utcnow(),
+            error        = error,
+        )
         """Construye un TradeResult de fallo sin persistir nada."""
         return TradeResult(
             order_id     = str(uuid.uuid4()),

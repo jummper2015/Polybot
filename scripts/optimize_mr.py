@@ -221,6 +221,10 @@ class MRResult:
     best_trade: float = 0.0
     worst_trade: float = 0.0
     exit_reasons: dict = field(default_factory=dict)
+    # Individual PnL per closed trade — exposed for downstream consumers
+    # (Monte Carlo resampling, post-trade analytics) so they never need to
+    # re-run the backtest loop or duplicate filter/share-calculation logic.
+    trade_pnls: list[float] = field(default_factory=list)
 
 
 def run_mr_backtest(
@@ -345,6 +349,7 @@ def run_mr_backtest(
         return result
 
     pnls = [t.pnl for t in trades]
+    result.trade_pnls = pnls
     result.total_pnl = sum(pnls)
     result.winners = sum(1 for p in pnls if p > 0)
     result.losers = sum(1 for p in pnls if p <= 0)
@@ -710,7 +715,7 @@ def main() -> None:
     if args.parquet_dir:
         print(f"  Data:    REAL (parquet: {args.parquet_dir})")
     else:
-        print(f"  Data:    SYNTHETIC")
+        print("  Data:    SYNTHETIC")
 
     if args.quick:
         ma_windows = QUICK_MA_WINDOWS

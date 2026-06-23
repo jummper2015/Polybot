@@ -72,9 +72,9 @@ dev = [
 packages = ["src"]
 
 [tool.pytest.ini_options]
-asyncio_mode  = "auto"
-testpaths     = ["tests"]
-python_files  = ["test_*.py"]
+asyncio_mode = "auto"
+testpaths    = ["tests"]
+python_files = ["test_*.py"]
 
 [tool.ruff]
 line-length = 100
@@ -82,6 +82,12 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests con aserciones Hypothesis multilínea y docstrings descriptivos
+# legítimamente exceden line-length. Aplicar E501 sería ruido sin valor.
+"tests/**" = ["E501"]
+
 
 [tool.mypy]
 python_version         = "3.11"
