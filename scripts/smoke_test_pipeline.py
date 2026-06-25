@@ -3,8 +3,10 @@
 Smoke test E2E del pipeline PolyBot (R2.1-smoke).
 
 Ejercita la cadena completa **discovery → strategy → risk → paper execution**
-contra los markets cripto que Polymarket SÍ tiene activos hoy, esquivando el
-filtro M5/M15 de producción (bloqueado por B5).
+contra markets cripto activos en Gamma, sin pasar por el filtro M5/M15 de
+producción (el filtro funciona desde el cierre de B5 el 2026-06-21; este
+smoke lo esquiva a propósito para validar el resto del pipeline sin depender
+de la ventana temporal de un evento).
 
 Lo que valida:
   - Objetivo #1 (lectura): el bot lee `gamma-api.polymarket.com/markets`
@@ -14,12 +16,14 @@ Lo que valida:
     buffer de ticks, y corre N ciclos completos del `TradingService`. La
     estrategia/risk/paper handler operan sobre datos reales.
 
-Lo que NO valida (queda bloqueado por B5):
+Lo que NO valida (fuera del alcance de este smoke):
   - Objetivo #3 (rotación de eventos M5/M15 + reclamo de ganancias).
+    Para rotación M5/M15 ver `scripts/record_live_data.py --all --auto-rotate`;
+    para reclamo de ganancias ver R2.0-redeem-impl (redeem on-chain via CTF).
   - Real trading. Cero efectos en cadena.
 
 Sin tocar `MarketService.discover_markets()` ni los filtros M5/M15 — éstos
-siguen siendo correctos para cuando B5 se resuelva.
+viven en sus propios scripts y tests.
 
 Salida:
   data/reports/smoke_test_pipeline_<ts>.json
@@ -28,7 +32,7 @@ Salida:
 
 Exit codes:
   0 — pipeline ejercitado sin excepciones.
-  1 — Gamma devolvió 0 markets cripto (B5 más severo, fuera del bot).
+  1 — Gamma devolvió 0 markets cripto (fallo upstream, fuera del bot).
   2 — al menos un ciclo lanzó excepción no controlada.
 
 Uso:
@@ -91,7 +95,9 @@ DEFAULT_LIMIT_PER_ASSET = 2
 OBJ1_KEY = "objective_1_connectivity_read"
 OBJ2_KEY = "objective_2_paper_execution"
 OBJ3_KEY = "objective_3_m5_m15_rotation"
-OBJ3_BLOCKED = "BLOCKED_BY_B5"
+# This smoke esquiva la rotación M5/M15 a propósito (ver docstring del módulo).
+# El valor previo "BLOCKED_BY_B5" quedó obsoleto el 2026-06-21 al cerrarse B5.
+OBJ3_NOT_VALIDATED = "NOT_VALIDATED_BY_THIS_SMOKE"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -454,22 +460,22 @@ def build_report(
 ) -> dict:
     """Construye el JSON final con validaciones por objetivo."""
 
-    # Discovery falló → B5 más severo
+    # Discovery falló → upstream Gamma sin markets cripto activos
     if not markets:
         return {
             "status": "fail_no_markets",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "elapsed_seconds": round(elapsed_s, 2),
             "config": config,
-            "b5_context": (
-                "Polymarket no devuelve ningún market cripto activo — "
-                "ni siquiera los longevos. B5 más severo de lo conocido."
+            "discovery_context": (
+                "Gamma no devolvió ningún market cripto activo — "
+                "fallo upstream, no del bot. Reintentar o investigar Gamma."
             ),
             "markets_used": [],
             "validations": {
                 OBJ1_KEY: "FAIL_NO_MARKETS",
                 OBJ2_KEY: "NOT_RUN",
-                OBJ3_KEY: OBJ3_BLOCKED,
+                OBJ3_KEY: OBJ3_NOT_VALIDATED,
             },
             "summary": {
                 "total_cycles_run": 0,
@@ -498,17 +504,17 @@ def build_report(
     else:
         obj2 = "PASS_NO_SIGNAL"
 
-    obj3 = OBJ3_BLOCKED
+    obj3 = OBJ3_NOT_VALIDATED
 
     return {
         "status": "success" if total_errors == 0 else "partial",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "elapsed_seconds": round(elapsed_s, 2),
         "config": config,
-        "b5_context": (
-            "Polymarket tiene 0 markets BTC/ETH M5/M15 abiertos hoy; "
-            "el smoke test usa markets cripto longevos como fallback "
-            "para ejercitar el pipeline E2E."
+        "discovery_context": (
+            "Smoke E2E sobre markets cripto activos de Gamma. La rotación "
+            "M5/M15 se valida en `scripts/record_live_data.py --auto-rotate`, "
+            "no aquí — este smoke ejercita el resto del pipeline."
         ),
         "markets_used": [
             {

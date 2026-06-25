@@ -329,7 +329,7 @@ class TestBuildReport:
         assert report["status"] == "fail_no_markets"
         assert report["validations"][smoke.OBJ1_KEY] == "FAIL_NO_MARKETS"
         assert report["validations"][smoke.OBJ2_KEY] == "NOT_RUN"
-        assert report["validations"][smoke.OBJ3_KEY] == smoke.OBJ3_BLOCKED
+        assert report["validations"][smoke.OBJ3_KEY] == smoke.OBJ3_NOT_VALIDATED
 
     def test_pass_no_signal_when_no_errors_no_orders(self):
         m = _make_market()

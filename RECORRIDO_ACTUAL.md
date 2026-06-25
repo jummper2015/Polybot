@@ -336,7 +336,7 @@ Decisión estratégica: en lugar de esperar a que B5 se resuelva, se ejercita el
   5. `warmup_market_ticks()` — N llamadas a `MarketService.get_market_tick()` (real CLOB `/book`) para llenar el buffer del `strategy_orchestrator`.
   6. `run_single_cycle()` — envuelve `TradingService._run_market_cycle()` capturando excepciones sin propagar.
   7. `force_fake_signal()` (`--force-fake-signal`) — inyecta `Signal BUY_YES` directo al `execution_handler.execute_entry()` para validar el camino paper completo (slippage, fill, persistencia, balance) sin esperar a que MR genere señal real.
-  8. Reporte JSON con `validations` por objetivo + `b5_context` explícito. Exit `0|1|2`.
+  8. Reporte JSON con `validations` por objetivo + `discovery_context` explícito (campo renombrado desde `b5_context` el 2026-06-24 tras cerrarse B5). Exit `0|1|2`.
 
 - **33 tests nuevos** (`tests/unit/test_smoke_test_pipeline.py`): cubre fetch+ranking, parseo dict→Market, helpers JSON, `run_single_cycle` (success + exception), `build_report` (todos los caminos de validación), `main` CLI (exits 0/1/2), `write_report` (symlink), forced-signal path.
 
