@@ -1,238 +1,182 @@
 {
-  "recorded_at": "2026-06-21T22:05:32.140867+00:00",
-  "total_ticks": 1332282,
+  "recorded_at": "2026-06-25T16:26:08.338617+00:00",
+  "total_ticks": 738294,
   "base_dir": "/workspaces/Polybot/data/parquet",
   "sessions": [
     {
       "asset": "BTC",
-      "market_id": "0x01836edaaeb923584e94901b6043529d2bc0da5fd6d326982b79d3e6428c128c",
-      "question": "Bitcoin Up or Down - June 21, 5:35PM-5:40PM ET",
-      "started_at": "2026-06-21T21:35:06.859525+00:00",
-      "ended_at": "2026-06-21T21:35:06.859849+00:00"
+      "market_id": "0x5024f88d2cb3494f3a522dba9ecaa4513f02cf7bfb27d16df4b8be29c6d639bf",
+      "question": "Bitcoin Up or Down - June 25, 1PM ET",
+      "started_at": "2026-06-25T16:13:31.476303+00:00",
+      "ended_at": "2026-06-25T16:13:31.476574+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x911c3b117016226b235c84d3e184ec6675b595eda3c9b9f23411be392929a4b9",
-      "question": "Bitcoin Up or Down - June 22, 12:00AM-4:00AM ET",
-      "started_at": "2026-06-21T21:35:06.859849+00:00",
-      "ended_at": "2026-06-21T21:35:06.860090+00:00"
+      "market_id": "0x0c9ba89c9235e7b5f206c92800c19c063fbfd8bf590ed3fe9c00a4f1b262c37a",
+      "question": "Bitcoin Up or Down - June 25, 4:00PM-4:05PM ET",
+      "started_at": "2026-06-25T16:13:31.476574+00:00",
+      "ended_at": "2026-06-25T16:13:31.476649+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x61a725823359d4128636e2ca409560b97877028bbfefea636c9f97863296a976",
-      "question": "Bitcoin Up or Down - June 21, 6PM ET",
-      "started_at": "2026-06-21T21:35:06.860090+00:00",
-      "ended_at": "2026-06-21T21:35:06.860255+00:00"
+      "market_id": "0xe33707e9f3abbdbc53d9592d1c4f88a1a60cd671cdba414f60eab1839a2ab379",
+      "question": "Bitcoin Up or Down - June 25, 12:50PM-12:55PM ET",
+      "started_at": "2026-06-25T16:13:31.476649+00:00",
+      "ended_at": "2026-06-25T16:13:31.476724+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x49f9402b82485e1744089ce0da09cafc968827b8ab4e686a590150cd4b434047",
-      "question": "Bitcoin Up or Down - June 21, 7:30PM-7:35PM ET",
-      "started_at": "2026-06-21T21:35:06.860255+00:00",
-      "ended_at": "2026-06-21T21:35:06.860430+00:00"
+      "market_id": "0x3078ea2bb2e7c5149b401cf2bbf835670e64cbec3405baaa842b482bc1c9f6c9",
+      "question": "Bitcoin Up or Down - June 25, 7PM ET",
+      "started_at": "2026-06-25T16:13:31.476724+00:00",
+      "ended_at": "2026-06-25T16:13:31.476773+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x7e7feba9bbdc7650bd776d36d4e29c27b21f7cfdfb9161f4ae9ee5ffb7831d12",
-      "question": "Bitcoin Up or Down - June 21, 7PM ET",
-      "started_at": "2026-06-21T21:35:06.860430+00:00",
-      "ended_at": "2026-06-21T21:35:06.860607+00:00"
+      "market_id": "0x595d2415cba72cc000276c3f5aa7653e6469a1bae8f267bb9d97cd18ee7d6a43",
+      "question": "Bitcoin Up or Down - June 25, 12:45PM-12:50PM ET",
+      "started_at": "2026-06-25T16:13:31.476773+00:00",
+      "ended_at": "2026-06-25T16:13:31.476815+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x378f61fe1ac09d5c752aba1b6e9662a22ff946b835f94ba8fdc47b06afd2d36d",
-      "question": "Bitcoin Up or Down - June 22, 12:00AM-12:15AM ET",
-      "started_at": "2026-06-21T21:35:06.860607+00:00",
-      "ended_at": "2026-06-21T21:35:06.860785+00:00"
+      "market_id": "0xe4aeac6702379c9564a114383ad637d4cae55423ab4931f7f1e1bc4bbb1e5858",
+      "question": "Bitcoin Up or Down - June 25, 12:15PM-12:30PM ET",
+      "started_at": "2026-06-25T16:13:31.476815+00:00",
+      "ended_at": "2026-06-25T16:13:31.476854+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x0988aa7a32661f95897743da21a00625d9f06757ab5105ff6f31e09e02b97e8a",
-      "question": "Bitcoin Up or Down - June 21, 5:45PM-6:00PM ET",
-      "started_at": "2026-06-21T21:35:06.860785+00:00",
-      "ended_at": "2026-06-21T21:35:06.860944+00:00"
+      "market_id": "0xef94278db31c609ec310ef4f316cada4774e04e521d174e20c34020371d44b5b",
+      "question": "Bitcoin Up or Down - June 25, 9:00PM-9:15PM ET",
+      "started_at": "2026-06-25T16:13:31.476854+00:00",
+      "ended_at": "2026-06-25T16:13:31.476893+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0xecf1aace06530e80f9280636b1e1468c916fe89eac4e11e52a1a318177da7dfb",
-      "question": "Bitcoin Up or Down - June 21, 6:00PM-6:15PM ET",
-      "started_at": "2026-06-21T21:35:06.860944+00:00",
-      "ended_at": "2026-06-21T21:35:06.861099+00:00"
+      "market_id": "0x64f467783d04b47cc547d58cdd755a1ca22a869f2cce8985b5199e61eae36f1f",
+      "question": "Bitcoin Up or Down - June 25, 11:15PM-11:30PM ET",
+      "started_at": "2026-06-25T16:13:31.476893+00:00",
+      "ended_at": "2026-06-25T16:13:31.476932+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0xdb14435c0d26bd21030ddbe9af39cd420a8a8b912ec0e2156c2deffbec22350c",
-      "question": "Bitcoin Up or Down - June 21, 10:15PM-10:30PM ET",
-      "started_at": "2026-06-21T21:35:06.861099+00:00",
-      "ended_at": "2026-06-21T21:35:06.861247+00:00"
+      "market_id": "0x9d56d04bbdb04898c156af163480c1bafc1dd6577a0d59d89bad807e4f114444",
+      "question": "Bitcoin Up or Down - June 25, 9:15PM-9:30PM ET",
+      "started_at": "2026-06-25T16:13:31.476932+00:00",
+      "ended_at": "2026-06-25T16:13:31.476982+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0xa4dad64ba11b2f1bb5681b6e0f425f8fee3d5499053107c0e89266672343cfe5",
-      "question": "Bitcoin Up or Down - June 22, 1:00PM-1:15PM ET",
-      "started_at": "2026-06-21T21:35:06.861247+00:00",
-      "ended_at": "2026-06-21T21:35:08.086105+00:00"
+      "market_id": "0xff0bdb3896ff383ffedfca756858310ee1ede7761e56a0125b274a8446bb2db7",
+      "question": "Bitcoin Up or Down - June 26, 3:00AM-3:15AM ET",
+      "started_at": "2026-06-25T16:13:31.476982+00:00",
+      "ended_at": "2026-06-25T16:13:32.803648+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0xdbca659da9099f437c1bf9e81b2fe4aa4e01aa0f62532bf9223590688eefa4c7",
-      "question": "Ethereum Up or Down - June 21, 5:35PM-5:40PM ET",
-      "started_at": "2026-06-21T21:35:08.086105+00:00",
-      "ended_at": "2026-06-21T21:35:08.086348+00:00"
+      "market_id": "0xd995a21d336ed4cafc6137769d667af340d0de6ec166c2cc3e1e4a414d0da284",
+      "question": "Ethereum Up or Down - June 25, 12:00PM-4:00PM ET",
+      "started_at": "2026-06-25T16:13:32.803648+00:00",
+      "ended_at": "2026-06-25T16:13:32.803897+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x3a3c4d67567f05a4d1b69eeef85e425895d8b1e583c12a003320193f88c8778a",
-      "question": "Ethereum Up or Down - June 21, 5:40PM-5:45PM ET",
-      "started_at": "2026-06-21T21:35:08.086348+00:00",
-      "ended_at": "2026-06-21T21:35:08.086489+00:00"
+      "market_id": "0xe8e362b9b818d7432646f57bc3880023f7df1e42820aae7e40bdfa099a7112e8",
+      "question": "Ethereum Up or Down - June 25, 12:15PM-12:20PM ET",
+      "started_at": "2026-06-25T16:13:32.803897+00:00",
+      "ended_at": "2026-06-25T16:13:32.803962+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0xefbf2ca010e555baaa11c9f1eccc73806fe04690743b9d0a1b9df08f31d09f22",
-      "question": "Ethereum Up or Down - June 21, 8:00PM-12:00AM ET",
-      "started_at": "2026-06-21T21:35:08.086489+00:00",
-      "ended_at": "2026-06-21T21:35:08.086594+00:00"
+      "market_id": "0x616bcc93d406e6eef99cbc0154fb94f12bbb697c8e225b98789e714d6dd1d628",
+      "question": "Ethereum Up or Down - June 25, 12:20PM-12:25PM ET",
+      "started_at": "2026-06-25T16:13:32.803962+00:00",
+      "ended_at": "2026-06-25T16:13:32.804012+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0xed10d159d309d07d0edf8c2699ce50ca2a024b54dc17922b3213709a7efdc275",
-      "question": "Ethereum Up or Down - June 21, 6:10PM-6:15PM ET",
-      "started_at": "2026-06-21T21:35:08.086594+00:00",
-      "ended_at": "2026-06-21T21:35:08.086685+00:00"
+      "market_id": "0xa6cda02c6abf158b11d1be7084c3df4743edc3ce06a430eb865779254bff6e96",
+      "question": "Ethereum Up or Down - June 25, 12:25PM-12:30PM ET",
+      "started_at": "2026-06-25T16:13:32.804012+00:00",
+      "ended_at": "2026-06-25T16:13:32.804056+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x60f201215371b243cac369a683a3f79067efec8ec609b1ff56826704d49b69d5",
-      "question": "Ethereum Up or Down - June 22, 9:00AM-9:05AM ET",
-      "started_at": "2026-06-21T21:35:08.086685+00:00",
-      "ended_at": "2026-06-21T21:35:08.086786+00:00"
+      "market_id": "0x5660fb6cffde43c153b9acef3676b9fc8836074b820e3497e54b0b0a16994c9c",
+      "question": "Ethereum Up or Down - June 26, 12:35AM-12:40AM ET",
+      "started_at": "2026-06-25T16:13:32.804056+00:00",
+      "ended_at": "2026-06-25T16:13:32.804096+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x23235e96cdf964fd30cbc74b1515c958257f8dcf8fb58d14c8ab2cfaa94da2a9",
-      "question": "Ethereum Up or Down - June 21, 5:45PM-6:00PM ET",
-      "started_at": "2026-06-21T21:35:08.086786+00:00",
-      "ended_at": "2026-06-21T21:35:08.086874+00:00"
+      "market_id": "0x5928d6d11ebb9ece97a0d76d6e09ffb63a801313e71a8e67a47fb9d37a2ce74a",
+      "question": "Ethereum Up or Down - June 25, 10:00PM-10:15PM ET",
+      "started_at": "2026-06-25T16:13:32.804096+00:00",
+      "ended_at": "2026-06-25T16:13:32.804136+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x4775bf5e41c58a68d15ec82bab8f03c5f6319afb0884228564c1c88184a13422",
-      "question": "Ethereum Up or Down - June 21, 6:45PM-7:00PM ET",
-      "started_at": "2026-06-21T21:35:08.086874+00:00",
-      "ended_at": "2026-06-21T21:35:08.086965+00:00"
+      "market_id": "0xbae57f1eb7486c481abea7a6a6b7f2f09357f1c95817c09e94170d7a4a7783e4",
+      "question": "Ethereum Up or Down - June 25, 11:15PM-11:30PM ET",
+      "started_at": "2026-06-25T16:13:32.804136+00:00",
+      "ended_at": "2026-06-25T16:13:32.804175+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x72f876b4a2812b676599fc381fa380c2719e0c47bc705d2d3c97188feef02c77",
-      "question": "Ethereum Up or Down - June 22, 12:30AM-12:45AM ET",
-      "started_at": "2026-06-21T21:35:08.086965+00:00",
-      "ended_at": "2026-06-21T21:35:08.087064+00:00"
+      "market_id": "0x7410d84546b86673326fcb72072f5b29ff199daab3d1d552a914c8716ca5c63c",
+      "question": "Ethereum Up or Down - June 25, 12:15PM-12:30PM ET",
+      "started_at": "2026-06-25T16:13:32.804175+00:00",
+      "ended_at": "2026-06-25T16:13:32.804228+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x7473b0d8d60fab73267c432aabb8a2b85fa7b01e6aba2fed16b3fe6f93722bf7",
-      "question": "Ethereum Up or Down - June 21, 6:00PM-6:15PM ET",
-      "started_at": "2026-06-21T21:35:08.087064+00:00",
-      "ended_at": "2026-06-21T21:35:08.087160+00:00"
+      "market_id": "0x64db778703dbf7fa3f4fffbeef24aefe17f227bba14fda923ed4edb5c99d3897",
+      "question": "Ethereum Up or Down - June 25, 12:45PM-1:00PM ET",
+      "started_at": "2026-06-25T16:13:32.804228+00:00",
+      "ended_at": "2026-06-25T16:13:32.804267+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x321af25982c87e34755367ad6eb4a65bad4f2a3bbff93c3f51ef758ae6953132",
-      "question": "Ethereum Up or Down - June 21, 6:15PM-6:30PM ET",
-      "started_at": "2026-06-21T21:35:08.087160+00:00",
-      "ended_at": "2026-06-21T21:35:11.272275+00:00"
+      "market_id": "0x69ff433866afa62dde292efa7b1d594f89739de18075a8aee450b2ebf69c4ea6",
+      "question": "Ethereum Up or Down - June 25, 12:30PM-12:45PM ET",
+      "started_at": "2026-06-25T16:13:32.804267+00:00",
+      "ended_at": "2026-06-25T16:13:34.071054+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0x01836edaaeb923584e94901b6043529d2bc0da5fd6d326982b79d3e6428c128c",
-      "question": "Bitcoin Up or Down - June 21, 5:35PM-5:40PM ET",
-      "started_at": "2026-06-21T21:35:11.272275+00:00",
-      "ended_at": "2026-06-21T21:35:12.970972+00:00"
+      "market_id": "0xe4aeac6702379c9564a114383ad637d4cae55423ab4931f7f1e1bc4bbb1e5858",
+      "question": "Bitcoin Up or Down - June 25, 12:15PM-12:30PM ET",
+      "started_at": "2026-06-25T16:13:34.071054+00:00",
+      "ended_at": "2026-06-25T16:13:34.982110+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0xdbca659da9099f437c1bf9e81b2fe4aa4e01aa0f62532bf9223590688eefa4c7",
-      "question": "Ethereum Up or Down - June 21, 5:35PM-5:40PM ET",
-      "started_at": "2026-06-21T21:35:12.970972+00:00",
-      "ended_at": "2026-06-21T21:40:01.263791+00:00"
-    },
-    {
-      "asset": "ETH",
-      "market_id": "0x3a3c4d67567f05a4d1b69eeef85e425895d8b1e583c12a003320193f88c8778a",
-      "question": "Ethereum Up or Down - June 21, 5:40PM-5:45PM ET",
-      "started_at": "2026-06-21T21:40:01.263791+00:00",
-      "ended_at": "2026-06-21T21:40:37.663352+00:00"
+      "market_id": "0xe8e362b9b818d7432646f57bc3880023f7df1e42820aae7e40bdfa099a7112e8",
+      "question": "Ethereum Up or Down - June 25, 12:15PM-12:20PM ET",
+      "started_at": "2026-06-25T16:13:34.982110+00:00",
+      "ended_at": "2026-06-25T16:19:01.987862+00:00"
     },
     {
       "asset": "BTC",
-      "market_id": "0xc14a84186d3361388e725367dbc35576d8262d9c7021647006e4eeb5843f7864",
-      "question": "Bitcoin Up or Down - June 21, 5:45PM-5:50PM ET",
-      "started_at": "2026-06-21T21:40:37.663352+00:00",
-      "ended_at": "2026-06-21T21:40:38.553242+00:00"
+      "market_id": "0xb767a87bd0035bf9538bdbf82f54955f45fbab143ca6750b12bffebe65f6cb3b",
+      "question": "Bitcoin Up or Down - June 25, 12:35PM-12:40PM ET",
+      "started_at": "2026-06-25T16:19:01.987862+00:00",
+      "ended_at": "2026-06-25T16:20:11.266364+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x5650510a937437c14b2f717fe23ac02bea920f92ba0152fb83a470f889d5e7c8",
-      "question": "Ethereum Up or Down - June 21, 5:45PM-5:50PM ET",
-      "started_at": "2026-06-21T21:40:38.553242+00:00",
-      "ended_at": "2026-06-21T21:46:02.655170+00:00"
-    },
-    {
-      "asset": "BTC",
-      "market_id": "0x588bbf13ccf41bc6d576b1e75abe649e69fac5f7de553084e4d0aee165c9c13e",
-      "question": "Bitcoin Up or Down - June 21, 5:50PM-5:55PM ET",
-      "started_at": "2026-06-21T21:46:02.655170+00:00",
-      "ended_at": "2026-06-21T21:46:03.647316+00:00"
+      "market_id": "0x616bcc93d406e6eef99cbc0154fb94f12bbb697c8e225b98789e714d6dd1d628",
+      "question": "Ethereum Up or Down - June 25, 12:20PM-12:25PM ET",
+      "started_at": "2026-06-25T16:20:11.266364+00:00",
+      "ended_at": "2026-06-25T16:24:29.572019+00:00"
     },
     {
       "asset": "ETH",
-      "market_id": "0x23235e96cdf964fd30cbc74b1515c958257f8dcf8fb58d14c8ab2cfaa94da2a9",
-      "question": "Ethereum Up or Down - June 21, 5:45PM-6:00PM ET",
-      "started_at": "2026-06-21T21:46:03.647316+00:00",
-      "ended_at": "2026-06-21T21:51:27.258743+00:00"
-    },
-    {
-      "asset": "BTC",
-      "market_id": "0xc33105242ac21f686d1cdf17f354e6af46c3c0c5a112b9f7607d48c51c65e8f5",
-      "question": "Bitcoin Up or Down - June 21, 5:55PM-6:00PM ET",
-      "started_at": "2026-06-21T21:51:27.258743+00:00",
-      "ended_at": "2026-06-21T21:51:29.129080+00:00"
-    },
-    {
-      "asset": "ETH",
-      "market_id": "0xbbb765f53b959ab014432d8ccd33ef36a782c6f1f469d6ad8745f12c5cc6394e",
-      "question": "Ethereum Up or Down - June 21, 5:50PM-5:55PM ET",
-      "started_at": "2026-06-21T21:51:29.129080+00:00",
-      "ended_at": "2026-06-21T21:55:13.379592+00:00"
-    },
-    {
-      "asset": "ETH",
-      "market_id": "0x86f7f8b0957ac49f32d87e55fbde1220f26e9926a28ce379b8850f572c927c4b",
-      "question": "Ethereum Up or Down - June 21, 6:00PM-6:05PM ET",
-      "started_at": "2026-06-21T21:55:13.379592+00:00",
-      "ended_at": "2026-06-21T22:00:05.094974+00:00"
-    },
-    {
-      "asset": "BTC",
-      "market_id": "0x24dc63da1bd5cb9feee08768a7c3b1b4067df056ae9d092e7b2929bd705e8586",
-      "question": "Bitcoin Up or Down - June 21, 6:00PM-6:05PM ET",
-      "started_at": "2026-06-21T22:00:05.094974+00:00",
-      "ended_at": "2026-06-21T22:02:19.474487+00:00"
-    },
-    {
-      "asset": "BTC",
-      "market_id": "0x49f9402b82485e1744089ce0da09cafc968827b8ab4e686a590150cd4b434047",
-      "question": "Bitcoin Up or Down - June 21, 7:30PM-7:35PM ET",
-      "started_at": "2026-06-21T22:02:19.474487+00:00",
-      "ended_at": "2026-06-21T22:05:02.032389+00:00"
-    },
-    {
-      "asset": "ETH",
-      "market_id": "0xed10d159d309d07d0edf8c2699ce50ca2a024b54dc17922b3213709a7efdc275",
-      "question": "Ethereum Up or Down - June 21, 6:10PM-6:15PM ET",
-      "started_at": "2026-06-21T22:05:02.032389+00:00",
-      "ended_at": "2026-06-21T22:05:32.140867+00:00"
+      "market_id": "0xa6cda02c6abf158b11d1be7084c3df4743edc3ce06a430eb865779254bff6e96",
+      "question": "Ethereum Up or Down - June 25, 12:25PM-12:30PM ET",
+      "started_at": "2026-06-25T16:24:29.572019+00:00",
+      "ended_at": "2026-06-25T16:26:08.338617+00:00"
     }
   ]
 }
