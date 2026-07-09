@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from src.domain.entities.market import Market
 from src.domain.entities.order import Order
 from src.domain.entities.position import Position
+from src.domain.value_objects.redeem_receipt import RedeemReceipt
 
 
 class IRepositoryPort(ABC):
@@ -64,3 +65,45 @@ class IRepositoryPort(ABC):
 
     @abstractmethod
     async def get_all_bot_settings(self) -> dict[str, str]: ...
+
+    # --- Redeem Operations (R2.0-redeem-impl F1 Paso 2) ---
+    @abstractmethod
+    async def save_redeem_operation(self, receipt: RedeemReceipt) -> None:
+        """
+        Persiste o actualiza redeem_operation en DB.
+
+        Si redeem_op_id ya existe → UPDATE (idempotente).
+        Si no existe → INSERT.
+
+        Usado por CTFRedeemer para:
+          1. INSERT pre-submit (status=pending, tx_hash=None)
+          2. UPDATE post-MINED (tx_hash, gas_used, mined_at)
+          3. UPDATE post-CONFIRMED (pusd_received, confirmed_at)
+        """
+        ...
+
+    @abstractmethod
+    async def get_redeem_operation(self, redeem_op_id: str) -> RedeemReceipt | None:
+        """Obtiene redeem_operation por UUID (None si no existe)."""
+        ...
+
+    @abstractmethod
+    async def get_pending_redeems(self, limit: int = 100) -> list[RedeemReceipt]:
+        """
+        Consulta redeem_operations con status IN (pending, submitted, mined).
+
+        Usado por reconcile_on_startup para reanudar ops pendientes tras
+        restart del bot. Ordenado por created_at ASC (FIFO).
+        """
+        ...
+
+    @abstractmethod
+    async def check_duplicate_redeem(self, condition_id: str) -> bool:
+        """
+        Verifica si ya existe redeem_operation PENDING/SUBMITTED/MINED
+        para este condition_id (mercado).
+
+        Usado por DuplicateRedeemError guard antes de iniciar redeem.
+        True = ya existe operación activa, no reintentar.
+        """
+        ...

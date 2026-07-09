@@ -166,3 +166,45 @@ class BotSettingsModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class RedeemOperationModel(Base):
+    """
+    Tabla: redeem_operations
+    Almacena operaciones de redeem CTF on-chain (R2.0-redeem-impl F1 Paso 2).
+    Idempotencia vía redeem_op_id (UUID único por operación).
+    Reconciliación on startup via status + tx_hash.
+    """
+    __tablename__ = "redeem_operations"
+
+    redeem_op_id:    Mapped[str]            = mapped_column(String(36), primary_key=True)
+    condition_id:    Mapped[str]            = mapped_column(String(66), nullable=False)
+    position_id:     Mapped[str | None]     = mapped_column(String(36), nullable=True)
+    tx_hash:         Mapped[str | None]     = mapped_column(String(66), nullable=True)
+    index_sets:      Mapped[list]           = mapped_column(JSON, nullable=False)
+    shares_redeemed: Mapped[int]            = mapped_column(Integer, nullable=False)
+    pusd_received:   Mapped[float]          = mapped_column(Float, nullable=False, default=0.0)
+    gas_used:        Mapped[int | None]     = mapped_column(Integer, nullable=True)
+    gas_fee_matic:   Mapped[float | None]   = mapped_column(Float, nullable=True)
+    submitted_at:    Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    mined_at:        Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_at:    Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status:          Mapped[str]            = mapped_column(String(20), nullable=False)
+    error_reason:    Mapped[str | None]     = mapped_column(Text, nullable=True)
+    proxy_address:   Mapped[str]            = mapped_column(String(42), nullable=False)
+    adapter_address: Mapped[str]            = mapped_column(String(42), nullable=False)
+    created_at:      Mapped[datetime]       = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    updated_at:      Mapped[datetime]       = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_redeem_operations_redeem_op_id", "redeem_op_id", unique=True),
+        Index("ix_redeem_operations_condition_id", "condition_id"),
+        Index("ix_redeem_operations_status",       "status"),
+        Index("ix_redeem_operations_created_at",   "created_at"),
+        Index("ix_redeem_operations_tx_hash",      "tx_hash"),
+    )
+

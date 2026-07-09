@@ -11,17 +11,20 @@ from src.domain.entities.market import Market
 from src.domain.entities.order import Order
 from src.domain.entities.position import Position
 from src.domain.enums.asset import Asset
+from src.domain.enums.finality_status import FinalityStatus
 from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.order_side import OrderSide
 from src.domain.enums.order_status import OrderStatus
 from src.domain.enums.trading_mode import TradingMode
 from src.domain.enums.window import Window
+from src.domain.value_objects.redeem_receipt import RedeemReceipt
 from src.infrastructure.db.models import (
     AuditLogModel,
     BotSettingsModel,
     MarketModel,
     OrderModel,
     PositionModel,
+    RedeemOperationModel,
 )
 
 logger = structlog.get_logger(__name__)
@@ -356,3 +359,134 @@ class SQLAlchemyRepository(IRepositoryPort):
             strategy=m.strategy, exit_reason=m.exit_reason,
             opened_at=m.opened_at, closed_at=m.closed_at,
         )
+
+    # ------------------------------------------------------------------
+    # REDEEM OPERATIONS (R2.0-redeem-impl F1 Paso 2)
+    # ------------------------------------------------------------------
+
+    async def save_redeem_operation(self, receipt: RedeemReceipt) -> None:
+        """
+        Upsert: INSERT si redeem_op_id no existe, UPDATE si existe.
+
+        Llamado por CTFRedeemer en 3 momentos:
+          1. Pre-submit (status=pending, tx_hash=None)
+          2. Post-MINED (tx_hash, gas_used, mined_at)
+          3. Post-CONFIRMED (pusd_received, confirmed_at)
+        """
+        async with self._session_factory() as session:
+            async with session.begin():
+                existing = await session.get(RedeemOperationModel, receipt.redeem_op_id)
+
+                if existing:
+                    # UPDATE campos que cambian post-submit
+                    existing.tx_hash         = receipt.tx_hash
+                    existing.pusd_received   = receipt.pusd_received
+                    existing.gas_used        = receipt.gas_used
+                    existing.gas_fee_matic   = receipt.gas_fee_matic
+                    existing.submitted_at    = receipt.submitted_at
+                    existing.mined_at        = receipt.mined_at
+                    existing.confirmed_at    = receipt.confirmed_at
+                    existing.status          = receipt.status
+                    existing.error_reason    = None  # limpiar si era error previo
+                else:
+                    # INSERT nueva operación
+                    model = self._receipt_to_model(receipt)
+                    session.add(model)
+
+    async def get_redeem_operation(self, redeem_op_id: str) -> RedeemReceipt | None:
+        """Obtiene redeem_operation por UUID."""
+        async with self._session_factory() as session:
+            model = await session.get(RedeemOperationModel, redeem_op_id)
+            return self._model_to_receipt(model) if model else None
+
+    async def get_pending_redeems(self, limit: int = 100) -> list[RedeemReceipt]:
+        """
+        Query redeem_operations con status IN (pending, submitted, mined).
+        Usado por reconcile_on_startup. Ordenado por created_at ASC (FIFO).
+        """
+        async with self._session_factory() as session:
+            stmt = (
+                select(RedeemOperationModel)
+                .where(
+                    RedeemOperationModel.status.in_(
+                        [FinalityStatus.PENDING.value,
+                         FinalityStatus.SUBMITTED.value,
+                         FinalityStatus.MINED.value]
+                    )
+                )
+                .order_by(RedeemOperationModel.created_at.asc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            models = result.scalars().all()
+            return [self._model_to_receipt(m) for m in models]
+
+    async def check_duplicate_redeem(self, condition_id: str) -> bool:
+        """
+        True si ya existe redeem_operation activa (pending/submitted/mined)
+        para este condition_id.
+
+        Guard DuplicateRedeemError: evita reintento concurrente del mismo
+        mercado resuelto.
+        """
+        async with self._session_factory() as session:
+            stmt = (
+                select(func.count())
+                .select_from(RedeemOperationModel)
+                .where(RedeemOperationModel.condition_id == condition_id)
+                .where(
+                    RedeemOperationModel.status.in_(
+                        [FinalityStatus.PENDING.value,
+                         FinalityStatus.SUBMITTED.value,
+                         FinalityStatus.MINED.value]
+                    )
+                )
+            )
+            result = await session.execute(stmt)
+            count = result.scalar()
+            return count > 0
+
+    # ------------------------------------------------------------------
+    # MAPPERS — RedeemReceipt ↔ RedeemOperationModel
+    # ------------------------------------------------------------------
+
+    def _receipt_to_model(self, receipt: RedeemReceipt) -> RedeemOperationModel:
+        """Convierte RedeemReceipt (domain) → RedeemOperationModel (DB)."""
+        return RedeemOperationModel(
+            redeem_op_id=receipt.redeem_op_id,
+            condition_id=receipt.condition_id,
+            position_id=None,  # TODO F2: linkar con Position si disponible
+            tx_hash=receipt.tx_hash,
+            index_sets=list(receipt.index_sets),  # tuple → list JSON
+            shares_redeemed=receipt.shares_redeemed,
+            pusd_received=receipt.pusd_received,
+            gas_used=receipt.gas_used,
+            gas_fee_matic=receipt.gas_fee_matic,
+            submitted_at=receipt.submitted_at,
+            mined_at=receipt.mined_at,
+            confirmed_at=receipt.confirmed_at,
+            status=receipt.status,
+            error_reason=None,  # TODO: añadir error_reason a RedeemReceipt si falla
+            proxy_address=receipt.proxy_address,
+            adapter_address=receipt.adapter_address,
+        )
+
+    def _model_to_receipt(self, m: RedeemOperationModel) -> RedeemReceipt:
+        """Convierte RedeemOperationModel (DB) → RedeemReceipt (domain)."""
+        return RedeemReceipt(
+            redeem_op_id=m.redeem_op_id,
+            condition_id=m.condition_id,
+            tx_hash=m.tx_hash,
+            index_sets=tuple(m.index_sets),  # list JSON → tuple
+            shares_redeemed=m.shares_redeemed,
+            pusd_received=m.pusd_received,
+            gas_used=m.gas_used,
+            gas_fee_matic=m.gas_fee_matic,
+            submitted_at=m.submitted_at,
+            mined_at=m.mined_at,
+            confirmed_at=m.confirmed_at,
+            status=m.status,
+            proxy_address=m.proxy_address,
+            adapter_address=m.adapter_address,
+        )
+

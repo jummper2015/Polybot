@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 import structlog
 from eth_account import Account
@@ -32,6 +33,7 @@ from src.domain.enums.finality_status import FinalityStatus
 from src.domain.exceptions.ctf_exceptions import (
     CTFAdapterPausedError,
     CTFRedeemError,
+    DuplicateRedeemError,
     FinalityTimeoutError,
     InsufficientGasError,
     RedeemExecutionError,
@@ -52,6 +54,9 @@ from src.infrastructure.polymarket.ctf_abi import (
     ERC20_BALANCE_AND_DECIMALS_ABI,
     SAFE_V130_EXEC_TRANSACTION_ABI,
 )
+
+if TYPE_CHECKING:
+    from src.application.ports.repository_port import IRepositoryPort
 
 logger = structlog.get_logger(__name__)
 
@@ -91,6 +96,7 @@ class CTFRedeemer:
         matic_min_wei:        int  = DEFAULT_MATIC_MIN_WEI,
         gas_bump_pct:         float = DEFAULT_GAS_BUMP_PCT,
         operator_private_key: str | None = None,
+        repository:           "IRepositoryPort | None" = None,
     ) -> None:
         self._w3              = web3
         self._adapter         = web3.to_checksum_address(adapter_address)
@@ -108,6 +114,9 @@ class CTFRedeemer:
         # referencia a este atributo. Se prefiere aquí (constructor) sobre pasarla
         # en cada `redeem()` para no filtrarla a callers como RealTradingHandler.
         self._operator_pk     = operator_private_key
+        # Repo opcional para persistencia (idempotencia + reconcile on startup).
+        # Si None → solo retorna receipt en memoria (útil para tests sin DB).
+        self._repo            = repository
 
         self._adapter_contract = web3.eth.contract(
             address=self._adapter, abi=COLLATERAL_ADAPTER_REDEEM_ABI
