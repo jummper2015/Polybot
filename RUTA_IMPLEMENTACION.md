@@ -207,7 +207,7 @@ Detalle completo en `AUDIT_REPORT.md § R2.0-redeem`.
 
 **R2.0-redeem-impl — CTF on-chain redeem (RFC APPROVED 2026-06-25, en progreso):**
 
-**Paso 1 completado (2026-07-09):**
+**Paso 1 completado (2026-07-09, commit `99c0c97`):**
 - [x] `CTFRedeemer` (661 líneas): async, EIP-712 Safe sig, preflight MATIC, tx replacement, finality wait, reconciliación
 - [x] Wire mínimo: `clob_client` acepta `ctf_redeemer` opcional, `real_handler.redeem_resolved_position` ejecuta path CTF cuando disponible
 - [x] `container.py` instancia `AsyncWeb3` + `CTFRedeemer` si `POLYGON_RPC_URL` definido
@@ -216,15 +216,39 @@ Detalle completo en `AUDIT_REPORT.md § R2.0-redeem`.
 - [x] Métricas (7 nuevas): `REDEEM_GAS_USED`, `REDEEM_PUSD_RECEIVED`, `REDEEM_TX_MINING/FINALITY_SECONDS`, etc.
 - [x] Audit log (7 acciones): `CTF_REDEEM_TX_SUBMITTED/MINED/CONFIRMED/FAILED/REPLACED/RECONCILED`, `CTF_MATIC_FUNDED`
 - [x] Tests: +51 (43 unit CTFRedeemer, 8 property Hypothesis, 4 wire clob+handler) → **1,488/1,488** ✅
-- [x] `.env.example` actualizado con variables R2.0 (POLYGON_RPC_URL, SAFE_SIGNATURE_TYPE, MIN_PROXY_MATIC_BALANCE_THRESHOLD, etc.)
+- [x] `.env.example` actualizado con variables R2.0
 
-**Pendiente:**
-- [ ] Migración DB `redeem_operations` table (status, tx_hash, gas_used, pusd_received, finality_status, error_reason)
-- [ ] Test end-to-end (order → win → redeem → finality) sobre testnet o dry_run=true
-- [ ] Variables entorno verificadas en canary (POLYGON_RPC_URL, POLYMARKET_PROXY_ADDRESS)
-- [ ] Documentar canary/production deployment steps en `GUIA_DESPLIEGUE_VPS.md`
+**Paso 2 completado (2026-07-09, commits `3a4b283` + `0481ab7`):**
+- [x] Migración Alembic `005_redeem_operations.py` (CREATE TABLE + 5 índices)
+- [x] `RedeemOperationModel` SQLAlchemy con 18 columnas
+- [x] `IRepositoryPort` +4 métodos: `save_redeem_operation`, `get_redeem_operation`, `get_pending_redeems`, `check_duplicate_redeem`
+- [x] `SQLAlchemyRepository` implementación completa con mappers RedeemReceipt ↔ ORM
+- [x] Hooks activos en `CTFRedeemer.redeem()`:
+  - Guard `DuplicateRedeemError` pre-preflight
+  - INSERT PENDING pre-tx (idempotencia reservada)
+  - UPDATE SUBMITTED post-broadcast
+  - UPDATE CONFIRMED/MINED/FAILED post-finality
+  - Dry-run también persiste (status=MINED/FAILED tras eth_call)
+- [x] Tests: +15 persistencia (mappers, upsert, queries, hooks) → **1,503/1,503** ✅
 
-**Impacto:** R3.x (real trading) requiere esto para completar ciclo entry→exit→redeem. Paso 1 desbloquea integración; falta persistencia + test e2e antes de canary.
+**Paso 3 completado (2026-07-09, commit `ab9eb9b`):**
+- [x] `container._build_ctf_redeemer()` inyecta `self.repository` al CTFRedeemer
+- [x] `bootstrap._reconcile_pending_redeems()` post-migraciones, pre-servicios
+- [x] Best-effort: si reconcile falla, log error + continúa (no bloquea arranque)
+
+**Paso 4 completado (2026-07-09):**
+- [x] `scripts/redeem_dry_run.py` — smoke test dry-run vía eth_call (RFC §8.4)
+- [x] `scripts/fund_proxy_matic.py` — helper híbrido build tx + reconcile-by-hash (RFC §13.Q1)
+- [x] `GUIA_DESPLIEGUE_VPS.md` § PASO EXTRA — activar redeem CTF on-chain
+- [x] `README.md` conteo tests actualizado (1503)
+
+**Pendiente para cerrar F1:**
+- [ ] Retry automático de ops SUBMITTED/MINED en reconcile (requiere refactor wait_for_finality)
+- [ ] Test end-to-end con Anvil fork Polygon (marker `@pytest.mark.slow`, RFC §8.3)
+- [ ] Documentar rollout canary → real en `RUTA_IMPLEMENTACION.md § R2.2`
+- [ ] Verificar en staging real: `POLYGON_RPC_URL` + `POLYMARKET_PROXY_ADDRESS` + `fund_proxy_matic.py` + `redeem_dry_run.py`
+
+**Impacto:** R3.x (real trading) requiere esto para completar ciclo entry→exit→redeem. Pasos 1-4 desbloquean integración operativa; falta test e2e con fork + rollout canary antes de real trading con capital.
 
 ---
 

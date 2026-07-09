@@ -144,6 +144,17 @@ REAL_MODE_PIN=123456
 TRADING_MODE=paper
 REST_ONLY=true
 
+# ── Deployment Environment (R2.0-redeem-impl §13.Q2) ──
+# staging / canary / paper / production
+# Determina el dry_run default del redeem (staging/canary/paper → dry_run=true)
+DEPLOY_ENV=paper
+
+# ── Redeem CTF on-chain (R2.0-redeem-impl F1) ──
+# OPCIONAL para paper — REQUERIDO para real trading con redeem activo
+# POLYGON_RPC_URL=https://polygon-rpc.com
+# POLYMARKET_PROXY_ADDRESS=0xTU_POLY_PROXY
+# REDEEM_DRY_RUN=              # vacío = auto según DEPLOY_ENV
+
 # ── Ensemble Mode (P11.2) ─────────────────────
 ENSEMBLE_MODE=true
 
@@ -865,6 +876,124 @@ sudo dpkg-reconfigure --priority=low unattended-upgrades
   │ PG │ │Redis│ │ Parquet  │
   │:5432│:6379│ │ /data/   │
   └────┘ └────┘ └──────────┘
+```
+
+---
+
+## 💸 PASO EXTRA — Activar Redeem CTF on-chain (R2.0-redeem-impl F1)
+
+Este paso es **opcional para paper trading** pero **REQUERIDO para real trading**
+si quieres que el bot reclame ganancias de mercados resueltos automáticamente.
+
+### 1. Configurar env vars
+
+Añade al `.env` del VPS:
+
+```bash
+# RPC Polygon (público OK para start; Alchemy/Infura para prod)
+POLYGON_RPC_URL=https://polygon-rpc.com
+
+# POLY_PROXY (Gnosis Safe del operador, donde viven las posiciones)
+# Se obtiene via: eth_call PolymarketProxyFactory.getProxy(EOA)
+# O desde https://clob.polymarket.com/auth (response.proxy)
+POLYMARKET_PROXY_ADDRESS=0xTU_POLY_PROXY
+
+# Auto: staging/canary/paper → dry_run=true, production → dry_run=false
+DEPLOY_ENV=canary   # o production cuando ya vayas a real real
+```
+
+### 2. Aplicar migración de DB
+
+La tabla `redeem_operations` se crea automáticamente al arrancar el bot
+(via `alembic upgrade head` en el bootstrap). Verificar manualmente:
+
+```bash
+cd ~/polybot
+alembic upgrade head
+alembic current   # debe mostrar 005 (head)
+
+# Verificar tabla existe
+psql -U botuser polybot -c "\dt redeem_operations"
+```
+
+### 3. Fondear MATIC al POLY_PROXY
+
+El bot necesita **MATIC en el POLY_PROXY** para pagar gas de las tx de redeem.
+Mínimo recomendado: **0.5 MATIC** para varios redeems.
+
+```bash
+# Modelo híbrido — el script arma la tx pero NO la envía (RFC §13.Q1)
+python scripts/fund_proxy_matic.py --amount-matic 0.5
+
+# → imprime datos para MetaMask (from, to, value, gas, nonce, chain_id)
+# → copia y envía manualmente desde MetaMask
+
+# Después de enviar, reconciliar:
+python scripts/fund_proxy_matic.py --reconcile-hash 0xTU_TX_HASH
+```
+
+### 4. Smoke test con dry-run
+
+Antes de habilitar el redeem real, verificar que todo funciona con un
+mercado real resuelto (sin gastar gas):
+
+```bash
+# Simula redeem via eth_call — sin broadcast
+python scripts/redeem_dry_run.py \
+    --condition-id 0xCONDITION_ID_DE_UN_MERCADO_RESUELTO_TUYO \
+    --shares-yes 100
+
+# → verifica: adapter alive, MATIC balance, index_sets, eth_call succeeds
+```
+
+### 5. Habilitar redeem en producción
+
+Cuando dry-run pase verde:
+
+```bash
+# Solo cambia DEPLOY_ENV → production
+sed -i 's/^DEPLOY_ENV=.*/DEPLOY_ENV=production/' .env
+
+# Reiniciar systemd
+sudo systemctl restart polybot
+
+# Verificar que el CTFRedeemer arranca sin dry_run
+sudo journalctl -u polybot -f | grep ctf_redeemer
+# → debe imprimir: "ctf_redeemer_built dry_run=False persistence=True"
+```
+
+### 6. Monitorizar redeem operations
+
+```bash
+# Ops pendientes (deberían resolverse en <5 min)
+psql -U botuser polybot -c \
+    "SELECT redeem_op_id, condition_id, status, tx_hash, submitted_at
+     FROM redeem_operations
+     WHERE status IN ('pending', 'submitted', 'mined')
+     ORDER BY created_at DESC LIMIT 20;"
+
+# Ops confirmadas (últimas 24h)
+psql -U botuser polybot -c \
+    "SELECT COUNT(*) AS total, SUM(pusd_received) AS pusd_repatriado
+     FROM redeem_operations
+     WHERE status = 'confirmed'
+     AND confirmed_at > NOW() - INTERVAL '24 hours';"
+
+# Métricas Prometheus (en Grafana)
+# → REDEEM_GAS_USED, REDEEM_PUSD_RECEIVED, REDEEM_TX_MINING_SECONDS,
+#   REDEEM_FAILURES_REASON, REDEEM_PROXY_MATIC_BALANCE
+```
+
+### 7. Rollback
+
+Si algo va mal:
+
+```bash
+# Desactivar redeem sin restart (bot vuelve al fail-fast del audit)
+sed -i 's/^POLYGON_RPC_URL=.*/# POLYGON_RPC_URL=disabled/' .env
+sudo systemctl restart polybot
+
+# → sin POLYGON_RPC_URL, ctf_redeemer=None y real_handler vuelve al path legacy
 ```
 
 ---
