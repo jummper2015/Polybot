@@ -12,9 +12,12 @@ from src.application.ports.notification_port import INotificationPort
 from src.application.ports.repository_port import IRepositoryPort
 from src.domain.entities.order import Order
 from src.domain.entities.position import Position
+from src.domain.enums.finality_status import FinalityStatus
 from src.domain.enums.order_side import OrderSide
 from src.domain.enums.order_status import OrderStatus
 from src.domain.enums.trading_mode import TradingMode
+from src.domain.exceptions.ctf_exceptions import CTFRedeemError
+from src.domain.value_objects.redeem_receipt import RedeemReceipt
 from src.domain.value_objects.signal import Signal, SignalType
 from src.domain.value_objects.trade_result import TradeResult
 from src.execution.base import IExecutionHandler
@@ -517,6 +520,10 @@ class RealTradingHandler(IExecutionHandler):
         Redime tokens ganadores después de la resolución del mercado.
         Llamado por un job externo que detecta mercados resueltos.
         Solo tiene efecto si ganamos — si perdemos, los tokens valen 0.
+
+        CLOB V2: redeem es on-chain via CTF. Si `ctf_redeemer` disponible,
+        ejecuta redeem atómico on-chain con auditoría CTF_REDEEM_TX_*.
+        Si no disponible, falla rápido con REAL_REDEEM_FAILED reason=ctf_onchain_required.
         """
         log = logger.bind(
             position_id=position.id,
@@ -537,6 +544,16 @@ class RealTradingHandler(IExecutionHandler):
             market_id=position.market_id,
         )
 
+        # ── Path CTF on-chain (R2.0-redeem-impl F1) ────────────────────
+        if self._clob.ctf_redeemer is not None:
+            return await self._redeem_via_ctf(
+                position=position,
+                token_id=token_id,
+                redeem_order_id=redeem_order_id,
+                log=log,
+            )
+
+        # ── Path legacy (fail-fast sin CTF) ────────────────────────────
         try:
             api_response, error = await self._call_with_retry(
                 operation="redeem",
@@ -592,6 +609,141 @@ class RealTradingHandler(IExecutionHandler):
         log.info(
             "redeem_success",
             redeemed_pusd=redeemed_pusd,
+            pnl=position.pnl,
+        )
+
+        return TradeResult(
+            order_id     = redeem_order_id,
+            market_id    = position.market_id,
+            side         = position.side,
+            amount       = redeemed_pusd,
+            target_price = 1.0,
+            fill_price   = 1.0,
+            slippage     = 0.0,
+            pnl          = position.pnl,
+            success      = True,
+            mode         = "real",
+            timestamp    = datetime.now(timezone.utc),
+        )
+
+    async def _redeem_via_ctf(
+        self,
+        position:        Position,
+        token_id:        str,
+        redeem_order_id: str,
+        log,
+    ) -> TradeResult:
+        """
+        Ejecuta redeem on-chain via CTFRedeemer (R2.0-redeem-impl F1).
+
+        Mapea Position.side ("YES"/"NO") + shares → shares_yes/shares_no,
+        llama CTFRedeemer.redeem, espera finality, emite audits CTF_REDEEM_TX_*.
+        """
+        redeemer = self._clob.ctf_redeemer
+        if redeemer is None:
+            # Defensive — el caller ya debería haber chequeado esto
+            raise CTFRedeemError("ctf_redeemer not available")
+
+        # ── Mapeo side → shares_yes/shares_no ─────────────────────────
+        shares_yes = int(position.shares) if position.side == "YES" else 0
+        shares_no  = int(position.shares) if position.side == "NO"  else 0
+
+        # ── Redeem on-chain (preflight + tx + finality) ───────────────
+        try:
+            receipt: RedeemReceipt = await redeemer.redeem(
+                condition_id=position.market_id,
+                shares_yes=shares_yes,
+                shares_no=shares_no,
+                redeem_op_id=redeem_order_id,
+            )
+        except CTFRedeemError as e:
+            log.error("ctf_redeem_error", error=str(e), redeem_op_id=redeem_order_id)
+            await self._audit.log(
+                action=AuditAction.CTF_REDEEM_FAILED,
+                details={"error": str(e)[:200], "redeem_op_id": redeem_order_id},
+                market_id=position.market_id,
+                amount=position.amount,
+            )
+            return self._failed_result(
+                position.market_id, None,
+                position.amount, 0.0, str(e)
+            )
+
+        # ── Audit según el status de finality ─────────────────────────
+        if receipt.tx_hash:
+            await self._audit.log(
+                action=AuditAction.CTF_REDEEM_TX_SUBMITTED,
+                details={
+                    "tx_hash": receipt.tx_hash,
+                    "redeem_op_id": redeem_order_id,
+                    "condition_id": receipt.condition_id[-12:],
+                },
+                market_id=position.market_id,
+                amount=position.amount,
+            )
+
+        if receipt.status == FinalityStatus.CONFIRMED.value and receipt.confirmed_at:
+            await self._audit.log(
+                action=AuditAction.CTF_REDEEM_TX_CONFIRMED,
+                details={
+                    "tx_hash": receipt.tx_hash,
+                    "pusd_received": receipt.pusd_received,
+                    "gas_used": receipt.gas_used,
+                    "gas_fee_matic": receipt.gas_fee_matic,
+                },
+                market_id=position.market_id,
+                amount=receipt.pusd_received,
+            )
+        elif receipt.status in (FinalityStatus.MINED.value, FinalityStatus.SUBMITTED.value):
+            await self._audit.log(
+                action=AuditAction.CTF_REDEEM_TX_MINED,
+                details={
+                    "tx_hash": receipt.tx_hash,
+                    "status": receipt.status,
+                    "gas_used": receipt.gas_used,
+                },
+                market_id=position.market_id,
+                amount=position.amount,
+            )
+        elif receipt.status in (FinalityStatus.FAILED.value, FinalityStatus.TIMEOUT.value, FinalityStatus.REORGED.value):
+            await self._audit.log(
+                action=AuditAction.CTF_REDEEM_FAILED,
+                details={
+                    "tx_hash": receipt.tx_hash,
+                    "status": receipt.status,
+                    "redeem_op_id": redeem_order_id,
+                },
+                market_id=position.market_id,
+                amount=position.amount,
+            )
+            return self._failed_result(
+                position.market_id, None,
+                position.amount, 0.0, f"Redeem {receipt.status}"
+            )
+
+        # ── Cierra position con el pUSD repatriado ────────────────────
+        redeemed_pusd = receipt.pusd_received
+        position.close(
+            exit_price=redeemed_pusd / position.shares if position.shares > 0 else 0,
+            reason="market_resolved_ctf_redeemed",
+        )
+        await self._repo.save_position(position)
+
+        await self._audit.log(
+            action=AuditAction.REAL_REDEEM_SUCCESS,
+            details={
+                "redeemed_pusd": redeemed_pusd,
+                "tx_hash": receipt.tx_hash,
+                "finality_status": receipt.status,
+            },
+            market_id=position.market_id,
+            amount=redeemed_pusd,
+        )
+
+        log.info(
+            "ctf_redeem_success",
+            redeemed_pusd=redeemed_pusd,
+            tx_hash=receipt.tx_hash,
             pnl=position.pnl,
         )
 

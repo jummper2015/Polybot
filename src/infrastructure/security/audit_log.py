@@ -23,6 +23,14 @@ class AuditAction(str, Enum):
     REAL_TRADING_ENABLED  = "real_trading_enabled"
     REAL_TRADING_DISABLED = "real_trading_disabled"
     GUARDRAIL_TRIGGERED = "guardrail_triggered"
+    # ── R2.0-redeem-impl F1: CTF on-chain redeem flow ───────────────
+    CTF_REDEEM_TX_SUBMITTED = "ctf_redeem_tx_submitted"
+    CTF_REDEEM_TX_MINED     = "ctf_redeem_tx_mined"
+    CTF_REDEEM_TX_CONFIRMED = "ctf_redeem_tx_confirmed"
+    CTF_REDEEM_FAILED       = "ctf_redeem_failed"
+    CTF_REDEEM_REPLACED     = "ctf_redeem_replaced"
+    CTF_REDEEM_RECONCILED   = "ctf_redeem_reconciled"
+    CTF_REDEEM_MATIC_FUNDED = "ctf_redeem_matic_funded"
 
 
 class AuditLogger:

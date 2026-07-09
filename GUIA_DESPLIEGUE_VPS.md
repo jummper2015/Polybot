@@ -1,4 +1,5 @@
-# 🚀 GUÍA DE DESPLIEGUE — PolyBot en VPS Hostinger KVM2
+# 🚀 GUÍA DE DESPLIEGUE
+ — PolyBot en VPS Hostinger KVM2
 
 > **Tu VPS:** KVM2 con Ubuntu pre-instalado
 > **OS esperado:** Ubuntu 22.04 o 24.04 LTS

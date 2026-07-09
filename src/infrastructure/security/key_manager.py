@@ -16,6 +16,12 @@ ENV_WALLET_ADDRESS  = "POLYMARKET_WALLET_ADDRESS"
 ENV_BUILDER_CODE    = "POLYMARKET_BUILDER_CODE"
 ENV_SIGNATURE_TYPE  = "POLYMARKET_SIGNATURE_TYPE"
 
+# CTF redeem on-chain (R2.0-redeem-impl F1)
+ENV_POLYGON_RPC_URL = "POLYGON_RPC_URL"
+ENV_PROXY_ADDRESS   = "POLYMARKET_PROXY_ADDRESS"
+ENV_REDEEM_DRY_RUN  = "REDEEM_DRY_RUN"
+ENV_DEPLOY_ENV      = "DEPLOY_ENV"
+
 # Valores válidos de signature_type según el SDK py-clob-client-v2:
 #   0 = EOA, 1 = POLY_PROXY (default), 2 = GNOSIS_SAFE, 3 = POLY_1271
 VALID_SIGNATURE_TYPES = {0, 1, 2, 3}
@@ -114,6 +120,46 @@ class KeyManager:
                 f"(0=EOA, 1=POLY_PROXY, 2=GNOSIS_SAFE, 3=POLY_1271)."
             )
         return value
+
+    # ------------------------------------------------------------------
+    # CTF REDEEM ON-CHAIN (R2.0-redeem-impl F1)
+    # ------------------------------------------------------------------
+
+    @cached_property
+    def polygon_rpc_url(self) -> str | None:
+        """
+        RPC URL de Polygon Mainnet para redeem on-chain via web3.py.
+        Opcional: si no definido, ctf_redeemer no se instancia (path paper/legacy).
+        """
+        return os.environ.get(ENV_POLYGON_RPC_URL) or None
+
+    @cached_property
+    def proxy_address(self) -> str | None:
+        """
+        Dirección del POLY_PROXY (Gnosis Safe del operador, donde viven las posiciones).
+        Opcional — si no definido, derivar on-chain con ProxyFactory o via /auth.
+        """
+        return os.environ.get(ENV_PROXY_ADDRESS) or None
+
+    def redeem_dry_run(self) -> bool:
+        """
+        Dry-run mode para redeem: true = eth_call sin broadcast, false = tx real.
+
+        Resolución (RFC §13.Q2):
+          1. Si REDEEM_DRY_RUN explícito → usar ese valor.
+          2. Si no explícito, derivar de DEPLOY_ENV:
+             - staging / canary / paper → dry_run=true
+             - production → dry_run=false
+             - sin DEPLOY_ENV → default dry_run=true (seguro)
+        """
+        explicit = os.environ.get(ENV_REDEEM_DRY_RUN, "").strip().lower()
+        if explicit in ("true", "1", "yes"):
+            return True
+        if explicit in ("false", "0", "no"):
+            return False
+        # Derivar de DEPLOY_ENV
+        deploy_env = os.environ.get(ENV_DEPLOY_ENV, "").strip().lower()
+        return deploy_env in ("staging", "canary", "paper", "")  # default safe
 
     def _validate_env(self) -> None:
         """

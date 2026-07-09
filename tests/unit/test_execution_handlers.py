@@ -902,8 +902,10 @@ class TestRealHandlerHedge:
 class TestRealHandlerRedeem:
     """redeem_resolved_position — V2 requiere CTF on-chain (fail-fast)."""
 
-    def _handler(self, *, redeem_response=None, side_effect=None):
+    def _handler(self, *, redeem_response=None, side_effect=None, ctf_redeemer=None):
         clob = AsyncMock()
+        # Configurar ctf_redeemer explícitamente (default None = path legacy)
+        clob.ctf_redeemer = ctf_redeemer
         if side_effect is not None:
             clob.redeem_position = AsyncMock(side_effect=side_effect)
         else:
@@ -968,3 +970,111 @@ class TestRealHandlerRedeem:
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await handler.redeem_resolved_position(position, "yes_tok")
         assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_redeem_via_ctf_when_redeemer_available(self):
+        """
+        Cuando ctf_redeemer disponible, redeem_resolved_position debe
+        ejecutar path CTF on-chain (R2.0-redeem-impl F1 wire).
+        """
+        from src.domain.enums.finality_status import FinalityStatus
+        from src.domain.value_objects.redeem_receipt import RedeemReceipt
+        from unittest.mock import MagicMock
+
+        # Mock CTFRedeemer que retorna receipt CONFIRMED
+        mock_redeemer = AsyncMock()
+        mock_redeemer.redeem = AsyncMock(return_value=RedeemReceipt(
+            redeem_op_id="op-test",
+            condition_id="0x" + "ab" * 32,
+            tx_hash="0x" + "cd" * 32,
+            index_sets=(1,),
+            shares_redeemed=100,
+            pusd_received=100.0,
+            gas_used=250_000,
+            gas_fee_matic=0.05,
+            submitted_at=datetime.now(timezone.utc),
+            mined_at=datetime.now(timezone.utc),
+            confirmed_at=datetime.now(timezone.utc),
+            status=FinalityStatus.CONFIRMED.value,
+            proxy_address="0x" + "11" * 20,
+            adapter_address="0x" + "22" * 20,
+        ))
+
+        clob = AsyncMock()
+        clob.ctf_redeemer = mock_redeemer
+        repo = make_mock_repo()
+        redis = make_mock_redis()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+
+        handler = RealTradingHandler(
+            clob_client=clob,
+            repository=repo,
+            redis=redis,
+            notifier=notifier,
+            audit_logger=audit,
+        )
+
+        position = make_position(side="YES", shares=100.0, amount=50.0)
+        result = await handler.redeem_resolved_position(position, "yes_tok")
+
+        # Verificar que el redeemer fue invocado
+        assert mock_redeemer.redeem.await_count == 1
+        call_kwargs = mock_redeemer.redeem.await_args.kwargs
+        assert call_kwargs["shares_yes"] == 100
+        assert call_kwargs["shares_no"] == 0
+        assert call_kwargs["condition_id"] == position.market_id
+
+        # Verificar resultado
+        assert result.success is True
+        assert result.amount == 100.0
+        assert result.mode == "real"
+
+    @pytest.mark.asyncio
+    async def test_redeem_via_ctf_maps_no_side_correctly(self):
+        """
+        Position.side="NO" debe mapear a shares_no > 0, shares_yes = 0.
+        """
+        from src.domain.enums.finality_status import FinalityStatus
+        from src.domain.value_objects.redeem_receipt import RedeemReceipt
+
+        mock_redeemer = AsyncMock()
+        mock_redeemer.redeem = AsyncMock(return_value=RedeemReceipt(
+            redeem_op_id="op-no",
+            condition_id="0x" + "ef" * 32,
+            tx_hash="0x" + "cd" * 32,
+            index_sets=(2,),
+            shares_redeemed=50,
+            pusd_received=50.0,
+            gas_used=250_000,
+            gas_fee_matic=0.05,
+            submitted_at=datetime.now(timezone.utc),
+            mined_at=datetime.now(timezone.utc),
+            confirmed_at=datetime.now(timezone.utc),
+            status=FinalityStatus.CONFIRMED.value,
+            proxy_address="0x" + "11" * 20,
+            adapter_address="0x" + "22" * 20,
+        ))
+
+        clob = AsyncMock()
+        clob.ctf_redeemer = mock_redeemer
+        repo = make_mock_repo()
+        redis = make_mock_redis()
+        notifier = make_mock_notifier()
+        audit = AuditLogger(repository=repo)
+
+        handler = RealTradingHandler(
+            clob_client=clob,
+            repository=repo,
+            redis=redis,
+            notifier=notifier,
+            audit_logger=audit,
+        )
+
+        position = make_position(side="NO", shares=50.0, amount=25.0)
+        await handler.redeem_resolved_position(position, "no_tok")
+
+        call_kwargs = mock_redeemer.redeem.await_args.kwargs
+        assert call_kwargs["shares_yes"] == 0
+        assert call_kwargs["shares_no"] == 50
+

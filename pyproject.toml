@@ -51,6 +51,7 @@ dependencies = [
 
     # ── Polymarket ───────────────────────────────────────────────
     "py-clob-client-v2>=1.0.0",
+    "web3==7.16.0",       # On-chain redemption via CTF (R2.0-redeem-impl F1, RFC §7)
 ]
 
 [project.optional-dependencies]

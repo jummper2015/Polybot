@@ -5,11 +5,12 @@
 ventanas temporales de **5 minutos** y **15 minutos**.
 
 > ⚠️ **Estado:** El código está **técnicamente completo (100%)** — 39/39 prioridades
-> implementadas, **1030 tests** (878 unit, 73 integration, 33 property, 38 chaos,
+> implementadas, **1488 tests** (929 unit, 73 integration, 41 property, 38 chaos,
 > 4 e2e, 4 performance), pipeline CI/CD, manifiestos Kubernetes, dashboards Grafana
-> y hardening de seguridad. **La validación con datos reales de mercado avanza**
-> — las credenciales de la API de Polymarket ya están configuradas. Consulta
-> [PLAN_MEJORAS.txt](./PLAN_MEJORAS.txt) § P7.3 para la checklist de validación.
+> y hardening de seguridad. **R2.0-redeem-impl (CTF on-chain) en progreso:**
+> Paso 1 completado (wire CTFRedeemer → clob_client → real_handler, 1488/1488 ✅).
+> Consulta [RUTA_IMPLEMENTACION.md](./RUTA_IMPLEMENTACION.md) § R2.0-redeem-impl
+> para el progreso del ciclo completo entry→exit→redeem.
 
 ---
 

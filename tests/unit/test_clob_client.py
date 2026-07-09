@@ -388,3 +388,22 @@ class TestRedeemPositionV2:
         post_method = client._http.post
         if hasattr(post_method, "await_count"):
             assert post_method.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_ctf_redeemer_property_exposes_injected_redeemer(self):
+        """
+        Cuando se inyecta ctf_redeemer, debe estar accesible via property.
+        R2.0-redeem-impl F1: callers acceden via client.ctf_redeemer.redeem(...).
+        """
+        from unittest.mock import MagicMock
+        client, _, _ = make_mock_clob_client()
+        mock_redeemer = MagicMock()
+        # Inyectar manualmente (en prod se inyecta via container)
+        client._ctf_redeemer = mock_redeemer
+        assert client.ctf_redeemer is mock_redeemer
+
+    @pytest.mark.asyncio
+    async def test_ctf_redeemer_property_none_when_not_injected(self):
+        """Sin ctf_redeemer inyectado, property retorna None (path legacy)."""
+        client, _, _ = make_mock_clob_client()
+        assert client.ctf_redeemer is None

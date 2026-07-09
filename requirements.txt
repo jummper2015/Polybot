@@ -47,6 +47,11 @@ uvloop==0.19.0
 # ── Polymarket SDK ───────────────────────────────────────────────────
 py-clob-client-v2>=1.0.0
 
+# ── On-chain Redemption (R2.0-redeem-impl F1, RFC_APPROVED 2026-06-25) ─
+# AsyncWeb3 estable, EIP-1559 nativo en Polygon PoS, MIT,
+# release mensual mayo 2026 (v7.16.0). Justificación completa: RFC §7.
+web3==7.16.0
+
 # ─────────────────────────────────────────────────────────────────────
 # Development & Testing
 # ─────────────────────────────────────────────────────────────────────

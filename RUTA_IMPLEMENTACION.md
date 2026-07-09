@@ -205,17 +205,26 @@ Esto es lo que hay que hacer AHORA para tener un sistema sin fisuras. Cada tarea
 
 Detalle completo en `AUDIT_REPORT.md § R2.0-redeem`.
 
-**PENDIENTE (R2.0-redeem-impl — requiere RFC, NO incluido en este audit):**
+**R2.0-redeem-impl — CTF on-chain redeem (RFC APPROVED 2026-06-25, en progreso):**
 
-- [ ] RFC: añadir `web3.py` a `requirements.txt` (justificar maintenance + async).
-- [ ] `src/infrastructure/polymarket/ctf_redeemer.py` con wrapper sobre `ConditionalTokens.redeemPositions`.
-- [ ] Lógica de cálculo de `indexSets` por outcome ganador (observable post-resolution en Data API).
-- [ ] Gas estimation + dry-run + tx receipt + retry on chain reorg.
-- [ ] Decidir: llamar CTF directo vs. usar "thin collateral adapter" para auto-wrap pUSD.
-- [ ] Property tests Hypothesis sobre cálculo de `indexSets`.
-- [ ] Audit log de tx hash + gas + pUSD recibido.
+**Paso 1 completado (2026-07-09):**
+- [x] `CTFRedeemer` (661 líneas): async, EIP-712 Safe sig, preflight MATIC, tx replacement, finality wait, reconciliación
+- [x] Wire mínimo: `clob_client` acepta `ctf_redeemer` opcional, `real_handler.redeem_resolved_position` ejecuta path CTF cuando disponible
+- [x] `container.py` instancia `AsyncWeb3` + `CTFRedeemer` si `POLYGON_RPC_URL` definido
+- [x] Value objects: `RedeemReceipt`, `FinalityStatus` enum
+- [x] Excepciones refactorizadas: `src/domain/exceptions/` + 7 tipos CTF
+- [x] Métricas (7 nuevas): `REDEEM_GAS_USED`, `REDEEM_PUSD_RECEIVED`, `REDEEM_TX_MINING/FINALITY_SECONDS`, etc.
+- [x] Audit log (7 acciones): `CTF_REDEEM_TX_SUBMITTED/MINED/CONFIRMED/FAILED/REPLACED/RECONCILED`, `CTF_MATIC_FUNDED`
+- [x] Tests: +51 (43 unit CTFRedeemer, 8 property Hypothesis, 4 wire clob+handler) → **1,488/1,488** ✅
+- [x] `.env.example` actualizado con variables R2.0 (POLYGON_RPC_URL, SAFE_SIGNATURE_TYPE, MIN_PROXY_MATIC_BALANCE_THRESHOLD, etc.)
 
-**Impacto:** R3.x (real trading) NO puede completar ciclo entry→exit→redeem hasta resolver R2.0-redeem-impl. No es seguro escalar capital más allá de un canary minúsculo sin esto.
+**Pendiente:**
+- [ ] Migración DB `redeem_operations` table (status, tx_hash, gas_used, pusd_received, finality_status, error_reason)
+- [ ] Test end-to-end (order → win → redeem → finality) sobre testnet o dry_run=true
+- [ ] Variables entorno verificadas en canary (POLYGON_RPC_URL, POLYMARKET_PROXY_ADDRESS)
+- [ ] Documentar canary/production deployment steps en `GUIA_DESPLIEGUE_VPS.md`
+
+**Impacto:** R3.x (real trading) requiere esto para completar ciclo entry→exit→redeem. Paso 1 desbloquea integración; falta persistencia + test e2e antes de canary.
 
 ---
 

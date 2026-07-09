@@ -247,9 +247,16 @@ class Container:
             )
         else:
             from src.infrastructure.polymarket.clob_client import PolymarketCLOBClient
+
+            # ── Opcional: CTFRedeemer on-chain (R2.0-redeem-impl F1) ──
+            ctf_redeemer = None
+            if self.key_manager.polygon_rpc_url:
+                ctf_redeemer = self._build_ctf_redeemer()
+
             clob = PolymarketCLOBClient(
                 key_manager=self.key_manager,
                 redis_client=self.redis,
+                ctf_redeemer=ctf_redeemer,
             )
             circuit_breaker = CLOBCircuitBreaker(
                 config=CircuitBreakerConfig(
@@ -303,6 +310,44 @@ class Container:
         await self._wire_mtf_filter()
 
         log.info("container_initialized", mode=self.config.trading_mode)
+
+    def _build_ctf_redeemer(self):
+        """
+        Construye CTFRedeemer on-chain si POLYGON_RPC_URL disponible.
+
+        Resolución automática dry_run desde DEPLOY_ENV (RFC §13.Q2).
+        Si proxy_address no definido → usa wallet_address (EOA directo, sig_type=0).
+        """
+        from web3 import AsyncWeb3, AsyncHTTPProvider
+        from src.infrastructure.polymarket.ctf_redeemer import CTFRedeemer
+
+        rpc_url = self.key_manager.polygon_rpc_url
+        if not rpc_url:
+            return None
+
+        w3 = AsyncWeb3(AsyncHTTPProvider(rpc_url))
+
+        proxy_addr = self.key_manager.proxy_address or self.key_manager.wallet_address
+        operator_addr = self.key_manager.wallet_address
+        sig_type = self.key_manager.signature_type
+        dry_run = self.key_manager.redeem_dry_run()
+
+        redeemer = CTFRedeemer(
+            web3=w3,
+            proxy_address=proxy_addr,
+            operator_address=operator_addr,
+            signature_type=sig_type,
+            dry_run=dry_run,
+            operator_private_key=self.key_manager.private_key,
+        )
+
+        logger.info(
+            "ctf_redeemer_built",
+            rpc_url=rpc_url[:30] + "..." if len(rpc_url) > 30 else rpc_url,
+            proxy=proxy_addr[:10] + "..." if len(proxy_addr) > 10 else proxy_addr,
+            dry_run=dry_run,
+        )
+        return redeemer
 
     async def _wire_mtf_filter(self) -> None:
         """
@@ -658,9 +703,16 @@ class Container:
             from src.infrastructure.polymarket.clob_client import (
                 PolymarketCLOBClient,
             )
+
+            # ── Opcional: CTFRedeemer on-chain (R2.0-redeem-impl F1) ──
+            ctf_redeemer = None
+            if self.key_manager.polygon_rpc_url:
+                ctf_redeemer = self._build_ctf_redeemer()
+
             clob = PolymarketCLOBClient(
                 key_manager=self.key_manager,
                 redis_client=self.redis,
+                ctf_redeemer=ctf_redeemer,
             )
 
             circuit_breaker = CLOBCircuitBreaker(

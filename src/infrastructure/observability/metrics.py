@@ -143,6 +143,47 @@ REAL_ORDER_ERRORS = Counter(
     ["market_id"],
 )
 
+# ─────────────────────────────────────────────────────────────────────────────────
+# CTF ON-CHAIN REDEEM (R2.0-redeem-impl F1, RFC_approved 2026-06-25 §13)
+# Métricas para el flujo de redención via web3.py 7.16.0 hacia el
+# Thin Collateral Adapter (0x93070a...) en Polygon Mainnet.
+# ─────────────────────────────────────────────────────────────────────────────────
+REDEEM_GAS_USED = Histogram(
+    "polybot_redeem_gas_used",
+    "Gas consumido por tx de redeem CTF (gas units)",
+    ["proxy"],
+    buckets=[50_000, 100_000, 200_000, 350_000, 500_000, 750_000, 1_000_000],
+)
+REDEEM_PUSD_RECEIVED = Counter(
+    "polybot_redeem_pusd_received_total",
+    "pUSD acreditado al POLY_PROXY tras redeem confirmado (pUSD)",
+    ["proxy"],
+)
+REDEEM_TX_MINING_SECONDS = Histogram(
+    "polybot_redeem_tx_mining_seconds",
+    "Tiempo entre submit en mempool y minería del bloque",
+    buckets=[1.0, 5.0, 15.0, 30.0, 60.0, 120.0, 300.0],
+)
+REDEEM_TX_FINALITY_SECONDS = Histogram(
+    "polybot_redeem_tx_finality_seconds",
+    "Tiempo entre submit y finality práctica (64 confirmaciones @ Polygon)",
+    buckets=[30.0, 60.0, 120.0, 240.0, 480.0, 960.0, 1800.0],
+)
+REDEEM_FAILURES_REASON = Counter(
+    "polybot_redeem_failures_total",
+    "Total de fallos de redeem categorizados por reason",
+    ["reason"],
+)
+REDEEM_REPLACEMENTS = Counter(
+    "polybot_redeem_tx_replacements_total",
+    "Total de tx replacements (mismo nonce + gas bumped)",
+)
+REDEEM_PROXY_MATIC_BALANCE_GAUGE = Gauge(
+    "polybot_redeem_proxy_matic_balance",
+    "Balance MATIC del POLY_PROXY (wei)",
+    ["wallet"],
+)
+
 # ══════════════════════════════════════════════════════════════
 # STRATEGY ENGINE
 # ══════════════════════════════════════════════════════════════

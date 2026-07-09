@@ -40,6 +40,7 @@ from src.infrastructure.security.key_manager import KeyManager
 
 if TYPE_CHECKING:
     from src.infrastructure.cache.redis_client import RedisClient
+    from src.infrastructure.polymarket.ctf_redeemer import CTFRedeemer
 
 CLOB_MARKET_INFO_TTL_SECONDS = 300
 # 5 min — los fees dinámicos cambian con baja frecuencia.
@@ -104,11 +105,16 @@ class PolymarketCLOBClient:
         key_manager: KeyManager,
         chain_id: int = CHAIN_ID,
         redis_client: "RedisClient | None" = None,
+        ctf_redeemer: "CTFRedeemer | None" = None,
     ):
-        self._keys     = key_manager
-        self._chain_id = chain_id
+        self._keys         = key_manager
+        self._chain_id     = chain_id
         # opt-in: si None, get_market_info_cached degrada a SDK directo.
-        self._redis    = redis_client
+        self._redis        = redis_client
+        # opt-in: si None, redeem_position sigue en fail-fast del path REST V1.
+        # Cuando se inyecta, callers acceden via `client.ctf_redeemer.redeem(...)`
+        # con `shares_yes/shares_no` — no cabe en la firma legacy de redeem_position.
+        self._ctf_redeemer = ctf_redeemer
 
         # Construye ApiCreds desde el KeyManager
         creds = ApiCreds(
@@ -142,7 +148,13 @@ class PolymarketCLOBClient:
             wallet=_mask_wallet(self._keys.wallet_address),
             sdk_version="py-clob-client-v2",
             signature_type=sig_type,
+            ctf_redeemer=self._ctf_redeemer is not None,
         )
+
+    @property
+    def ctf_redeemer(self) -> "CTFRedeemer | None":
+        """CTFRedeemer inyectado para redeem on-chain, o None si no disponible."""
+        return self._ctf_redeemer
 
     # ------------------------------------------------------------------
     # OPERACIONES DE ÓRDENES (async → sync SDK via to_thread)
