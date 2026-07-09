@@ -210,12 +210,45 @@ class CTFRedeemer:
         condition_str   = "0x" + condition_bytes.hex()
         index_sets      = CTFRedeemer.compute_index_sets(shares_yes, shares_no)
 
+        # ── Guard idempotencia (si repo disponible) ───────────────
+        # Si ya existe redeem_operation PENDING/SUBMITTED/MINED para este
+        # condition_id, no reintentamos — evita double-redeem accidental.
+        if self._repo is not None:
+            if await self._repo.check_duplicate_redeem(condition_str):
+                REDEEM_FAILURES_REASON.labels(reason="duplicate_redeem").inc()
+                raise DuplicateRedeemError(
+                    f"Redeem operation ya activa para condition_id={condition_str[-12:]}"
+                )
+
         # ── Pre-flight ────────────────────────────────────────────
         if not await self.adapter_is_alive():
             raise CTFAdapterPausedError(
                 f"Adapter onramp {_mask_addr(self._adapter)} sin código en latest block"
             )
         await self.preflight_matic()
+
+        # ── INSERT pre-tx (status=pending, tx_hash=None) ──────────
+        # Idempotencia: el redeem_op_id ya está reservado en DB antes del
+        # broadcast. Si algo falla entre aquí y el send, reconcile detecta
+        # el registro pending para retry manual.
+        if self._repo is not None:
+            pre_receipt = RedeemReceipt(
+                redeem_op_id=redeem_op_id,
+                condition_id=condition_str,
+                tx_hash=None,
+                index_sets=index_sets,
+                shares_redeemed=shares_yes + shares_no,
+                pusd_received=0.0,
+                gas_used=None,
+                gas_fee_matic=None,
+                submitted_at=None,
+                mined_at=None,
+                confirmed_at=None,
+                status=FinalityStatus.PENDING.value,
+                proxy_address=self._proxy,
+                adapter_address=self._adapter,
+            )
+            await self._repo.save_redeem_operation(pre_receipt)
 
         # ── Build calldata al adapter ─────────────────────────────
         adapter_calldata = self._adapter_contract.encode_abi(
@@ -281,7 +314,7 @@ class CTFRedeemer:
                 logger.warning(
                     "ctf_redeem_dry_run_revert", error=str(e)[:200], op=redeem_op_id
                 )
-            return RedeemReceipt(
+            dry_receipt = RedeemReceipt(
                 redeem_op_id=redeem_op_id,
                 condition_id=condition_str,
                 tx_hash=None,
@@ -297,6 +330,10 @@ class CTFRedeemer:
                 proxy_address=self._proxy,
                 adapter_address=self._adapter,
             )
+            # UPDATE post-dry_run: sobrescribe el PENDING con el sim result
+            if self._repo is not None:
+                await self._repo.save_redeem_operation(dry_receipt)
+            return dry_receipt
 
         if not effective_key:
             raise CTFRedeemError(
@@ -332,8 +369,28 @@ class CTFRedeemer:
             nonce=nonce,
         )
 
+        # ── UPDATE post-submit (status=submitted, tx_hash=<hash>) ──
+        if self._repo is not None:
+            submitted_receipt = RedeemReceipt(
+                redeem_op_id=redeem_op_id,
+                condition_id=condition_str,
+                tx_hash=tx_hash,
+                index_sets=index_sets,
+                shares_redeemed=shares_yes + shares_no,
+                pusd_received=0.0,
+                gas_used=None,
+                gas_fee_matic=None,
+                submitted_at=submitted_at,
+                mined_at=None,
+                confirmed_at=None,
+                status=FinalityStatus.SUBMITTED.value,
+                proxy_address=self._proxy,
+                adapter_address=self._adapter,
+            )
+            await self._repo.save_redeem_operation(submitted_receipt)
+
         # ── Espera finality ───────────────────────────────────────
-        return await self.wait_for_finality(
+        final_receipt = await self.wait_for_finality(
             tx_hash=tx_hash,
             redeem_op_id=redeem_op_id,
             condition_id=condition_str,
@@ -345,6 +402,12 @@ class CTFRedeemer:
             gas_prices=gas_prices,
             pre_tx_pusd_balance=pre_tx_pusd_balance,
         )
+
+        # ── UPDATE post-finality (status=CONFIRMED, pusd_received, etc.) ──
+        if self._repo is not None:
+            await self._repo.save_redeem_operation(final_receipt)
+
+        return final_receipt
 
     # ══════════════════════════════════════════════════════════════
     # FINALITY — espera 64 confirmaciones
