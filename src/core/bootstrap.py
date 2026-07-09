@@ -122,6 +122,11 @@ async def bootstrap() -> None:
     # ── Paso 5: Migraciones de DB ─────────────────────────────────────
     await _run_migrations()
 
+    # ── Paso 5.5: Reconcile redeem operations pendientes ──────────────
+    # Si hay operaciones PENDING/SUBMITTED/MINED tras restart, las reporta.
+    # Reconciliación completa (retry automático) será implementada en F2.
+    await _reconcile_pending_redeems(container)
+
     # ── Paso 6: Setup graceful shutdown ──────────────────────────────
     loop = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
@@ -180,6 +185,53 @@ async def bootstrap() -> None:
     shutdown_tracing()
 
     logger.info("bootstrap_shutdown_complete")
+
+
+async def _reconcile_pending_redeems(container: Container) -> None:
+    """
+    Reconcilia operaciones redeem pendientes tras restart del bot.
+
+    Lee redeem_operations con status IN (pending, submitted, mined) y reporta:
+      - Cuántas hay pendientes
+      - Sus tx_hash (si available) para verificación manual
+      - Log warning si alguna lleva > 10 min pendiente
+
+    Reconciliación automática (retry via wait_for_finality) será implementada
+    en F2 cuando el CTFRedeemer.reconcile_on_startup esté completo.
+    """
+    try:
+        pending_ops = await container.repository.get_pending_redeems(limit=100)
+
+        if not pending_ops:
+            logger.info("reconcile_pending_redeems_none")
+            return
+
+        logger.warning(
+            "reconcile_pending_redeems_found",
+            count=len(pending_ops),
+            ops=[
+                {
+                    "redeem_op_id": op.redeem_op_id,
+                    "condition_id": op.condition_id[-12:],
+                    "status": op.status,
+                    "tx_hash": op.tx_hash[-12:] if op.tx_hash else None,
+                    "submitted_at": op.submitted_at.isoformat() if op.submitted_at else None,
+                }
+                for op in pending_ops
+            ],
+        )
+
+        # TODO F2: implementar retry automático
+        # for op in pending_ops:
+        #     if op.tx_hash and op.status in (submitted, mined):
+        #         await ctf_redeemer.reconcile_tx(op.tx_hash, op.redeem_op_id)
+
+    except Exception as e:
+        logger.error(
+            "reconcile_pending_redeems_error",
+            error=str(e)[:200],
+        )
+        # No falla el arranque — reconcile es best-effort
 
 
 async def _run_migrations() -> None:

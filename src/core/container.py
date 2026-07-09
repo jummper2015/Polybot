@@ -317,6 +317,7 @@ class Container:
 
         Resolución automática dry_run desde DEPLOY_ENV (RFC §13.Q2).
         Si proxy_address no definido → usa wallet_address (EOA directo, sig_type=0).
+        Inyecta repository para activar persistencia (idempotencia + reconcile).
         """
         from web3 import AsyncWeb3, AsyncHTTPProvider
         from src.infrastructure.polymarket.ctf_redeemer import CTFRedeemer
@@ -339,6 +340,7 @@ class Container:
             signature_type=sig_type,
             dry_run=dry_run,
             operator_private_key=self.key_manager.private_key,
+            repository=self.repository,  # Activa persistencia
         )
 
         logger.info(
@@ -346,6 +348,7 @@ class Container:
             rpc_url=rpc_url[:30] + "..." if len(rpc_url) > 30 else rpc_url,
             proxy=proxy_addr[:10] + "..." if len(proxy_addr) > 10 else proxy_addr,
             dry_run=dry_run,
+            persistence=True,
         )
         return redeemer
 
