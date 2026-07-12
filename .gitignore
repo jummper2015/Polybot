@@ -62,6 +62,12 @@ node_modules/
 # ── TypeScript incremental build cache ─────────────────────────────
 *.tsbuildinfo
 
+# ── Pip output redirect artifacts (e.g. pip install x >= 0.28 creates =0.28) ─
+=*
+
+# ── Report artifacts at repo root (canonical location: data/reports/) ──
+/reports/
+
 
 # ── OS ────────────────────────────────────────────────────────────────
 .DS_Store
