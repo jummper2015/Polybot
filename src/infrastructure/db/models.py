@@ -121,12 +121,17 @@ class PositionModel(Base):
         DateTime, nullable=False, server_default=func.now()
     )
     closed_at:    Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Ola 2.1: timestamp de detección de market_resolved vía WS.
+    # Migración 006. Marca que la posición NO puede venderse; solo redimir.
+    resolved_at:  Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
         Index("ix_positions_market_id",  "market_id"),
         Index("ix_positions_mode",       "mode"),
         Index("ix_positions_closed_at",  "closed_at"),   # NULL = abierta
         Index("ix_positions_opened_at",  "opened_at"),
+        # Ola 2.1: índice para filtrar posiciones resueltas pendientes de redeem.
+        Index("ix_positions_resolved_at", "resolved_at"),
         # R2.5.3: unique partial index on (market_id, mode) WHERE closed_at IS NULL.
         # Gestionado vía raw SQL en migración 005 (SQLAlchemy no soporta
         # partial indexes nativamente en __table_args__).

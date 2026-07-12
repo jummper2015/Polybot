@@ -26,11 +26,24 @@ class Position:
     exit_reason:   str | None     # Motivo de cierre
     opened_at:     datetime = field(default_factory=datetime.utcnow)
     closed_at:     datetime | None = None
+    # Ola 2.1: timestamp de resolución del mercado (event WS market_resolved).
+    # Marcado en TradingService._on_ws_market_resolved. Cuando != None,
+    # la posición NO se puede vender (mercado ya expirado en el CLOB) —
+    # solo se puede redimir vía CTF (R2.0 pendiente).
+    resolved_at:   datetime | None = None
 
     @property
     def is_open(self) -> bool:
         """Verdadero si la posición sigue abierta."""
         return self.closed_at is None
+
+    @property
+    def is_resolved(self) -> bool:
+        """
+        Ola 2.1: True si el WS notificó que el mercado se resolvió.
+        Una posición resuelta abierta requiere redeem CTF (R2.0), no exit.
+        """
+        return self.resolved_at is not None
 
     def calculate_unrealized_pnl(self, current_price: float) -> float:
         """

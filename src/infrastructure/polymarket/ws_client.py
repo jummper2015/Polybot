@@ -36,6 +36,12 @@ MIN_PRICE_CHANGE = 0.001
 # Tipo del callback que recibe ticks
 TickCallback = Callable[[MarketTick], Awaitable[None]]
 
+# Ola 2.1: callback opcional para eventos market_resolved.
+# El WS de Polymarket emite `event_type == "market_resolved"` cuando
+# el UMA oracle resuelve el mercado (typically 1-5 min tras la ventana
+# de expiry). El TradingService lo usa para marcar Position.resolved_at.
+ResolutionCallback = Callable[[str], Awaitable[None]]  # (market_id,) → None
+
 # Mapeo de eventos WS adicionales que no generan ticks
 WS_NON_TICK_EVENTS = {"tick_size_change", "new_market", "market_resolved"}
 
@@ -55,6 +61,18 @@ class PolymarketWSClient:
 
         # Estado de conexión por mercado
         self._states: dict[str, WSMarketState] = {}
+
+        # Ola 2.1: callback global (opcional) para eventos market_resolved.
+        # Uno solo — el TradingService lo registra al arrancar.
+        self._resolution_callback: ResolutionCallback | None = None
+
+    def set_resolution_callback(self, callback: ResolutionCallback) -> None:
+        """
+        Ola 2.1: registra un handler que se llama con `market_id` cuando
+        el WS emite `event_type == market_resolved`. Idempotente — el
+        último set gana. Pasar None des-registra.
+        """
+        self._resolution_callback = callback
 
     # ------------------------------------------------------------------
     # API PÚBLICA
@@ -276,7 +294,19 @@ class PolymarketWSClient:
                 event_type = data.get("event_type", data.get("type", ""))
                 if event_type == "tick_size_change":
                     await self._handle_tick_size_change(market_id, data, log)
-                elif event_type in ("new_market", "market_resolved"):
+                elif event_type == "market_resolved":
+                    # Ola 2.1: invoca el callback global si está registrado.
+                    log.info("ws_market_resolved", market_id=market_id)
+                    if self._resolution_callback is not None:
+                        try:
+                            await self._resolution_callback(market_id)
+                        except Exception as e:
+                            log.error(
+                                "ws_resolution_callback_failed",
+                                error=str(e),
+                                market_id=market_id,
+                            )
+                elif event_type == "new_market":
                     log.debug(
                         "ws_info_event",
                         event_type=event_type,

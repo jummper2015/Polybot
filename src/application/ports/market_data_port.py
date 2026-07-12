@@ -29,3 +29,12 @@ class IMarketDataPort(ABC):
 
     @abstractmethod
     async def unsubscribe_order_book(self, market_id: str) -> None: ...
+
+    @abstractmethod
+    def set_resolution_callback(self, callback) -> None:
+        """
+        Ola 2.1: registra un handler llamado con `market_id` cuando el
+        WS emite `event_type == market_resolved`. Idempotente. Puede
+        ser None para des-registrar.
+        """
+        ...

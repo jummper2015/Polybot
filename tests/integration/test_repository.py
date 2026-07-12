@@ -320,6 +320,78 @@ class TestRepositoryPositions:
         assert existing_model.exit_reason == "target_reached"
         assert existing_model.closed_at is not None
 
+    # ── Ola 2.1: resolved_at round-trip + mark_positions_resolved ───────
+
+    def test_position_to_model_persists_resolved_at(self, repo):
+        """Regla dura #10: mapper Entity→Model debe incluir resolved_at."""
+        resolved = datetime(2026, 7, 12, 10, 0, 0)
+        position = _make_position()
+        position.resolved_at = resolved
+
+        model = repo._position_to_model(position)
+        assert model.resolved_at == resolved, (
+            "_position_to_model no persiste resolved_at (regla dura #10)"
+        )
+
+    def test_model_to_position_reads_resolved_at(self, repo):
+        """Regla dura #10: mapper Model→Entity debe leer resolved_at."""
+        resolved = datetime(2026, 7, 12, 10, 0, 0)
+        model = MagicMock(spec=PositionModel)
+        model.id = "pos_1"
+        model.market_id = "m"
+        model.asset = "BTC"
+        model.window = "5m"
+        model.side = "YES"
+        model.amount = 10.0
+        model.shares = 12.0
+        model.entry_price = 0.83
+        model.exit_price = None
+        model.pnl = None
+        model.pnl_pct = None
+        model.mode = "paper"
+        model.strategy = "BAT"
+        model.exit_reason = None
+        model.opened_at = datetime(2026, 7, 12, 9, 0, 0)
+        model.closed_at = None
+        model.resolved_at = resolved
+
+        entity = repo._model_to_position(model)
+        assert entity.resolved_at == resolved
+        assert entity.is_resolved is True
+
+    @pytest.mark.asyncio
+    async def test_mark_positions_resolved_returns_rowcount(
+        self, repo, mock_session
+    ):
+        """
+        mark_positions_resolved emite UPDATE con WHERE closed_at IS NULL AND
+        resolved_at IS NULL (idempotencia) y retorna rowcount.
+        """
+        mock_result = MagicMock()
+        mock_result.rowcount = 3
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        n = await repo.mark_positions_resolved(
+            "market_xyz", datetime(2026, 7, 12, 10, 0, 0)
+        )
+        assert n == 3
+        # Verifica que execute fue llamado (con el UPDATE statement)
+        assert mock_session.execute.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_mark_positions_resolved_zero_when_none_open(
+        self, repo, mock_session
+    ):
+        """Rowcount 0 → no crash, retorna 0."""
+        mock_result = MagicMock()
+        mock_result.rowcount = 0
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        n = await repo.mark_positions_resolved(
+            "market_xyz", datetime(2026, 7, 12, 10, 0, 0)
+        )
+        assert n == 0
+
 
 class TestRepositoryQueries:
 

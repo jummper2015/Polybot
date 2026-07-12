@@ -23,6 +23,8 @@ class AuditAction(str, Enum):
     REAL_TRADING_ENABLED  = "real_trading_enabled"
     REAL_TRADING_DISABLED = "real_trading_disabled"
     GUARDRAIL_TRIGGERED = "guardrail_triggered"
+    # Ola 2.1: WS emitió market_resolved para un mercado con posición abierta.
+    MARKET_RESOLVED     = "market_resolved"
 
 
 class AuditLogger:

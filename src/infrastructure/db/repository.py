@@ -3,7 +3,7 @@
 from datetime import datetime
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -303,6 +303,33 @@ class SQLAlchemyRepository(IRepositoryPort):
             result = await session.execute(stmt)
             return float(result.scalar() or 0.0)
 
+    async def mark_positions_resolved(
+        self, market_id: str, resolved_at
+    ) -> int:
+        """
+        Ola 2.1: marca todas las posiciones OPEN de `market_id` como
+        resueltas (`positions.resolved_at = :resolved_at`). No las cierra
+        (closed_at intacto): el bot debe redimir (CTF R2.0) o esperar
+        exit manual; solo el timestamp cambia.
+
+        Idempotente: si ya están marcadas con un resolved_at previo,
+        NO lo sobreescribe (WHERE resolved_at IS NULL). El primer
+        `market_resolved` event gana; los siguientes son no-ops.
+
+        Retorna: número de filas actualizadas.
+        """
+        async with self._session_factory() as session:
+            async with session.begin():
+                stmt = (
+                    update(PositionModel)
+                    .where(PositionModel.market_id == market_id)
+                    .where(PositionModel.closed_at.is_(None))
+                    .where(PositionModel.resolved_at.is_(None))
+                    .values(resolved_at=resolved_at)
+                )
+                result = await session.execute(stmt)
+                return int(result.rowcount or 0)
+
     # ------------------------------------------------------------------
     # AUDIT LOG
     # ------------------------------------------------------------------
@@ -409,6 +436,9 @@ class SQLAlchemyRepository(IRepositoryPort):
         )
 
     def _position_to_model(self, p: Position) -> PositionModel:
+        # Regla dura #10: mapper Entity → Model EXHAUSTIVO y simétrico.
+        # Cualquier campo nuevo en domain.Position DEBE aparecer aquí y
+        # en _model_to_position en el mismo PR.
         return PositionModel(
             id=p.id, market_id=p.market_id,
             asset=p.asset, window=p.window,
@@ -418,6 +448,7 @@ class SQLAlchemyRepository(IRepositoryPort):
             pnl_pct=p.pnl_pct, mode=p.mode,
             strategy=p.strategy, exit_reason=p.exit_reason,
             opened_at=p.opened_at, closed_at=p.closed_at,
+            resolved_at=p.resolved_at,  # Ola 2.1
         )
 
     def _model_to_position(self, m: PositionModel) -> Position:
@@ -430,4 +461,5 @@ class SQLAlchemyRepository(IRepositoryPort):
             pnl_pct=m.pnl_pct, mode=m.mode,
             strategy=m.strategy, exit_reason=m.exit_reason,
             opened_at=m.opened_at, closed_at=m.closed_at,
+            resolved_at=m.resolved_at,  # Ola 2.1
         )

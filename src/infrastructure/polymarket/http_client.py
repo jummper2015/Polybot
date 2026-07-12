@@ -429,6 +429,18 @@ class PolymarketHTTPClient(IMarketDataPort):
             return
         await self._ws.unsubscribe(market_id)
 
+    def set_resolution_callback(self, callback) -> None:
+        """
+        Ola 2.1: registra un handler que se llama con `market_id` cuando
+        el WS detecta `event_type == market_resolved`. Idempotente.
+
+        No-op en REST-only mode (el WS no emite eventos).
+        """
+        if self._rest_only:
+            logger.debug("ws_resolution_callback_skipped_rest_only")
+            return
+        self._ws.set_resolution_callback(callback)
+
     async def close(self) -> None:
         """Cierra el cliente HTTP, todas las conexiones WS y resetea estado de degradación."""
         if not self._rest_only:

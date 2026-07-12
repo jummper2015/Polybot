@@ -93,6 +93,9 @@ class TradingService:
 
         self._running      = False
         self._tasks:       list[asyncio.Task] = []
+        # Ola 2.1: audit logger opcional para market_resolved events.
+        # Si no se inyecta, el handler solo loguea; no crashea.
+        self._audit_log = None
 
     # ------------------------------------------------------------------
     # CONTROL DEL BOT
@@ -117,6 +120,15 @@ class TradingService:
 
         # Subscribe WebSockets para recibir orderbook en tiempo real
         await self._market_svc.subscribe_all_to_orderbook(self._on_ws_tick)
+
+        # Ola 2.1: registra el handler global de market_resolved.
+        # Best-effort: MarketService podría estar en REST-only mode.
+        try:
+            self._market_svc.set_resolution_callback(
+                self._on_ws_market_resolved
+            )
+        except Exception as e:
+            logger.warning("ws_resolution_callback_setup_failed", error=str(e))
 
         # Lanza las dos tareas en paralelo
         self._tasks = [
@@ -174,6 +186,48 @@ class TradingService:
             logger.debug(
                 "ws_tick_update_failed",
                 market_id=tick.market_id,
+                error=str(e),
+            )
+
+    async def _on_ws_market_resolved(self, market_id: str) -> None:
+        """
+        Ola 2.1: handler invocado cuando el WS emite `market_resolved`.
+
+        Marca todas las posiciones OPEN de este `market_id` con
+        `resolved_at = now()`, sin cerrarlas (el mercado ya no admite
+        órdenes de venta; solo redeem CTF via R2.0 pendiente).
+
+        Idempotente: si ya estaban marcadas, `mark_positions_resolved`
+        retorna 0 (WHERE resolved_at IS NULL).
+
+        Errores en persistencia se loguean pero NO se propagan — el
+        WS pipeline no debe caer por un fallo de DB.
+        """
+        try:
+            now = datetime.utcnow()
+            n = await self._repo.mark_positions_resolved(market_id, now)
+            logger.info(
+                "market_resolved_persisted",
+                market_id=market_id,
+                positions_marked=n,
+            )
+            # Audit log opcional (best-effort)
+            if self._audit_log is not None and n > 0:
+                try:
+                    await self._audit_log.log(
+                        action="market_resolved",  # AuditAction.MARKET_RESOLVED
+                        details={
+                            "market_id": market_id,
+                            "positions_marked": n,
+                        },
+                        market_id=market_id,
+                    )
+                except Exception as e:
+                    logger.debug("market_resolved_audit_failed", error=str(e))
+        except Exception as e:
+            logger.error(
+                "market_resolved_handler_failed",
+                market_id=market_id,
                 error=str(e),
             )
 

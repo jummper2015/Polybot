@@ -55,6 +55,17 @@ class IRepositoryPort(ABC):
     @abstractmethod
     async def get_total_pnl(self, mode: str | None = None) -> float: ...
 
+    @abstractmethod
+    async def mark_positions_resolved(
+        self, market_id: str, resolved_at
+    ) -> int:
+        """
+        Ola 2.1: marca todas las posiciones OPEN de `market_id` como
+        resueltas (positions.resolved_at = resolved_at) sin cerrarlas
+        (closed_at intacto). Retorna cuántas se actualizaron.
+        """
+        ...
+
     # --- Bot Settings ---
     @abstractmethod
     async def get_bot_setting(self, key: str) -> str | None: ...

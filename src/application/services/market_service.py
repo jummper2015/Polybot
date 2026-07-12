@@ -236,6 +236,16 @@ class MarketService:
             count=len(markets),
         )
 
+    def set_resolution_callback(self, callback) -> None:
+        """
+        Ola 2.1: registra el callback global de market_resolved en el
+        cliente WS. Idempotente. TradingService lo llama al arrancar.
+
+        Levantará AttributeError si el port subyacente no lo implementa
+        — el caller (TradingService.start) captura y sigue.
+        """
+        self._market_data.set_resolution_callback(callback)
+
     async def update_market_prices(
         self,
         market_id: str,
