@@ -36,6 +36,29 @@ CYCLE_INTERVAL_SECONDS = 30
 # Intervalo de re-discovery de mercados (segundos)
 DISCOVERY_INTERVAL_SECONDS = 3600
 
+# Ola 2.3: backoff cuando get_active_markets retorna vacío (rollover robusto).
+# Empieza en 30s (== ciclo normal) y sube hasta 5min si sigue vacío.
+# Se resetea a 30s en cuanto vuelven a aparecer mercados activos.
+EMPTY_CYCLE_BACKOFF_SECONDS = [30, 60, 120, 240, 300]
+
+
+def compute_empty_backoff_wait(consecutive_empty: int) -> int:
+    """
+    Ola 2.3: retorna cuántos segundos dormir en la próxima iteración
+    del `_market_cycle_loop`, dado el número de ciclos vacíos consecutivos.
+
+    Contrato:
+    - `consecutive_empty <= 0` → devuelve `CYCLE_INTERVAL_SECONDS` (normal).
+    - `consecutive_empty >= 1` → índice `min(n-1, len(backoff)-1)` de la
+      tabla `EMPTY_CYCLE_BACKOFF_SECONDS`.
+    - Monótono no decreciente: nunca esperamos menos al aumentar `n`.
+    - Cap superior: `max(EMPTY_CYCLE_BACKOFF_SECONDS) = 300s (5 min)`.
+    """
+    if consecutive_empty <= 0:
+        return CYCLE_INTERVAL_SECONDS
+    idx = min(consecutive_empty - 1, len(EMPTY_CYCLE_BACKOFF_SECONDS) - 1)
+    return EMPTY_CYCLE_BACKOFF_SECONDS[idx]
+
 
 class TradingService:
     """
@@ -162,13 +185,38 @@ class TradingService:
         """
         Loop principal: cada 30 segundos corre un ciclo
         para cada mercado activo descubierto.
+
+        Ola 2.3: cuando `get_active_markets` retorna vacío (típico durante
+        rollover entre ventanas M5/M15), aplica backoff exponencial
+        30s→60s→120s→240s→300s en lugar de martillar la API cada 30s.
+        Se resetea a 30s en cuanto aparezca al menos un mercado activo.
         """
+        consecutive_empty = 0
         while self._running:
+            wait_seconds = CYCLE_INTERVAL_SECONDS
             try:
                 markets = await self._market_svc.get_active_markets()
                 active  = [m for m in markets if m.is_active()]
 
-                logger.debug("cycle_tick", active_markets=len(active))
+                if not active:
+                    # Ola 2.3: backoff progresivo cuando no hay markets.
+                    consecutive_empty += 1
+                    wait_seconds = compute_empty_backoff_wait(consecutive_empty)
+                    logger.info(
+                        "cycle_empty_backoff",
+                        consecutive_empty=consecutive_empty,
+                        next_wait_seconds=wait_seconds,
+                    )
+                else:
+                    # Rollover recuperado o estado normal — reset backoff.
+                    if consecutive_empty > 0:
+                        logger.info(
+                            "cycle_recovered_from_empty",
+                            consecutive_empty=consecutive_empty,
+                            active_markets=len(active),
+                        )
+                    consecutive_empty = 0
+                    logger.debug("cycle_tick", active_markets=len(active))
 
                 # Procesa todos los mercados en paralelo
                 await asyncio.gather(
@@ -180,7 +228,7 @@ class TradingService:
                 logger.error("cycle_loop_error", error=str(e))
                 CYCLE_ERRORS.inc()
 
-            await asyncio.sleep(CYCLE_INTERVAL_SECONDS)
+            await asyncio.sleep(wait_seconds)
 
     async def _rediscovery_loop(self) -> None:
         """

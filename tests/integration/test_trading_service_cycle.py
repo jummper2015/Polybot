@@ -508,3 +508,73 @@ class TestTradingServiceCycle:
             f"Expected amount=0.0 (suggested_amount respetado), got "
             f"{called_amount!r} — regresión del bug `or` fallacy"
         )
+
+
+# ── Ola 2.3: Backoff cuando get_active_markets retorna vacío ─────────────
+
+class TestEmptyCycleBackoff:
+    """
+    Ola 2.3: cuando `_market_cycle_loop` encuentra 0 mercados activos,
+    debe hacer backoff progresivo 30s→60s→120s→240s→300s (cap) en lugar
+    de martillar la API a 30s constantes.
+    """
+
+    def test_normal_state_returns_cycle_interval(self):
+        """consecutive_empty=0 → CYCLE_INTERVAL_SECONDS (30s)."""
+        from src.application.services.trading_service import (
+            CYCLE_INTERVAL_SECONDS,
+            compute_empty_backoff_wait,
+        )
+        assert compute_empty_backoff_wait(0) == CYCLE_INTERVAL_SECONDS
+
+    def test_negative_treated_as_zero(self):
+        """Edge: valores <=0 se tratan como estado normal, no crashea."""
+        from src.application.services.trading_service import (
+            CYCLE_INTERVAL_SECONDS,
+            compute_empty_backoff_wait,
+        )
+        assert compute_empty_backoff_wait(-5) == CYCLE_INTERVAL_SECONDS
+
+    def test_progression_matches_spec(self):
+        """
+        1 empty → 30s, 2 → 60s, 3 → 120s, 4 → 240s, 5+ → 300s cap.
+        Espejo exacto de EMPTY_CYCLE_BACKOFF_SECONDS.
+        """
+        from src.application.services.trading_service import (
+            compute_empty_backoff_wait,
+        )
+        expected = {1: 30, 2: 60, 3: 120, 4: 240, 5: 300, 10: 300, 1000: 300}
+        for n, exp in expected.items():
+            assert compute_empty_backoff_wait(n) == exp, (
+                f"consecutive_empty={n}: esperado {exp}s, obtuvo "
+                f"{compute_empty_backoff_wait(n)}s"
+            )
+
+    def test_monotonic_non_decreasing(self):
+        """
+        Property: el tiempo de espera nunca disminuye al aumentar
+        consecutive_empty. Fundamental para que el backoff sea "backoff".
+        """
+        from src.application.services.trading_service import (
+            compute_empty_backoff_wait,
+        )
+        prev = compute_empty_backoff_wait(1)
+        for n in range(2, 50):
+            curr = compute_empty_backoff_wait(n)
+            assert curr >= prev, (
+                f"Backoff no monótono en n={n}: {curr} < prev {prev}"
+            )
+            prev = curr
+
+    def test_capped_at_5min(self):
+        """
+        Cap dura: nunca >300s aunque el bot lleve horas sin ver mercados.
+        Evita "olvidarse" de comprobar durante > 5 min.
+        """
+        from src.application.services.trading_service import (
+            compute_empty_backoff_wait,
+        )
+        for n in [5, 10, 100, 10_000, 1_000_000]:
+            assert compute_empty_backoff_wait(n) == 300, (
+                f"Cap violado en n={n}"
+            )
