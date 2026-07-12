@@ -102,7 +102,7 @@ Ambas estrategias implementan el ABC `BaseStrategy` con 5 métodos requeridos:
 
 - **6 módulos de seguridad:** Audit Log, Key Manager, Log Sanitizer, Rate Limiter, Secure Config, Security Guard
 - **Circuit Breaker** — 5 fallos en 60s → circuito ABIERTO por 60s, recuperación half-open
-- **Claves de Idempotencia** — SHA256(estrategia + mercado + minuto) previene órdenes duplicadas
+- **Claves de Idempotencia** — SHA256(estrategia + mercado + side + operación + minuto)[:16] previene órdenes duplicadas
 - **Guardrails** — Máximo fijo de $500 USDC/orden, mínimo $1 USDC
 - **Cero secretos** en el repositorio, logs sanitizados antes de escritura
 
@@ -574,7 +574,7 @@ Disparadores: push a `main`, PRs a `main`, programación diaria (06:00 UTC), dis
 | **Audit Log** | Tabla inmutable `audit_events` — cada orden real registrada |
 | **Security Guard** | Validación pre-orden con múltiples comprobaciones |
 | **Key Manager** | Carga segura de clave privada desde entorno |
-| **Claves de Idempotencia** | SHA256(estrategia + mercado + minuto truncado) → 16 caracteres |
+| **Claves de Idempotencia** | SHA256(estrategia + mercado + side + operación + minuto)[:16] → 16 chars hex |
 | **Log Sanitizer** | Filtra `POLYMARKET_PRIVATE_KEY`, `API_SECRET`, `PIN` de todos los logs |
 | **Autenticación Telegram** | Solo `TELEGRAM_ADMIN_CHAT_ID` autorizado |
 | **BD-antes-de-CLOB** | `Order` persistida como `PENDING` antes de cualquier llamada API |

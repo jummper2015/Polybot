@@ -4,7 +4,9 @@
 
 PolyBot es un sistema de trading algorítmico para **Polymarket**, focado en mercados de predicción cripto (BTC/ETH), ventanas M5 / M15, modos `paper` / `canary` / `production`.
 
-- SDK CLOB oficial: `py-clob-client-v2` 1.0.1 (Polymarket Engineering)
+- SDK CLOB oficial: `py-clob-client-v2` 1.0.1 (pin exacto, Polymarket Engineering)
+- Idempotency key: `SHA256(strategy + market + side + operation + minute_bucket)[:16]` (64-bit hex)
+- **Fuente única de dependencias:** `pyproject.toml`. `requirements.txt` es generado. Cualquier discrepancia = bug.
 - Endpoint REST CLOB: `https://clob.polymarket.com`
 - Endpoint Gamma: `https://gamma-api.polymarket.com`
 - Endpoint Data API: `https://data-api.polymarket.com`
@@ -65,14 +67,22 @@ src/
 6. **Cambios en `src/infrastructure/polymarket/`** invocan skill `polymarket-clob-audit`.
 7. **No optimizar Sharpe en datos sintéticos** — solo `data/parquet/` reales.
 8. **No introducir dependencias** sin justificación + verificación async + check de mantenimiento.
+9. **Nunca usar truthiness (`or`) sobre valores numéricos donde 0.0 sea válido** — usar `is not None` (evita R2.2.1 `suggested_amount or requested_amount` fallacy).
+10. **Mappers Entity ↔ Model deben ser exhaustivos y simétricos** en `src/infrastructure/db/repository.py`. Cualquier campo nuevo en `domain.Order` / `domain.Position` / `domain.Market` DEBE aparecer en `_X_to_model` y `_model_to_X` en el mismo PR (evita R2.2.2 `idempotency_key` no persistido).
 
 ## No-go zones (no tocar sin RFC)
 
-- `alembic/versions/*` — migraciones aplicadas en staging/prod
+- `alembic/versions/001_initial_schema.py` — migración inicial aplicada en staging/prod
+- `alembic/versions/003_bot_settings_mode.py` — aplicada en staging/prod
+- `alembic/versions/004_order_retry_fields.py` — aplicada en staging/prod
 - `src/domain/` — solo extensiones aditivas, nunca breaking changes
 - `monitoring/alerts.yml` — 15 alertas críticas, romper = PagerDuty
 - `k8s/production/*` — capital real, requiere aprobación humana
 - `.env` y `.env.example` para secrets reales
+
+**Nuevas migraciones (005+) y cambios en `src/infrastructure/db/`** están permitidos
+pero requieren obligatoriamente el skill `db-integrity-guard` (constraints,
+Índices parciales, migraciones reversibles, IntegrityError handlers).
 
 ## Documentación viva (leer antes de cambios mayores)
 
@@ -127,13 +137,16 @@ Toda mejora debe pasar: walk-forward → Monte Carlo → out-of-sample → paper
 
 ## Skills disponibles para este proyecto
 
-Las cinco skills viven en `.claude/skills/<nombre>/SKILL.md`. Cada una se activa por la `description` de su frontmatter cuando la conversación toca el área correspondiente:
+Las ocho skills viven en `.claude/skills/<nombre>/SKILL.md`. Cada una se activa por la `description` de su frontmatter cuando la conversación toca el área correspondiente:
 
 - `polymarket-clob-audit` — auditoría CLOB V2 (pUSD, builderCode, signature_type, fees dinámicos, WS). Obligatorio en cualquier cambio en `src/infrastructure/polymarket/`.
 - `paper-vs-real-execution` — dicotomía paper/canary/real, 3 capas de confirmación, idempotencia, switch `/mode`. Obligatorio en `src/execution/` y `interfaces/telegram/handlers/`.
 - `pre-real-trading-checklist` — los 6 pasos de R2.1 antes de habilitar real trading.
 - `strategy-validation-protocol` — cadena walk-forward → Monte Carlo → OOS → paper → canary → real. Obligatorio en `src/strategies/`.
 - `risk-engine-guard` — auditoría de las 6 reglas (Kelly, drawdown, exposure, positions, balance, hedge) + property tests Hypothesis. Obligatorio en `src/risk/`.
+- `db-integrity-guard` — integridad de BD (constraints anti-duplicado, índices parciales, migraciones reversibles, IntegrityError handlers). Obligatorio en `alembic/versions/` y `src/infrastructure/db/`.
+- `dependency-hygiene` — higiene de dependencias (pyproject.toml como fuente única de verdad, pins exactos, pip-audit sin CVEs HIGH, sin basura `=*`). Obligatorio al tocar `requirements.txt` o `pyproject.toml`.
+- `ctf-onchain-redeem` — redeem on-chain de CTF tokens (web3.py, redeemPositions, indexSets, gas estimation, tx receipt). Obligatorio en `src/execution/real_handler.py` redeem + scripts de redeem.
 
 Para invocarlas manualmente, usa la herramienta Skill con el nombre del skill (sin barra). El harness también las recordará automáticamente cuando el prompt toque el área (ver `Harness` abajo).
 
@@ -141,11 +154,13 @@ Para invocarlas manualmente, usa la herramienta Skill con el nombre del skill (s
 
 El proyecto define un harness reproducible para mantener orden:
 
-- **Permissions** — `allow` para comandos rutinarios (pytest, ruff, mypy, scripts de validación, `git status/diff/log`); `deny` para destructivos (`rm -rf` masivos, `git push --force`, `git reset --hard`, `--no-verify`, lectura/escritura de `.env`, edición de `alembic/versions/`, `k8s/production/`, `monitoring/alerts.yml`); `ask` para acciones con blast radius (commits, push, PR, migraciones downgrade, kubectl).
+- **Permissions** — `allow` para comandos rutinarios (pytest, ruff, mypy, scripts de validación, `git status/diff/log`); `deny` para destructivos (`rm -rf` masivos, `git push --force`, `git reset --hard`, `--no-verify`, lectura/escritura de `.env`, edición de migraciones aplicadas `001/003/004`, `k8s/production/`, `monitoring/alerts.yml`); `ask` para acciones con blast radius (commits, push, PR, migraciones downgrade, kubectl).
 - **Hooks**:
   - `SessionStart` → `hooks/session_start.sh`: imprime prioridades y estado de la fase R1 al abrir sesión.
-  - `UserPromptSubmit` → `hooks/remind_workflow.sh`: si el prompt menciona estrategia/risk/Polymarket/ejecución/real-trading, recuerda el skill aplicable.
+  - `UserPromptSubmit` → `hooks/remind_workflow.sh`: si el prompt menciona estrategia/risk/Polymarket/ejecución/real-trading/DB/dependencias/redeem, recuerda el skill aplicable.
   - `PreToolUse` (Edit|Write|NotebookEdit|Bash) → `hooks/protect_nogo.sh`: bloquea ediciones en no-go zones y comandos destructivos.
+  - `PreToolUse` (Edit|Write|Bash) → `hooks/protect_trash.sh`: bloquea commits que incluyan archivos basura `=*`.
+  - `PreToolUse` (Edit|Write) → `hooks/check_dep_drift.sh`: detecta drift entre `requirements.txt` y `pyproject.toml`.
   - `Stop` → `hooks/stop_summary.sh`: al cerrar el turno, lista los checks pendientes según los paths modificados.
 
 Los hooks viven en `.claude/hooks/` y son `bash` ejecutables. No requieren dependencias salvo `jq` (degradación amable si falta).

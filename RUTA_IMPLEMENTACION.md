@@ -359,6 +359,378 @@ SEPTIEMBRE+:         R4.1 → R4.4  — Excelencia y escalado
 
 ---
 
+---
+
+## 🔬 R2.2 — AUDITORÍA INTEGRAL 2026-07-11 (arranque paper + dashboard + gaps operativos)
+
+> **Contexto:** el usuario pide (a) revisar estado real del bot, (b) validar arranque paper end-to-end, (c) profesionalizar el dashboard, (d) confirmar que puede leer mercados M5/M15 y operar. Se ejecutó auditoría paralela sobre 8 vectores: params/fallos silenciosos, integridad DB, dependencias, wallet Polymarket, compra/venta, ciclo M5/M15 + rollover + redeem, dashboard, arranque paper sin API keys.
+
+### 📊 Snapshot ejecutivo
+
+| Vector | Estado | Bloqueantes | Ver R2.2.x |
+|---|---|---|---|
+| Arranque paper sin claves reales | ✅ Operativo | 0 | R2.2.7 |
+| Conexión Polymarket (lectura pública) | ✅ 200 OK desde codespace | 0 | R2.2.4 |
+| Compra/venta paper (fill sim + slippage + persistencia) | ✅ Operativo | 0 | R2.2.5 |
+| Compra/venta real (SDK, retry, idempotency, audit) | ⚠️ 95% | PIN 6 dígitos ausente | R2.2.5 |
+| Discovery M5/M15 cripto | ✅ Operativo (B5-recheck) | 0 | R2.2.6 |
+| Rollover al siguiente evento | ⚠️ Semi-auto | Lag ≤ 60 min si `get_active_markets` falla | R2.2.6 |
+| **Detección de resolución (`market_resolved`)** | 🔴 **NO IMPLEMENTADO** | Bloquea ciclo entry→exit→redeem | R2.2.6 |
+| Redeem CTF on-chain | ⛔ Bloqueado (R2.0-redeem-impl) | Sin `web3.py` + `ctf_redeemer.py` | R2.2.4 |
+| Integridad DB (idempotency) | 🔴 **BUG CRÍTICO** | Mapper no persiste `idempotency_key` | R2.2.2 |
+| Dependencias | ⚠️ CVEs HIGH en 21 paquetes | aiohttp, starlette, python-multipart | R2.2.3 |
+| Params / fallos silenciosos | ⚠️ 1 HIGH real + smells | `or` fallacy en risk suggestion | R2.2.1 |
+| Dashboard | ⚠️ 90% | Sin auth, sin rolling metrics, CORS abierto | R2.2.8 |
+
+**Veredicto:** el bot puede arrancar HOY en paper contra Polymarket real (lectura pública) y ejecutar el ciclo entry→exit sobre markets M5/M15. **NO** cierra ciclo con redeem (bloqueado R2.0-redeem-impl) y **NO** detecta cuándo los eventos se resuelven (gap crítico nuevo). El dashboard es funcional pero requiere hardening antes de exponerse en real.
+
+---
+
+### R2.2.1 — Params y fallos silenciosos ⚠️
+
+**HIGH — confirmado (bug real):**
+
+- `src/application/services/trading_service.py:395-398` — `or` fallacy sobre `suggested_amount`:
+  ```python
+  amount = risk_decision.suggested_amount or requested_amount
+  ```
+  Si `RiskEngine` devuelve `suggested_amount=0.0` (rechazo por Kelly / exposure), Python evalúa `0.0 or requested_amount → requested_amount`. La reducción sugerida se **ignora silenciosamente**. Fix: usar `is not None`.
+
+**MEDIUM — smells verificados:**
+
+- `src/execution/real_handler.py:287,435,588` — `float(api_response.get(...))` con `# type: ignore[union-attr]`. El branch anterior (`if error: return`) protege, pero es un contrato implícito. Añadir `assert api_response is not None` explícito.
+- `src/execution/real_handler.py:917,921,929` — `ws_state.get("last_yes_price", 0.5)` cae silenciosamente a 50% si el WS nunca emitió tick. Fix: `WARNING` + rechazar orden si buffer vacío.
+- `src/execution/real_handler.py:48-49` — `RETRY_BACKOFF=[1.0,2.0,4.0]` sin jitter. Riesgo de thundering herd en recovery post-outage. Fix: añadir jitter `random.uniform(0, 0.5*wait)`.
+- Timeouts hardcoded en `clob_client.py:135` (15s), `http_client.py:54` (10s), `ws_client.py:202` (30s) sin override env. Recomendado exponer como env vars con defaults.
+
+**FALSOS POSITIVOS descartados (verificados en código):**
+
+- ~~`await self._risk.evaluate()` sobre función sync~~ → `RiskEngine.evaluate()` **sí es `async`** en `src/risk/engine.py:103`. La firma en `base.py:34` es la ABC.
+
+---
+
+### R2.2.2 — Integridad de base de datos 🔴 BUG CRÍTICO
+
+**Estado migraciones:**
+- `001_initial_schema`, `003_bot_settings_mode`, `004_order_retry_fields` (idempotency_key UNIQUE), `005_integrity_constraints` ✅ presente (partial unique en `positions(market_id, mode) WHERE closed_at IS NULL` + `markets(asset, window, expiry)`).
+- Simetría upgrade/downgrade correcta.
+
+**🔴 CRITICAL — `idempotency_key` no se persiste a BD:**
+
+- `src/infrastructure/db/repository.py:344-353` — `_order_to_model()` NO incluye `idempotency_key` en la conversión Entity → SQLAlchemy Model.
+- `src/infrastructure/db/repository.py:355-364` — `_model_to_order()` tampoco lo recupera al leer.
+
+**Impacto:**
+1. `real_handler.py:185` calcula SHA256 correctamente y lo asigna a `order.idempotency_key`.
+2. `save_order()` invoca el mapper defectuoso → la columna `orders.idempotency_key` queda NULL.
+3. La UNIQUE constraint `ix_orders_idempotency` nunca se activa.
+4. **Reintentos post-timeout crean órdenes duplicadas en Polymarket.**
+
+**Fix inmediato (1 línea añadida en cada mapper):**
+```python
+def _order_to_model(self, o: Order) -> OrderModel:
+    return OrderModel(
+        ...,
+        idempotency_key=o.idempotency_key,   # ← AÑADIR
+    )
+```
+
+**HIGH — `save_order()` sin catch de `IntegrityError`:**
+
+- `src/infrastructure/db/repository.py:124-144` — a diferencia de `save_market()` (l.74-84) y `save_position()` (l.199-208) que sí catchean, `save_order` propaga la excepción. Tras el fix del mapper, cualquier colisión de `idempotency_key` levantará crash en vez del comportamiento esperado (re-fetch + return).
+
+**Fix:** patrón unificado — catchear `IntegrityError` con `"ix_orders_idempotency"` en el mensaje → `SELECT WHERE idempotency_key=... LIMIT 1` → return existente.
+
+---
+
+### R2.2.3 — Dependencias ⚠️
+
+**Drift pyproject.toml ↔ requirements.txt:** ✅ alineados. 20 runtime + 11 dev.
+
+**Basura filesystem:** `=0.28` y `=6.100.0` marcados como `D` en git status — pip installation artifacts. Ya están en git status para borrar; confirmar con `git clean -fd` tras el `git rm`.
+
+**Pins vs ranges (LOW):** 3 paquetes con `>=` en `[project].dependencies` (`httpx>=0.28.0`, `python-dotenv>=1.2.2`, `uvloop>=0.21.0`). Aceptable para patches de seguridad.
+
+**Verificaciones OK:** `py-clob-client-v2==1.0.1` pinado (SDK oficial V2). No hay `py-clob-client` (v1 archivado).
+
+**🔴 CVEs HIGH — 21 paquetes afectados, 91 CVEs totales:**
+
+| Paquete | Versión actual | Fix mínimo | Nota |
+|---|---|---|---|
+| `aiohttp` | 3.9.5 | ≥ 3.14.1 | 25 CVEs (varios HIGH) en superficie HTTP crítica |
+| `starlette` | 0.37.2 | ≥ 1.1.0 | 8 CVEs (routing/middleware) — impacta FastAPI |
+| `python-multipart` | 0.0.28 | ≥ 0.0.31 | CVE-2026-53540/53539/53538 |
+| `bleach` | 6.3.0 | ≥ 6.4.0 | GHSA-g75f-g53v-794x |
+| `protobuf` | 4.25.9 | ≥ 5.29.6 | PYSEC-2026-1805 (injection) |
+| `ujson` | 5.12.1 | ≥ 5.13.0 | CVE-2026-54911 |
+
+**🔴 GAP — `web3.py` ausente:** R2.0-redeem-impl (CTF on-chain) requiere `web3.py>=6.13.0`. Actualmente el import está comentado en `clob_client.py:16`. Sin esto, no se puede cerrar el ciclo redeem.
+
+**Acción:** RFC de dependencias — subir aiohttp/starlette/python-multipart en un PR aislado + regenerar `requirements.txt` desde `pyproject.toml`. Añadir `web3.py==6.13.0` en el RFC de R2.0-redeem-impl.
+
+---
+
+### R2.2.4 — Wallet Polymarket + conexión ✅
+
+**Cubierto (verificado en código):**
+
+| Requisito | Path | Estado |
+|---|---|---|
+| Saldo pUSD | `clob_client.py:295` (`get_balance()`) | ✅ |
+| Posiciones activas | `data_api_client.py:68` (`get_positions()`) | ✅ |
+| Historial trades (L2) | `clob_client.py:432` (`get_trades()`) | ✅ |
+| Historial actividad (público) | `data_api_client.py:143` (`get_activity()`) | ✅ |
+| Órdenes vivas | `clob_client.py:421` (`get_open_orders()`) | ✅ |
+| Auth L1+L2 assert | `clob_client.py:399` (`assert_auth()`) | ✅ |
+| Handshake script | `scripts/verify_polymarket_connectivity.py` (8 pasos) | ✅ |
+
+**Conectividad verificada 2026-07-11 desde codespace:** `HEAD https://clob.polymarket.com/` → HTTP 200 (Cloudflare); `GET https://gamma-api.polymarket.com/events/keyset?tag=crypto&limit=1` → 200 con payload válido.
+
+**Ubicación / geoblock:**
+- Endpoints públicos (Gamma, Data API) **no aplican geoblock** — funcionan desde codespace GitHub (Azure US).
+- Real trading (crear órdenes vía CLOB): Polymarket puede aplicar geoblock por IP + T&C exige que la wallet no pertenezca a jurisdicción restringida (US, ciertos países OFAC). El codespace corre en Azure US → **paper OK desde aquí, real trading debe ejecutarse en VPS UE/LATAM/Asia**. Ver `GUIA_DESPLIEGUE_VPS.md`.
+- Recomendación: paper y todo el desarrollo continúan en codespace; real trading solo desde el VPS ya documentado.
+
+**⛔ Redeem CTF on-chain** — `clob_client.redeem_position()` (l.266) lanza `CLOBRedeemNotSupportedError` intencionalmente (fail-fast R2.0). No hay `ctf_redeemer.py`. Bloqueante para completar ciclo.
+
+---
+
+### R2.2.5 — Compra/venta paper y real ✅ (con gap R2.1)
+
+**Paper (`paper_handler.py`):** 100% operativo. Fill simulation con slippage depth-based (P9.1+P9.2), balance virtual persistente, orden y posición atómicas en DB, métricas Prometheus. **Gap menor:** `volatility` y `regime` pasados como `None` al `SlippageEngine` (l.118-127) — hay TODO comment; el modelo cae a estimación base.
+
+**Real (`real_handler.py`):** 100% operativo end-to-end (create, cancel, retry, backoff, circuit breaker, audit log inmutable). SDK CLOB V2 usado correctamente (EIP-712 domain V2, timestamp ms, sin nonce, con `builderCode` y `signature_type` propagados). `_call_with_retry` con MAX_RETRIES=3, backoff [1,2,4]s; no reintenta `NotImplementedError` (redeem CTF) ni 4xx lógicos.
+
+**Guard de riesgo:** `TradingService._run_market_cycle` (l.373) invoca `await RiskEngine.evaluate(...)` ANTES de `execute_entry` — no hay ruta alternativa (verificado). Único camino a ejecución pasa por `if risk_decision.allowed`.
+
+**⚠️ Gap R2.1 — PIN 6 dígitos ausente:** `interfaces/telegram/handlers/start.py:93,134,161` implementa doble confirmación con botones inline pero **no exige un PIN numérico** ni rate-limit tras N intentos fallidos, como CLAUDE.md § "Reglas duras #3" exige. Fix: insertar paso de PIN entre `cb_real_confirm_step1` y `cb_real_confirm_final`.
+
+---
+
+### R2.2.6 — Ciclo M5/M15 + rollover + resolución + redeem
+
+**Discovery** ✅ — `market_service.py:91-164` (`discover_markets`) filtro triple: slug `-5m-`/`-15m-` → rango horario → `LIVE_UP_DOWN_CRYPTO_PATTERN`. Redis cache TTL 3900s. Verificado 2026-06-21: 54 markets `*-updown-*` desde `/events/keyset?tag=crypto`.
+
+**Rollover** ⚠️ semi-automático — `_market_cycle_loop` (30s) + `_rediscovery_loop` (3600s). Si `get_active_markets` falla, hay hasta 60 min de no-trading. **Fix sugerido:** reintento agresivo (backoff exp 30s → 5min) cuando la lista viene vacía, en vez de esperar la ventana completa.
+
+**🔴 Detección de resolución NO IMPLEMENTADA (nuevo bloqueante):**
+
+- `ws_client.py:61` define `WS_NON_TICK_EVENTS = {"tick_size_change", "new_market", "market_resolved"}`.
+- El `market_resolved` **se ignora** con `continue` en el loop de eventos.
+- CERO handlers en `TradingService` procesan resoluciones.
+- **Efecto:** el bot no sabe cuándo un market cierra. No dispara redeem. La posición queda "abierta" indefinidamente en el modelo, aunque on-chain ya se resolvió.
+- **Fix:** añadir handler WS `on_market_resolved(condition_id)` → marca `Position.resolved_at` en DB → agenda `redeem_resolved_position` (bloqueado por R2.0-impl mientras tanto).
+
+**Redeem CTF** ⛔ — R2.0-redeem-impl pendiente. Sin `web3.py` + `ctf_redeemer.py` + lógica de `indexSets` por outcome ganador, no hay forma de liquidar posiciones ganadoras a pUSD.
+
+**ParquetDataLoader window bug** ⚠️ conocido — `parquet_loader.py:72-143` NO filtra por `window`; solo etiqueta. `BTC_5m == BTC_15m`. Impacto: métricas de backtest sobreestimadas (Sharpe/PF inflados). Documentado en R1.2-ter caveats. Fix futuro no bloqueante.
+
+---
+
+### R2.2.7 — Arranque paper sin claves reales ✅ verificado
+
+**Comando probado (2026-07-11):**
+```bash
+DATABASE_URL='sqlite+aiosqlite:///:memory:' \
+REDIS_URL='redis://localhost:6379/0' \
+TELEGRAM_BOT_TOKEN='fake:token' TELEGRAM_CHAT_ID='0' \
+TRADING_MODE='paper' \
+python -c "from src.core.config import load_config; print(load_config().trading_mode)"
+# → paper (OK, sin exigir POLYMARKET_*)
+```
+
+**Env vars requeridas para paper:**
+- `DATABASE_URL` (SQLite en memoria vale para dev; Postgres en staging/prod).
+- `REDIS_URL`.
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (validación tolerante — si el token es inválido, el bot avisa y sigue).
+- `TRADING_MODE=paper`.
+
+**Env vars NO necesarias en paper:** `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_API_PASSPHRASE`, `POLYMARKET_WALLET_ADDRESS`. La validación de `REQUIRED_REAL` en `secure_config.py:89-95` solo se activa si `trading_mode == "real"`.
+
+**DI Container** (`src/core/container.py:243-271`): cuando `trading_mode == "paper"` inyecta `PaperTradingHandler`, no instancia `KeyManager`, no crea `DataAPIClient`. Aislamiento correcto.
+
+**Comando de arranque sugerido para test end-to-end (contra Polymarket real, paper mode):**
+```bash
+# 1. levantar infra local
+docker compose up -d db redis
+
+# 2. env mínima
+cat > .env.paper <<'EOF'
+DATABASE_URL=postgresql+asyncpg://polybot:changeme@localhost:5432/polybot
+REDIS_URL=redis://localhost:6379/0
+TELEGRAM_BOT_TOKEN=fake:token   # opcional; sin real, no envía alerts
+TELEGRAM_CHAT_ID=0
+TRADING_MODE=paper
+PAPER_INITIAL_BALANCE=1000.0
+EOF
+
+# 3. migraciones
+alembic upgrade head
+
+# 4. arranque
+env $(cat .env.paper) python main.py
+
+# 5. en otra terminal, smoke test contra live crypto markets:
+python scripts/smoke_test_pipeline.py --n-cycles 5 --warmup-ticks 10
+```
+
+---
+
+### R2.2.8 — Dashboard: gaps y plan de profesionalización
+
+**Stack real:** React 18.3 + Vite 5 + TypeScript 5; CSS custom (dark theme); Recharts para gráficos. Sin tests. Build servido por FastAPI desde `src/interfaces/api/static/`.
+
+**API existente (7 routers):** `dashboard` (con `/quant-metrics`, `/risk-activity`, `/events` de R1.3), `health` (6 checks paralelos), `markets`, `positions`, `orders`, `metrics` (Prometheus).
+
+**Gaps de seguridad (CRÍTICOS antes de real):**
+- **CORS abierto** (`allow_origins=["*"]`) → restringir por dominio.
+- **Sin auth** → añadir JWT bearer o token de sesión firmado; el dashboard expone PnL, wallet balance y estado de órdenes.
+
+**Métricas faltantes (priorizadas):**
+
+| Prioridad | Métrica | Fuente | Endpoint sugerido |
+|---|---|---|---|
+| MUST | PnL rolling (1h/24h/7d/MTD) | `PostTradeAnalyzer` + rolling windows | `/dashboard/pnl-rolling?window=24h` |
+| MUST | Sharpe/Sortino intraday | Derivar de ticks 5min | `/dashboard/sharpe-intraday` |
+| MUST | Latencia por hop (signal→order→ack→fill) | Traces OpenTelemetry existentes → agregación | `/dashboard/latency-histogram` |
+| MUST | Fill quality vs midpoint/VWAP | `SlippageTracker` (P9.2) ya lo calcula | `/dashboard/fill-quality` |
+| MUST | Capital deployed vs available | Redis + Repository | `/dashboard/capital-utilization` |
+| MUST | Mercado activo actual (asset, window, tiempo restante, order book L2-L5) | `MarketService` + WS state | `/dashboard/active-market` |
+| SHOULD | Distribution de position sizes | Repository query | `/dashboard/size-distribution` |
+| SHOULD | Historial eventos resueltos + redeem status | Post R2.2.6 fix | `/dashboard/events/resolved` |
+| SHOULD | Alertas activas + severidad + ack | Prometheus Alertmanager API | `/dashboard/alerts` |
+| SHOULD | Rate limit budget Polymarket | HTTP headers `X-RateLimit-*` | `/dashboard/rate-limit` |
+| COULD | Attribution por estrategia | `PostTradeAnalyzer` | `/dashboard/strategy-attribution` |
+| COULD | Modo dark/light + mobile responsive | CSS refactor | — |
+
+**UX quick wins:**
+- Skeleton loaders para transiciones.
+- Reintento exponencial visible en fetches.
+- Toast notifications para eventos importantes (nueva señal, HALT activado, redeem completado).
+- Panel "modo actual" prominente (paper/canary/real) con color distintivo.
+
+**Tests dashboard:** 0 hoy. Objetivo mínimo: pytest sobre los 3 endpoints R1.3 nuevos (`/quant-metrics`, `/risk-activity`, `/events`) + smoke Vitest sobre 2-3 componentes (Health, Summary).
+
+---
+
+### R2.2.9 — Skills, Harness, CLAUDE.md — evaluación
+
+**Skills (8 actuales)** — cobertura vs. gaps identificados:
+
+| Skill | Cubre gap actual | Necesita cambio |
+|---|---|---|
+| `polymarket-clob-audit` | Bug WS `market_resolved` sin handler | Extender scope: incluir explícitamente handler de `market_resolved` en el checklist de auditoría |
+| `db-integrity-guard` | Bug `_order_to_model` sin `idempotency_key` | ✅ ya cubre. Ejecutar sobre repository.py resolverá esto |
+| `dependency-hygiene` | 91 CVEs, `web3.py` faltante | ✅ ya cubre. Ejecutar sobre pyproject.toml resolverá esto |
+| `risk-engine-guard` | Bug `or` fallacy suggested_amount | Añadir explicitud sobre uso de `is not None` vs. truthiness |
+| `paper-vs-real-execution` | Gap PIN 6 dígitos | ✅ ya cubre. Reforzar checklist paso PIN |
+| `ctf-onchain-redeem` | Gap `ctf_redeemer.py` + `web3.py` + indexSets | ✅ ya cubre. Ejecutar cuando se abra R2.0-redeem-impl |
+| `strategy-validation-protocol` | Bug ParquetDataLoader window filter | ✅ ya cubre. Registrar como caveat conocido en el skill |
+| `pre-real-trading-checklist` | 6 pasos operativos | ✅ ya cubre. Ejecutar antes de R3.1 |
+
+**Skill NUEVA sugerida:** `dashboard-hardening` — auth (JWT), CORS restrictivo, tests API+UI, métricas rolling. Activa al tocar `dashboard/` o `src/interfaces/api/routers/`. Prioridad MEDIA (no bloquea paper, sí bloquea exponer dashboard en real).
+
+**Harness (.claude/settings.json + 6 hooks)** — evaluación:
+
+- `session_start.sh`, `remind_workflow.sh`, `protect_nogo.sh`, `protect_trash.sh`, `check_dep_drift.sh`, `stop_summary.sh` → todos vigentes y útiles.
+- **Gap sugerido:** hook `PreToolUse` sobre `Edit|Write` en `src/execution/real_handler.py` y `src/risk/engine.py` que fuerce lectura previa de `AUDIT_REPORT.md § R2.2` — evita regresiones en los mismos vectores auditados hoy.
+- **Gap sugerido:** hook `Stop` que recuerde correr `pytest -x -q tests/unit/test_execution_handlers.py tests/unit/test_repository.py` cuando se toca `src/execution/` o `src/infrastructure/db/` — mismo espíritu que `stop_summary.sh` pero accionable.
+
+**CLAUDE.md** — necesita micro-update (no rewrite):
+
+- Añadir a "Reglas duras": `#9 — Nunca usar truthiness (`or`) para valores numéricos donde 0.0 sea válido; usar `is not None`.` (evita R2.2.1 or fallacy).
+- Añadir a "No-go zones": `src/infrastructure/db/repository.py mappers` requieren update sincrónico Entity↔Model (evita R2.2.2 bug).
+- Añadir en sección "Datos": nota sobre `ParquetDataLoader.load(window=...)` — actualmente es label, no filtro. Métricas M5 y M15 son el mismo dataset hasta que se implemente filtro real.
+
+---
+
+### R2.2.10 — Plan y ruta a implementar (priorizado)
+
+**Ola 1 — Correcciones sin código nuevo (1-2 días, PRs pequeños):**
+
+| # | Tarea | Bloquea | Skill a invocar | Tests requeridos |
+|---|---|---|---|---|
+| 1.1 | Fix `_order_to_model` + `_model_to_order` en `repository.py` (añadir `idempotency_key`) | Duplicados en real | `db-integrity-guard` | +2 unit (round-trip) |
+| 1.2 | Añadir catch `IntegrityError` en `save_order` con re-fetch por key | Crash post-fix 1.1 | `db-integrity-guard` | +1 unit (race simulada) |
+| 1.3 | Fix `or` fallacy en `trading_service.py:395-398` — usar `is not None` | Kelly sizing correcto | `risk-engine-guard` | +1 unit (suggested=0.0) |
+| 1.4 | Guard explícito `if api_response is None: return failed` en `real_handler.py:287,435,588` | Crash silencioso | `paper-vs-real-execution` | +1 unit por punto |
+| 1.5 | Guard `if not ws_state or "last_yes_price" not in ws_state: reject` en `real_handler.py:917+` | Fill a 50% silencioso | `paper-vs-real-execution` | +1 unit |
+| 1.6 | `git rm =0.28 =6.100.0` + `git clean -fd` | Basura filesystem | `dependency-hygiene` | — |
+
+**Ola 2 — Gaps funcionales (2-4 días):**
+
+| # | Tarea | Bloquea | Skill | Notas |
+|---|---|---|---|---|
+| 2.1 | WS handler `on_market_resolved` en `TradingService` + persiste `Position.resolved_at` | Redeem workflow | `polymarket-clob-audit` | Sin CTF impl aún, solo marca detección |
+| 2.2 | PIN 6 dígitos en `telegram/handlers/start.py` + rate limit 3 intentos | Real trading según CLAUDE.md | `paper-vs-real-execution` | Añadir tests handler |
+| 2.3 | Reintento agresivo en `_market_cycle_loop` si `get_active_markets` vacío (backoff 30s→5min) | Rollover robusto | `polymarket-clob-audit` | Property test tiempo entre reintentos |
+| 2.4 | Jitter en `RETRY_BACKOFF` (`random.uniform(0, 0.5*wait)`) | Thundering herd | `paper-vs-real-execution` | Test estadístico |
+| 2.5 | Volatility + regime dinámicos en paper fills (`paper_handler.py:118-127`) | Realismo paper | `strategy-validation-protocol` | Comparar slippage estimado vs real en run |
+
+**Ola 3 — Seguridad y dependencias (2-3 días, RFC required):**
+
+| # | Tarea | Skill | Bloquea |
+|---|---|---|---|
+| 3.1 | RFC dependencias: subir aiohttp≥3.14.1, starlette≥1.1.0, python-multipart≥0.0.31, protobuf≥5.29.6, ujson≥5.13.0, bleach≥6.4.0 | `dependency-hygiene` | Real trading (CVEs) |
+| 3.2 | Añadir env vars para timeouts (CLOB, HTTP, WS) con defaults actuales | `polymarket-clob-audit` | Debug / canary tuning |
+
+**Ola 4 — Dashboard hardening (3-5 días):**
+
+| # | Tarea | Prioridad | Skill sugerida |
+|---|---|---|---|
+| 4.1 | Auth JWT en middleware para `/dashboard/*` y `/positions/*` y `/orders/*` | MUST antes de real | `dashboard-hardening` (nueva) |
+| 4.2 | CORS restringido por env `DASHBOARD_ORIGINS` | MUST | `dashboard-hardening` |
+| 4.3 | Endpoint `/dashboard/pnl-rolling?window=1h|24h|7d|mtd` | MUST | — |
+| 4.4 | Endpoint `/dashboard/sharpe-intraday` derivado de PostTradeAnalyzer con rolling | MUST | — |
+| 4.5 | Endpoint `/dashboard/latency-histogram` desde OpenTelemetry spans | MUST | — |
+| 4.6 | Endpoint `/dashboard/active-market` (asset, window, tiempo restante, book L2-L5) | MUST | — |
+| 4.7 | Endpoint `/dashboard/fill-quality` (SlippageTracker) | MUST | — |
+| 4.8 | Endpoint `/dashboard/capital-utilization` | MUST | — |
+| 4.9 | Tests pytest sobre los 3 endpoints R1.3 + Vitest sobre 3 componentes | MUST | — |
+| 4.10 | UI: panel "modo actual" con color distintivo + skeleton loaders + toast notifications | SHOULD | — |
+| 4.11 | Endpoint `/dashboard/events/resolved` (post Ola 2.1) | SHOULD | — |
+| 4.12 | Endpoint `/dashboard/alerts` (Alertmanager API proxy) | SHOULD | — |
+| 4.13 | Endpoint `/dashboard/rate-limit` (headers Polymarket) | SHOULD | — |
+| 4.14 | Refactor CSS a Tailwind + mobile responsive | COULD | — |
+
+**Ola 5 — Bloqueantes de real trading (RFC + implementación pesada):**
+
+| # | Tarea | Skill | Bloquea |
+|---|---|---|---|
+| 5.1 | R2.0-redeem-impl completo: `web3.py`, `ctf_redeemer.py`, indexSets, gas estimation, tx receipt, retry chain reorg | `ctf-onchain-redeem` | Ciclo entry→exit→redeem en real |
+| 5.2 | Fix `ParquetDataLoader.load(window=...)` — filtrar por window real (columna en parquet o pattern en market_id) | `strategy-validation-protocol` | Sharpe/PF backtest inflados |
+| 5.3 | Walk-forward 5+ folds sobre parquets cripto reales (recording extendido ≥ 8h) | `strategy-validation-protocol` | Real trading (edge no validado) |
+| 5.4 | Monte Carlo 1000+ trayectorias sobre trades del walk-forward | `strategy-validation-protocol` | Real trading |
+| 5.5 | Out-of-sample hold-out 30% | `strategy-validation-protocol` | Real trading |
+
+**Ola 6 — Arranque operativo end-to-end paper (validación integrada):**
+
+```bash
+# Post-Ola 1: arrancar paper y correr smoke test extendido
+env $(cat .env.paper) python main.py &
+sleep 30  # bootstrap + discovery
+python scripts/smoke_test_pipeline.py --n-cycles 20 --warmup-ticks 20 --force-fake-signal
+python scripts/run_paper_marathon.py --cycles 100 --report data/reports/marathon_$(date +%Y%m%d).json
+```
+
+Criterios de éxito:
+- 100/100 ciclos sin crash.
+- ≥ 10 órdenes paper ejecutadas (variable según señales).
+- WS reconnect ≤ 3s si se corta (test manual).
+- Dashboard `/summary` refleja balance y órdenes en tiempo real.
+- Logs sin `WARNING`/`ERROR` no explicados.
+
+---
+
+### R2.2.11 — Documentación colateral
+
+- **RECORRIDO_ACTUAL.md** — se actualiza con snapshot 2026-07-11 (esta auditoría).
+- **CLAUDE.md** — micro-update (ver R2.2.9).
+- **AUDIT_REPORT.md** — pendiente: consolidar los hallazgos de R2.2.1–R2.2.10 en formato auditoría formal (se hará junto con Ola 1 al abrir PRs).
+- **GUIA_DESPLIEGUE_VPS.md** — sigue vigente para real trading; añadir nota sobre geoblock desde codespace (informativa, no bloqueante para paper).
+
+---
+
 ## 🚫 LO QUE NO TOCAMOS AHORA
 
 - ❌ Fase 12 (Portfolio & Scaling) — no hasta tener real trading estable

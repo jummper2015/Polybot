@@ -1,8 +1,9 @@
 # RECORRIDO ACTUAL — PolyBot v4.0
 
-> **Última auditoría:** 2026-06-21 (B5-recheck — discovery cripto via `/events/keyset?tag=crypto`)
-> **Tests:** 1,373 pasando (+4 nuevos en `TestFindMarketsForAsset` para non-regresión B5; antes 1,369)
-> **Conclusión:** B5 era **falso positivo**. El endpoint correcto (`/events/keyset?tag=crypto`, ya usado por `PolymarketHTTPClient.get_active_markets`) expone **54 markets `*-updown-*` activos** ahora mismo. El bloqueo era de `scripts/record_live_data.py`, que consultaba `/markets?_limit=500` (devuelve 20 markets generales sin cripto M5/M15). Con el fix, R2.1 — objetivo #3 (rotación M5/M15 + redeem por evento) — queda **desbloqueado para validación operativa**.
+> **Última auditoría:** 2026-07-11 (R2.2 — auditoría integral 8 vectores: params/DB/deps/wallet/exec/M5-M15/dashboard/paper-startup)
+> **Snapshot anterior:** 2026-06-21 (B5-recheck — discovery cripto via `/events/keyset?tag=crypto`)
+> **Tests:** 1,373 pasando (baseline; los fixes de R2.2 Ola 1 añadirán +6 unit sobre repository, risk suggestion, real_handler guards)
+> **Estado 2026-07-11:** el bot **arranca en paper sin claves reales** (verificado end-to-end), lee mercados cripto M5/M15 en vivo, y ejecuta ciclo entry/exit sobre Polymarket real. **NO cierra ciclo con redeem** (R2.0-redeem-impl pendiente) y **NO detecta resolución de eventos** (`market_resolved` WS event ignorado — nuevo bloqueante identificado en R2.2.6). Bug crítico DB detectado: `idempotency_key` no se persiste (`repository._order_to_model`) → riesgo de órdenes duplicadas en real. Plan de ejecución en 6 olas priorizadas en `RUTA_IMPLEMENTACION.md § R2.2.10`.
 
 ---
 
