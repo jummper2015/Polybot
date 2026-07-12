@@ -12,6 +12,7 @@ from src.domain.enums.market_status import MarketStatus
 from src.domain.enums.signal_type import SignalType
 from src.domain.enums.window import Window
 from src.domain.value_objects.market_tick import MarketTick
+from src.domain.value_objects.risk_decision import RiskDecision
 from src.domain.value_objects.signal import Signal
 from src.domain.value_objects.trade_result import TradeResult
 from src.risk.engine import RiskEngine, RiskEngineConfig
@@ -465,3 +466,45 @@ class TestTradingServiceCycle:
         )
         assert signal.type == SignalType.HOLD
         assert "expiring" in signal.reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_risk_suggested_amount_zero_is_respected(
+        self,
+        trading_service,
+        mock_execution,
+        mock_portfolio,
+        mock_repo,
+    ):
+        """R2.2.1 (Ola 1.3): si el RiskEngine devuelve suggested_amount=0.0
+        con allowed=True (caso legítimo: Kelly o max_exposure indican "no
+        arriesgues más"), TradingService debe pasar `amount=0.0` al
+        execution handler, NO el requested_amount original.
+
+        Bug previo: `suggested_amount or requested_amount` con 0.0 evaluaba
+        a `requested_amount` (Python: `0.0 or X → X`).
+        """
+        market = _make_market()
+        tick   = _make_tick(yes_price=0.82)
+        signal = _make_signal()
+
+        # Portafolio saneado; risk engine forzado con suggested_amount=0.0
+        mock_portfolio.get_balance = AsyncMock(return_value=500.0)
+        mock_repo.get_positions    = AsyncMock(return_value=[])
+        trading_service._risk = AsyncMock()
+        trading_service._risk.evaluate = AsyncMock(
+            return_value=RiskDecision(
+                allowed=True,
+                reason="Kelly cap",
+                rule_triggered="KellySizingRule",
+                suggested_amount=0.0,
+            )
+        )
+
+        await trading_service._evaluate_risk_and_execute(market, signal, tick)
+
+        assert mock_execution.execute_entry.await_count == 1
+        called_amount = mock_execution.execute_entry.await_args.kwargs["amount"]
+        assert called_amount == 0.0, (
+            f"Expected amount=0.0 (suggested_amount respetado), got "
+            f"{called_amount!r} — regresión del bug `or` fallacy"
+        )

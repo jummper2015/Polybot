@@ -391,10 +391,14 @@ class TradingService:
                 exec_span.set_attribute("execution.type", "entry")
                 exec_span.set_attribute("execution.market_id", market.id)
 
-                # Usa el monto ajustado por el RiskEngine si lo hay
+                # R2.2.1 (Ola 1.3): usa el monto ajustado por el RiskEngine
+                # si lo hay. NO usar `or` — `suggested_amount == 0.0` es un
+                # valor legítimo (Kelly / max_exposure pueden sugerir "no
+                # arriesgues más"). `is not None` respeta ese caso.
                 amount = (
                     risk_decision.suggested_amount
-                    or requested_amount
+                    if risk_decision.suggested_amount is not None
+                    else requested_amount
                 )
 
                 result = await self._execution.execute_entry(
