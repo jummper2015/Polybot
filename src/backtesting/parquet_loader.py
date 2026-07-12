@@ -115,8 +115,8 @@ class ParquetDataLoader:
 
         # Filter by market_id if specified
         if market_id:
-            import pyarrow.compute as pc
-            mask = pc.equal(table.column("market_id"), market_id)
+            import pyarrow.compute as pc  # type: ignore[attr-defined]  # pc.equal/pc.unique not in stubs
+            mask = pc.equal(table.column("market_id"), market_id)  # type: ignore[attr-defined]
             table = table.filter(mask)
             if table.num_rows == 0:
                 raise ValueError(
@@ -160,12 +160,12 @@ class ParquetDataLoader:
         table = read_ticks_uniform(paths, schema=TICK_SCHEMA)
 
         # Group by market_id
-        import pyarrow.compute as pc
-        market_ids = pc.unique(table.column("market_id")).to_pylist()
+        import pyarrow.compute as pc  # type: ignore[attr-defined]  # pc not in stubs
+        market_ids = pc.unique(table.column("market_id")).to_pylist()  # type: ignore[attr-defined]
 
         datasets = []
         for mid in market_ids:
-            mask = pc.equal(table.column("market_id"), mid)
+            mask = pc.equal(table.column("market_id"), mid)  # type: ignore[attr-defined]
             subtable = table.filter(mask)
             ticks = self._table_to_ticks(subtable)
             datasets.append(HistoricalDataset(
@@ -191,8 +191,8 @@ class ParquetDataLoader:
             return []
 
         table = read_ticks_uniform(paths, schema=TICK_SCHEMA)
-        import pyarrow.compute as pc
-        return sorted(pc.unique(table.column("market_id")).to_pylist())
+        import pyarrow.compute as pc  # type: ignore[attr-defined]  # pc not in stubs
+        return sorted(pc.unique(table.column("market_id")).to_pylist())  # type: ignore[attr-defined]
 
     def get_tick_count(self, asset: str) -> int:
         """Get total tick count for an asset."""
@@ -212,10 +212,10 @@ class ParquetDataLoader:
             return None
 
         table = read_ticks_uniform(paths, schema=TICK_SCHEMA)
-        import pyarrow.compute as pc
+        import pyarrow.compute as pc  # type: ignore[attr-defined]  # pc not in stubs
 
-        min_ns = pc.min(table.column("timestamp_ns")).as_py()
-        max_ns = pc.max(table.column("timestamp_ns")).as_py()
+        min_ns = pc.min(table.column("timestamp_ns")).as_py()  # type: ignore[attr-defined]
+        max_ns = pc.max(table.column("timestamp_ns")).as_py()  # type: ignore[attr-defined]
 
         min_dt = datetime.fromtimestamp(min_ns / 1_000_000_000, tz=timezone.utc)
         max_dt = datetime.fromtimestamp(max_ns / 1_000_000_000, tz=timezone.utc)

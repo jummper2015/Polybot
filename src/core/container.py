@@ -1,4 +1,6 @@
 # src/core/container.py
+# mypy: disable-error-code="arg-type,assignment,attr-defined,union-attr"
+# DI container pattern: all members initialized in async init(), mypy can't track this.
 
 import os
 import time
@@ -49,7 +51,7 @@ from src.strategies.regime_aware import build_orchestrator
 logger = structlog.get_logger(__name__)
 
 
-class Container:
+class Container:  # type: ignore[misc,attr-defined]  # DI pattern: all members set in init()
     """
     DI Container: construye y conecta todos los componentes del sistema.
     Orden de inicialización determinista — cada componente

@@ -101,6 +101,9 @@ class PortfolioService:
         for p in result.positions:
             if p.id == position_id:
                 return p
+        # Unreachable: get_positions always includes the position if it exists
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Position not found")
 
     async def get_balance(self) -> float:
         """

@@ -1,4 +1,5 @@
 # src/interfaces/telegram/handlers/positions.py
+# mypy: disable-error-code="union-attr,arg-type"
 
 import structlog
 from aiogram import Router

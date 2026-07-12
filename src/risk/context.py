@@ -31,7 +31,7 @@ class RiskContext:
     recent_volatility:    float | None = None  # Volatilidad reciente (None → dampener=1.0)
 
     # ── Timestamp ─────────────────────────────────────────────────────
-    evaluated_at:         datetime = None
+    evaluated_at:         datetime | None = None  # type: ignore[assignment]  # populated in __post_init__
 
     def __post_init__(self):
         if self.evaluated_at is None:

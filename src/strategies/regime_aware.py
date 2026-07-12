@@ -227,7 +227,7 @@ class RegimeDetector:
         last_tick = self._get_last_tick(state)
         try:
             regime, confidence = self._classifier.classify_tick(
-                last_tick, features,
+                tick=last_tick, features=features,  # type: ignore[arg-type]  # _TickProxy has needed attrs
             )
         except Exception as e:
             logger.warning(
@@ -498,8 +498,8 @@ class RegimeAwareOrchestrator:
         """
         if self._enabled:
             self._detector.feed_tick(market.id, tick)
-        if self._event_enabled:
-            self._event_detector.feed_tick(tick, market)
+        if self._event_enabled and self._event_detector is not None:
+            self._event_detector.feed_tick(tick, market)  # type: ignore[union-attr]
         await self._engine.on_tick(market, tick)
 
     async def should_enter(
@@ -519,11 +519,11 @@ class RegimeAwareOrchestrator:
         self._emit_regime_metrics(market, regime, regime_conf)
 
         # P11.4: Event-driven response — check for blocking events first
-        if self._event_enabled:
-            events = self._event_detector.detect(tick, market)
+        if self._event_enabled and self._event_detector is not None:
+            events = self._event_detector.detect(tick, market)  # type: ignore[union-attr]
             self._emit_event_metrics(market, events)
             if events:
-                response = self._event_detector.respond(
+                response = self._event_detector.respond(  # type: ignore[union-attr]
                     events, order_size=0.0, confidence=0.0
                 )
                 EVENT_RESPONSE.labels(
@@ -539,7 +539,7 @@ class RegimeAwareOrchestrator:
                         market_id=market.id,
                         reasons=response.reasons,
                     )
-                    return self._HOLD(market.id, "EventDetector:HALT")
+                    return self._HOLD(market.id, "EventDetector:HALT")  # type: ignore[misc]  # _HOLD is a callable factory
             EVENT_ACTIVE.labels(
                 asset=market.asset.value, market_id=market.id
             ).set(0)
@@ -660,7 +660,7 @@ class RegimeAwareOrchestrator:
             return self._HOLD(market.id, "RegimeAwareOrchestrator")
 
         # Aggregate via EnsembleAggregator
-        result: EnsembleResult = self._ensemble.aggregate(
+        result: EnsembleResult = self._ensemble.aggregate(  # type: ignore[union-attr]  # _ensemble is set when ensemble_mode=True
             signals, market, tick
         )
 

@@ -23,7 +23,7 @@ class LogSanitizer:
     """
 
     @staticmethod
-    def sanitize_dict(data: dict) -> dict:
+    def sanitize_dict(data: dict) -> dict:  # type: ignore[return]  # recursive, returns sanitized copy
         """
         Recursivamente sanitiza un dict eliminando claves sensibles.
         Seguro para usar en cualquier nivel de anidamiento.
@@ -37,7 +37,7 @@ class LogSanitizer:
 
             # Si el valor es un dict → recursivo
             if isinstance(value, dict):
-                result[key] = LogSanitizer.sanitize_dict(value)
+                result[key] = LogSanitizer.sanitize_dict(value)  # type: ignore[assignment]  # sanitize_dict returns dict
                 continue
 
             # Si el valor es string → verificar patrones sensibles

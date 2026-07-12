@@ -247,7 +247,7 @@ class PolymarketWSClient:
 
     async def _process_message(
         self,
-        raw_message: str,
+        raw_message: str | bytes,
         market_id:   str,
         callback:    TickCallback,
         state:       WSMarketState,

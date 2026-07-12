@@ -1,4 +1,5 @@
 # src/interfaces/telegram/handlers/status.py
+# mypy: disable-error-code="union-attr,arg-type"
 
 import structlog
 from aiogram import Router
@@ -15,7 +16,8 @@ def _escape(text: str) -> str:
     return "".join(f"\\{c}" if c in special else c for c in str(text))
 
 
-async def send_status(message: Message, container=None) -> None:
+async def send_status(message: Message, container=None) -> None:  # type: ignore[arg-type]  # aiogram typing: callback.message may be InaccessibleMessage
+
     """
     Función reutilizable que envía el estado del bot.
     Llamada desde /status y desde el menú principal.

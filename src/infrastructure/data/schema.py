@@ -221,7 +221,8 @@ def read_ticks_uniform(
 
     # Sort by timestamp_ns if the column exists
     if "timestamp_ns" in result.column_names:
-        indices = pc.sort_indices(result, sort_keys=[("timestamp_ns", "ascending")])
+        # pyarrow.compute.sort_indices requires pyarrow >= 14
+        indices = pc.sort_indices(result, sort_keys=[("timestamp_ns", "ascending")])  # type: ignore[attr-defined]
         result = result.take(indices)
 
     return result

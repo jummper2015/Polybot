@@ -30,7 +30,9 @@ class AuthMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             chat_id = event.chat.id
         elif isinstance(event, CallbackQuery):
-            chat_id = event.message.chat.id
+            if event.message is None:  # type: ignore[union-attr]
+                return  # InaccessibleMessage o None — no podemos obtener chat_id
+            chat_id = event.message.chat.id  # type: ignore[union-attr]
         else:
             return  # Tipo de evento no conocido → ignorar
 

@@ -278,7 +278,7 @@ def compute_orderbook_imbalance(
     if depth_data is None:
         return [None] * len(ticks)
 
-    results = []
+    results: list[float | None] = []
     for i in range(len(ticks)):
         if i >= len(depth_data):
             results.append(None)
@@ -366,7 +366,7 @@ def compute_liquidity_depth(
     if depth_data is None:
         return [None] * len(ticks)
 
-    results = []
+    results: list[float | None] = []
     for i in range(len(ticks)):
         if i >= len(depth_data):
             results.append(None)
@@ -442,7 +442,7 @@ def compute_event_proximity(
     if expiry is None:
         return [None] * len(ticks)
 
-    results = []
+    results: list[float | None] = []
     for tick in ticks:
         delta = expiry - tick.timestamp
         minutes = delta.total_seconds() / 60

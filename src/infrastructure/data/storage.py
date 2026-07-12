@@ -266,6 +266,7 @@ class MultiAssetRecorder:
         self._verbose = verbose
         self._session_start: datetime | None = None
         self._sessions: list[dict] = []
+        self._current_session: dict = {}  # type: ignore[assignment]  # cleared/reset at lifecycle boundaries
 
     def start_session(self, asset: str, market_id: str, question: str = "") -> None:
         """Start a new recording session for a specific market.
@@ -300,7 +301,7 @@ class MultiAssetRecorder:
             return {"error": "no_active_session"}
 
         self._current_session["ended_at"] = datetime.now(timezone.utc).isoformat()
-        self._current_session["ticks"] = ticks_recorded
+        self._current_session["ticks"] = ticks_recorded  # type: ignore[assignment]  # session dict stores mixed types
         self._sessions.append(self._current_session)
 
         summary = self._writer.close()

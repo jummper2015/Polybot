@@ -219,7 +219,7 @@ class MultiStrategyBacktestRunner:
         # ── Initialize strategies ─────────────────────────────────────
         market = self._make_synthetic_market(dataset)
         for strategy in self._strategies:
-            strategy._get_or_create_state(dataset.market_id)
+            strategy._get_or_create_state(dataset.market_id)  # type: ignore[attr-defined]  # sync backtest helper on IStrategy
 
         # ── State ─────────────────────────────────────────────────────
         balance: float = self._initial_balance
@@ -237,7 +237,7 @@ class MultiStrategyBacktestRunner:
 
             # Update strategy states
             for strategy in self._strategies:
-                state = strategy._get_or_create_state(dataset.market_id)
+                state = strategy._get_or_create_state(dataset.market_id)  # type: ignore[attr-defined]
                 self._sync_strategy_on_tick(strategy, state, tick)
 
             # ── Evaluate exit (any position) ──────────────────────────
@@ -271,7 +271,7 @@ class MultiStrategyBacktestRunner:
                     # Update strategy state
                     strat = self._get_strategy(open_strategy_name)
                     if strat:
-                        strat._get_or_create_state(dataset.market_id).record_exit()
+                        strat._get_or_create_state(dataset.market_id).record_exit()  # type: ignore[attr-defined]
                     open_position = None
                     open_strategy_name = None
 
@@ -295,7 +295,7 @@ class MultiStrategyBacktestRunner:
                         skipped_by_regime[strategy_name] += 1
                         continue
 
-                    state = strategy._get_or_create_state(dataset.market_id)
+                    state = strategy._get_or_create_state(dataset.market_id)  # type: ignore[attr-defined]
                     if state.in_position:
                         continue
 

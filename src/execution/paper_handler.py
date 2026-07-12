@@ -164,6 +164,7 @@ class PaperTradingHandler(IExecutionHandler):
         order.mark_filled(fill_price=fill_price, slippage=slippage)
 
         shares = order.shares  # amount / fill_price
+        assert shares is not None, "shares must be set after mark_filled"
 
         # ── Crea la posición ──────────────────────────────────────────
         position = await self._create_position(
@@ -217,7 +218,7 @@ class PaperTradingHandler(IExecutionHandler):
             fill_price=fill_price,
             slippage=round(slippage, 6),
             fill_ratio=estimate.fill_ratio,
-            shares=round(shares, 4),
+            shares=round(shares, 4),  # type: ignore[arg-type]  # guarded by assert above
             balance_after=round(self._balance, 2),
         )
 
@@ -309,7 +310,7 @@ class PaperTradingHandler(IExecutionHandler):
         exit_order = Order(
             id           = str(uuid.uuid4()),
             market_id    = position.market_id,
-            side         = position.side,
+            side         = position.side,  # type: ignore[arg-type]  # Position.side is str, Order expects OrderSide
             amount       = return_value,
             target_price = current_price,
             fill_price   = exit_price,
@@ -356,7 +357,7 @@ class PaperTradingHandler(IExecutionHandler):
             exit_price=exit_price,
             slippage=round(slippage, 6),
             fill_ratio=estimate.fill_ratio,
-            pnl=round(position.pnl, 4),
+            pnl=round(position.pnl or 0.0, 4),
             pnl_pct=f"{position.pnl_pct:.2%}",
             balance_after=round(self._balance, 2),
             reason=reason,
@@ -364,6 +365,9 @@ class PaperTradingHandler(IExecutionHandler):
 
         # ── Notifica al usuario ───────────────────────────────────────
         if self._notifier is not None:
+            assert position.pnl is not None and position.pnl_pct is not None, (
+                "pnl must be set after position.close()"
+            )
             await self._notifier.send_exit_alert(
                 market_id=position.market_id,
                 reason=reason,
@@ -374,7 +378,7 @@ class PaperTradingHandler(IExecutionHandler):
         return TradeResult(
             order_id     = exit_order.id,
             market_id    = position.market_id,
-            side         = position.side,
+            side         = position.side,  # type: ignore[arg-type]  # Position.side is str, Order expects OrderSide
             amount       = return_value,
             target_price = current_price,
             fill_price   = exit_price,
@@ -429,7 +433,7 @@ class PaperTradingHandler(IExecutionHandler):
         hedge_order = Order(
             id           = str(uuid.uuid4()),
             market_id    = position.market_id,
-            side         = "NO",
+            side         = "NO",  # type: ignore[arg-type]  # str used as OrderSide in hedge path
             amount       = hedge_amount,
             target_price = no_price,
             fill_price   = None,
@@ -458,7 +462,7 @@ class PaperTradingHandler(IExecutionHandler):
         return TradeResult(
             order_id     = hedge_order.id,
             market_id    = position.market_id,
-            side         = "NO",
+            side         = "NO",  # type: ignore[arg-type]  # str used as OrderSide in hedge path
             amount       = hedge_amount,
             target_price = no_price,
             fill_price   = fill_price,
@@ -753,10 +757,10 @@ class PaperTradingHandler(IExecutionHandler):
             market_id   = market_id,
             asset       = market.asset.value if market else "UNKNOWN",
             window      = market.window.value if market else "UNKNOWN",
-            side        = order.side.value,
-            amount      = order.amount,
+            side         = order.side.value,  # type: ignore[arg-type]  # OrderSide enum → str
+            amount       = order.amount,
             shares      = shares,
-            entry_price = order.fill_price,
+            entry_price = order.fill_price,  # type: ignore[arg-type]  # set by mark_filled
             exit_price  = None,
             pnl         = None,
             pnl_pct     = None,

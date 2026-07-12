@@ -153,7 +153,7 @@ class RegimeClassifier:
             features = self._compute_features(ticks, expiry)
         elif "_ticks" not in features:
             # Defensive: ensure raw ticks available for TREND detection
-            features = {**features, "_ticks": ticks}
+            features = {**features, "_ticks": ticks}  # type: ignore[dict-item]  # list[MarketTick] mixed with list[float|None]
 
         labels: list[Regime] = []
         confidences: list[float] = []
@@ -187,12 +187,12 @@ class RegimeClassifier:
         asset = feature_batch.asset
         market_id = feature_batch.market_id
 
-        features: dict[str, list[float | None]] = {}
+        features: dict[str, list] = {}
         for fname in feature_batch.feature_names:
             features[fname] = feature_batch.features_computed.get(fname, [])
 
         # Pass raw ticks for TREND direction detection
-        features["_ticks"] = ticks
+        features["_ticks"] = ticks  # type: ignore[assignment]  # list[MarketTick] stored in features dict
 
         return self.classify_batch(
             ticks=ticks, asset=asset, market_id=market_id, features=features,
@@ -229,7 +229,7 @@ class RegimeClassifier:
         """
         cfg = self._config
 
-        vol = self._get_feature(features, "realized_volatility", idx)
+        vol = self._get_feature(features, "realized_volatility", idx)  # type: ignore[arg-type]  # dict[str, list] for mixed types
         spread_pct = self._get_feature(features, "spread_percentile", idx)
         momentum = self._get_feature(features, "momentum_decay", idx)
         event_prox = self._get_feature(features, "event_proximity", idx)
@@ -329,7 +329,7 @@ class RegimeClassifier:
         features = batch.features_computed
 
         # Also pass raw prices for trend detection
-        features["_ticks"] = ticks
+        features["_ticks"] = ticks  # type: ignore[assignment]  # list[MarketTick] stored in features dict
 
         return features
 

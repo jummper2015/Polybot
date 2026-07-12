@@ -283,7 +283,10 @@ class BuyAboveThresholdStrategy(IStrategy):
 
         # ── 1. STOP LOSS ──────────────────────────────────────────────
         # Calcula pérdida porcentual desde entrada
-        loss_pct = (current - entry_price) / entry_price
+        if entry_price is not None and entry_price > 0:
+            loss_pct = (current - entry_price) / entry_price
+        else:
+            loss_pct = 0.0
         if loss_pct <= -self._config.stop_loss_pct:
             reason = (
                 f"stop_loss: loss={loss_pct:.2%} <= "

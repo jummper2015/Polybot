@@ -61,7 +61,7 @@ class AuditLogger:
 
         # Persistencia en DB (best-effort, no bloquea la operación)
         try:
-            await self._repo.save_audit_log(entry)
+            await self._repo.save_audit_log(entry)  # type: ignore[attr-defined]  # runtime method on SQLAlchemyRepository
         except Exception as e:
             # Si la DB falla, el log de structlog ya está guardado
             logger.error(

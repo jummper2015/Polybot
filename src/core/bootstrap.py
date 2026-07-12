@@ -21,8 +21,8 @@ async def run_telegram(container: Container) -> None:
     """
     try:
         logger.info("telegram_polling_starting")
-        await container.telegram_dp.start_polling(
-            container.telegram_bot,
+        await container.telegram_dp.start_polling(  # type: ignore[attr-defined]
+            container.telegram_bot,  # type: ignore[arg-type]
             allowed_updates=["message", "callback_query"],
         )
     except asyncio.CancelledError:
@@ -75,7 +75,7 @@ async def run_trading(container: Container) -> None:
     """
     try:
         logger.info("trading_service_starting")
-        await container.trading_service.start()
+        await container.trading_service.start()  # type: ignore[attr-defined]
 
         # Mantiene la tarea viva hasta cancelación
         while True:
@@ -83,7 +83,7 @@ async def run_trading(container: Container) -> None:
 
     except asyncio.CancelledError:
         logger.info("trading_service_cancelled")
-        await container.trading_service.stop()
+        await container.trading_service.stop()  # type: ignore[attr-defined]
 
 
 async def bootstrap() -> None:

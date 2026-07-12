@@ -523,7 +523,7 @@ class QueuePositionEngine:
             expected_time_to_fill=round(expected_time, 2),
             adverse_selection_bps=round(adverse_bps, 2),
             confidence=round(confidence, 2),
-            wait_time_T=wait_time_T,
+            wait_time_T=wait_time_t,  # type: ignore[arg-type]  # float | None → float (resolved above)
             volume_sec=round(volume_sec, 4),
             l1_depth=l1_depth,
             regime=regime or "UNKNOWN",

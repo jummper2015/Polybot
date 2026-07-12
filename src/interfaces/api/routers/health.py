@@ -151,18 +151,18 @@ async def health_check(request: Request) -> HealthResponse:
     )
 
     # Mapea resultados (maneja excepciones inesperadas)
-    services = {
-        "database":       results[0] if not isinstance(results[0], Exception)
+    services: dict[str, ServiceStatusEnum] = {
+        "database":       results[0] if not isinstance(results[0], BaseException)  # type: ignore[arg-type]
                           else ServiceStatusEnum.DOWN,
-        "redis":          results[1] if not isinstance(results[1], Exception)
+        "redis":          results[1] if not isinstance(results[1], BaseException)  # type: ignore[arg-type]
                           else ServiceStatusEnum.DOWN,
-        "polymarket":     results[2] if not isinstance(results[2], Exception)
+        "polymarket":     results[2] if not isinstance(results[2], BaseException)  # type: ignore[arg-type]
                           else ServiceStatusEnum.DOWN,
-        "telegram":       results[3] if not isinstance(results[3], Exception)
+        "telegram":       results[3] if not isinstance(results[3], BaseException)  # type: ignore[arg-type]
                           else ServiceStatusEnum.DOWN,
-        "websockets":     results[4] if not isinstance(results[4], Exception)
+        "websockets":     results[4] if not isinstance(results[4], BaseException)  # type: ignore[arg-type]
                           else ServiceStatusEnum.DOWN,
-        "data_api_cross": results[5] if not isinstance(results[5], Exception)
+        "data_api_cross": results[5] if not isinstance(results[5], BaseException)  # type: ignore[arg-type]
                           else ServiceStatusEnum.DEGRADED,
     }
 

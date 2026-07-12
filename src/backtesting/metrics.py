@@ -35,7 +35,7 @@ class BacktestMetrics:
                 "dataset_start":     self._result.dataset_start.isoformat(),
                 "dataset_end":       self._result.dataset_end.isoformat(),
                 "dataset_hours":     round(
-                    (self._result.dataset_end - self._result.dataset_start
+                    (self._result.dataset_end - self._result.dataset_start  # type: ignore[operator]  # datetime subtraction
                     ).total_seconds() / 3600, 2
                 ),
                 "initial_balance":   self._result.initial_balance,
@@ -104,10 +104,10 @@ class BacktestMetrics:
             "metrics_computed",
             asset=self._result.asset,
             window=self._result.window,
-            total_pnl=metrics["pnl"]["total_pnl_usdc"],
-            sharpe=metrics["risk"]["sharpe_ratio"],
-            win_rate=metrics["performance"]["win_rate"],
-            max_dd=metrics["risk"]["max_drawdown_pct"],
+            total_pnl=metrics["pnl"]["total_pnl_usdc"],  # type: ignore[index]  # nested dict access
+            sharpe=metrics["risk"]["sharpe_ratio"],  # type: ignore[index]
+            win_rate=metrics["performance"]["win_rate"],  # type: ignore[index]
+            max_dd=metrics["risk"]["max_drawdown_pct"],  # type: ignore[index]
         )
 
         return metrics

@@ -49,7 +49,7 @@ def configure_logging(log_level: str = "INFO") -> None:
     ]
 
     structlog.configure(
-        processors=processors,
+        processors=processors,  # type: ignore[arg-type]  # structlog typing mismatch with mixed processor types
         wrapper_class=structlog.make_filtering_bound_logger(
             getattr(logging, log_level.upper(), logging.INFO)
         ),
