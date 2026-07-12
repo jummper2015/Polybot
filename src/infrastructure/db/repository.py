@@ -4,6 +4,7 @@ from datetime import datetime
 
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.application.ports.repository_port import IRepositoryPort
@@ -46,28 +47,41 @@ class SQLAlchemyRepository(IRepositoryPort):
         """
         Upsert: inserta el market si no existe, actualiza si ya existe.
         Usado tanto en el discovery inicial como en actualizaciones de precio.
-        """
-        async with self._session_factory() as session:
-            async with session.begin():
-                existing = await session.get(MarketModel, market.id)
 
-                if existing:
-                    # Actualiza campos que pueden cambiar
-                    # asset/window también se actualizan: el filtro de
-                    # discovery puede reclasificar un market si su slug
-                    # cambia o si el filtro evoluciona — la nueva
-                    # clasificación debe ganar.
-                    existing.asset      = market.asset.value
-                    existing.window     = market.window.value
-                    existing.status     = market.status.value
-                    existing.yes_price  = market.yes_price
-                    existing.no_price   = market.no_price
-                    existing.volume_24h = market.volume_24h
-                    existing.updated_at = datetime.utcnow()
-                else:
-                    # Inserta nuevo market
-                    model = self._market_to_model(market)
-                    session.add(model)
+        R2.5.4: si hay conflicto de unique (asset, window, expiry) — el mismo
+        mercado lógico ya existe con distinto condition_id — loguea warning
+        y retorna sin crash (el mercado existente gana).
+        """
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    existing = await session.get(MarketModel, market.id)
+
+                    if existing:
+                        # Actualiza campos que pueden cambiar
+                        existing.asset      = market.asset.value
+                        existing.window     = market.window.value
+                        existing.status     = market.status.value
+                        existing.yes_price  = market.yes_price
+                        existing.no_price   = market.no_price
+                        existing.volume_24h = market.volume_24h
+                        existing.updated_at = datetime.utcnow()
+                    else:
+                        # Inserta nuevo market
+                        model = self._market_to_model(market)
+                        session.add(model)
+
+        except IntegrityError as e:
+            # R2.5.4: duplicate (asset, window, expiry) → ya existe, no crash
+            if "uq_markets_asset_window_expiry" in str(e).lower():
+                logger.warning(
+                    "duplicate_market_by_asset_window_expiry_ignored",
+                    market_id=market.id,
+                    asset=market.asset.value,
+                    window=market.window.value,
+                )
+                return market
+            raise
 
         return market
 
@@ -111,23 +125,62 @@ class SQLAlchemyRepository(IRepositoryPort):
         """
         Upsert de orden.
         Llamado múltiples veces: al crear (PENDING), al fill y al fallar.
-        """
-        async with self._session_factory() as session:
-            async with session.begin():
-                existing = await session.get(OrderModel, order.id)
 
-                if existing:
-                    # Actualiza estado de la orden
-                    existing.fill_price = order.fill_price
-                    existing.slippage   = order.slippage
-                    existing.status     = order.status.value
-                    existing.filled_at  = order.filled_at
-                    existing.error      = order.error
-                else:
-                    model = self._order_to_model(order)
-                    session.add(model)
+        R2.2.2 (Ola 1.2): si el IntegrityError es por colisión del UNIQUE
+        `ix_orders_idempotency` (misma idempotency_key), retorna la orden
+        existente sin crash — es el comportamiento esperado de idempotencia:
+        un reintento post-timeout NO debe crear una orden nueva.
+        """
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    existing = await session.get(OrderModel, order.id)
+
+                    if existing:
+                        # Actualiza estado de la orden
+                        existing.fill_price = order.fill_price
+                        existing.slippage   = order.slippage
+                        existing.status     = order.status.value
+                        existing.filled_at  = order.filled_at
+                        existing.error      = order.error
+                    else:
+                        model = self._order_to_model(order)
+                        session.add(model)
+
+        except IntegrityError as e:
+            # R2.2.2 (Ola 1.2): idempotency_key collision — no crash
+            if order.idempotency_key and "ix_orders_idempotency" in str(e).lower():
+                logger.warning(
+                    "duplicate_order_by_idempotency_key_ignored",
+                    order_id=order.id,
+                    idempotency_key=order.idempotency_key,
+                    market_id=order.market_id,
+                )
+                # Retorna la orden previamente persistida con la misma key
+                existing_by_key = await self._get_order_by_idempotency_key(
+                    order.idempotency_key
+                )
+                return existing_by_key if existing_by_key else order
+            raise
 
         return order
+
+    async def _get_order_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> Order | None:
+        """
+        Lookup interno por idempotency_key. Usado por save_order para
+        resolver el ganador de una race condition.
+        """
+        async with self._session_factory() as session:
+            stmt = (
+                select(OrderModel)
+                .where(OrderModel.idempotency_key == idempotency_key)
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model  = result.scalar_one_or_none()
+            return self._model_to_order(model) if model else None
 
     async def get_orders(
         self,
@@ -162,20 +215,36 @@ class SQLAlchemyRepository(IRepositoryPort):
         """
         Upsert de posición.
         Llamado al abrir (sin PnL) y al cerrar (con PnL).
-        """
-        async with self._session_factory() as session:
-            async with session.begin():
-                existing = await session.get(PositionModel, position.id)
 
-                if existing:
-                    existing.exit_price  = position.exit_price
-                    existing.pnl         = position.pnl
-                    existing.pnl_pct     = position.pnl_pct
-                    existing.exit_reason = position.exit_reason
-                    existing.closed_at   = position.closed_at
-                else:
-                    model = self._position_to_model(position)
-                    session.add(model)
+        R2.5.3: si el IntegrityError es por duplicate open position
+        (uq_positions_open), loguea warning y retorna la posición sin
+        crash. Otros IntegrityError se relanzan.
+        """
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    existing = await session.get(PositionModel, position.id)
+
+                    if existing:
+                        existing.exit_price  = position.exit_price
+                        existing.pnl         = position.pnl
+                        existing.pnl_pct     = position.pnl_pct
+                        existing.exit_reason = position.exit_reason
+                        existing.closed_at   = position.closed_at
+                    else:
+                        model = self._position_to_model(position)
+                        session.add(model)
+
+        except IntegrityError as e:
+            # R2.5.3: duplicate open position → ya abierta, no crash
+            if "uq_positions_open" in str(e).lower():
+                logger.warning(
+                    "duplicate_open_position_ignored",
+                    market_id=position.market_id,
+                    mode=position.mode,
+                )
+                return position
+            raise
 
         return position
 
@@ -312,6 +381,9 @@ class SQLAlchemyRepository(IRepositoryPort):
         )
 
     def _order_to_model(self, o: Order) -> OrderModel:
+        # R2.2.2 (Ola 1.1): idempotency_key DEBE persistirse a BD.
+        # Sin este mapeo el UNIQUE index ix_orders_idempotency no bloquea
+        # reintentos post-timeout y genera órdenes duplicadas en real.
         return OrderModel(
             id=o.id, market_id=o.market_id,
             side=o.side.value, amount=o.amount,
@@ -319,10 +391,12 @@ class SQLAlchemyRepository(IRepositoryPort):
             slippage=o.slippage, status=o.status.value,
             mode=o.mode.value, strategy=o.strategy,
             reason=o.reason, error=o.error,
+            idempotency_key=o.idempotency_key,
             created_at=o.created_at, filled_at=o.filled_at,
         )
 
     def _model_to_order(self, m: OrderModel) -> Order:
+        # R2.2.2 (Ola 1.1): round-trip simétrico con _order_to_model.
         return Order(
             id=m.id, market_id=m.market_id,
             side=OrderSide(m.side), amount=m.amount,
@@ -330,6 +404,7 @@ class SQLAlchemyRepository(IRepositoryPort):
             slippage=m.slippage, status=OrderStatus(m.status),
             mode=TradingMode(m.mode), strategy=m.strategy,
             reason=m.reason, error=m.error,
+            idempotency_key=m.idempotency_key,
             created_at=m.created_at, filled_at=m.filled_at,
         )
 

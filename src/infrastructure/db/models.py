@@ -47,6 +47,9 @@ class MarketModel(Base):
         Index("ix_markets_asset_window", "asset", "window"),
         Index("ix_markets_status",       "status"),
         Index("ix_markets_expiry",       "expiry"),
+        # R2.5.4: unique on (asset, window, expiry) — previene inserciones
+        # duplicadas durante el discovery (mismo mercado lógico, distinto
+        # condition_id). Gestionado vía raw SQL en migración 005.
     )
 
 
@@ -124,6 +127,9 @@ class PositionModel(Base):
         Index("ix_positions_mode",       "mode"),
         Index("ix_positions_closed_at",  "closed_at"),   # NULL = abierta
         Index("ix_positions_opened_at",  "opened_at"),
+        # R2.5.3: unique partial index on (market_id, mode) WHERE closed_at IS NULL.
+        # Gestionado vía raw SQL en migración 005 (SQLAlchemy no soporta
+        # partial indexes nativamente en __table_args__).
     )
 
 

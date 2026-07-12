@@ -186,6 +186,109 @@ class TestRepositoryOrders:
         assert existing_model.status == "cancelled"
         assert existing_model.error == "user_cancelled"
 
+    # ── R2.2.2 (Ola 1.1) — idempotency_key mapping ─────────────────────
+
+    def test_order_to_model_persists_idempotency_key(self, repo):
+        """_order_to_model DEBE copiar idempotency_key al ORM model
+        (sin esto, el UNIQUE ix_orders_idempotency no bloquea duplicados).
+        """
+        order = _make_order()
+        order.idempotency_key = "abc123def456ffff"
+
+        model = repo._order_to_model(order)
+        assert model.idempotency_key == "abc123def456ffff"
+
+    def test_model_to_order_round_trips_idempotency_key(self, repo):
+        """_model_to_order DEBE recuperar idempotency_key (simetría con
+        _order_to_model). Sin esto no se puede leer la key desde BD."""
+        model = MagicMock(spec=OrderModel)
+        model.id            = "order_x"
+        model.market_id     = "m_x"
+        model.side          = "YES"
+        model.amount        = 5.0
+        model.target_price  = 0.5
+        model.fill_price    = 0.5
+        model.slippage      = 0.0
+        model.status        = "filled"
+        model.mode          = "paper"
+        model.strategy      = "MR"
+        model.reason        = "test"
+        model.error         = None
+        model.idempotency_key = "0011223344556677"
+        model.created_at    = datetime.utcnow()
+        model.filled_at     = datetime.utcnow()
+
+        order = repo._model_to_order(model)
+        assert order.idempotency_key == "0011223344556677"
+
+    # ── R2.2.2 (Ola 1.2) — IntegrityError handler on collision ─────────
+
+    @pytest.mark.asyncio
+    async def test_save_order_handles_idempotency_key_collision(
+        self, repo, mock_session, mock_session_factory
+    ):
+        """Cuando dos flujos concurrentes intentan guardar órdenes con la
+        misma idempotency_key (race post-timeout), el segundo INSERT debe
+        levantar IntegrityError sobre ix_orders_idempotency; save_order
+        DEBE catchearlo, no relanzar, y devolver la orden ya persistida.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        order = _make_order()
+        order.idempotency_key = "collision_key_01"
+
+        # Simula: session.get devuelve None (por ID no existe), pero al
+        # hacer session.add + commit dispara IntegrityError sobre el UNIQUE.
+        mock_session.get = AsyncMock(return_value=None)
+
+        # El commit dentro de session.begin() levanta el error
+        mock_session.begin.return_value.__aexit__ = AsyncMock(
+            side_effect=IntegrityError(
+                "INSERT INTO orders",
+                params=None,
+                orig=Exception(
+                    "duplicate key value violates unique constraint "
+                    "\"ix_orders_idempotency\""
+                ),
+            )
+        )
+
+        # Preparamos una 2ª sesión para el re-fetch (segunda entrada al
+        # session_factory) — devuelve la orden ganadora.
+        existing_orm = MagicMock(spec=OrderModel)
+        existing_orm.id            = "order_winner"
+        existing_orm.market_id     = order.market_id
+        existing_orm.side          = "YES"
+        existing_orm.amount        = order.amount
+        existing_orm.target_price  = order.target_price
+        existing_orm.fill_price    = 0.5
+        existing_orm.slippage      = 0.0
+        existing_orm.status        = "filled"
+        existing_orm.mode          = "paper"
+        existing_orm.strategy      = "BuyAboveThreshold"
+        existing_orm.reason        = "test_entry"
+        existing_orm.error         = None
+        existing_orm.idempotency_key = "collision_key_01"
+        existing_orm.created_at    = datetime.utcnow()
+        existing_orm.filled_at     = datetime.utcnow()
+
+        refetch_session = AsyncMock()
+        refetch_session.__aenter__ = AsyncMock(return_value=refetch_session)
+        refetch_session.__aexit__  = AsyncMock(return_value=None)
+        scalar_result = MagicMock()
+        scalar_result.scalar_one_or_none.return_value = existing_orm
+        refetch_session.execute = AsyncMock(return_value=scalar_result)
+
+        # 1ª llamada al factory: mock_session (falla). 2ª: refetch_session.
+        mock_session_factory.side_effect = [mock_session, refetch_session]
+
+        result = await repo.save_order(order)
+
+        # No debe crashear; debe devolver la orden ganadora del UNIQUE
+        assert result is not None
+        assert result.idempotency_key == "collision_key_01"
+        assert result.id == "order_winner"
+
 
 class TestRepositoryPositions:
 
