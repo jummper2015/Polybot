@@ -27,6 +27,11 @@ KEY_WS_LAST_PRICE = "ws:price:{market_id}"
 KEY_ORDERBOOK     = "orderbook:{market_id}"
 KEY_MARKET_META   = "market:meta:{market_id}"
 KEY_CLOB_MARKET_INFO = "clob:market_info:{condition_id}"
+# Ola 2.5: rolling buffer de precios recientes por mercado (últimos N ticks).
+# Se usa desde paper_handler para computar realized_volatility y regime.
+KEY_RECENT_TICKS  = "ws:recent_ticks:{market_id}"
+RECENT_TICKS_MAX  = 20     # Buffer size (mismo que StrategyState.tick_buffer)
+RECENT_TICKS_TTL  = 300    # 5 min — si no hay ticks, el buffer expira solo
 
 
 class RedisClient:
@@ -238,6 +243,77 @@ class RedisClient:
         """Elimina el estado WS al desuscribirse."""
         key = KEY_WS_STATE.format(market_id=market_id)
         await self._redis.delete(key)  # type: ignore[misc]  # noqa: E501
+
+    # ──────────────────────────────────────────────────────────────────
+    # Ola 2.5: Rolling tick buffer (para volatility / regime dinámicos)
+    # ──────────────────────────────────────────────────────────────────
+
+    async def push_recent_tick(
+        self,
+        market_id: str,
+        price:     float,
+        best_bid:  float | None = None,
+        best_ask:  float | None = None,
+    ) -> None:
+        """
+        Empuja un tick al buffer circular de precios recientes para `market_id`.
+
+        Implementación: LPUSH + LTRIM 0..N-1 + EXPIRE. El buffer más reciente
+        queda en el índice 0. Fuente única de tick history usada por
+        paper_handler para computar realized_volatility en tiempo real.
+
+        Args:
+            price: yes_price del tick
+            best_bid, best_ask: opcionales; si están se usa el mid; si no,
+                                usamos `price` directamente
+        """
+        key = KEY_RECENT_TICKS.format(market_id=market_id)
+
+        # Preferir mid = (bid+ask)/2 cuando esté disponible (más estable
+        # que yes_price para computar volatility, alineado con features.py
+        # compute_realized_volatility).
+        if best_bid is not None and best_ask is not None and best_bid > 0 and best_ask > 0:
+            mid = (best_bid + best_ask) / 2
+        else:
+            mid = price
+
+        entry = orjson.dumps({
+            "mid":   round(mid, 6),
+            "price": round(price, 6),
+            "ts_ms": int(datetime.now().timestamp() * 1000),
+        }).decode()
+
+        # Pipeline atómico: LPUSH + LTRIM + EXPIRE en un solo round-trip
+        pipe = self._redis.pipeline()
+        pipe.lpush(key, entry)
+        pipe.ltrim(key, 0, RECENT_TICKS_MAX - 1)
+        pipe.expire(key, RECENT_TICKS_TTL)
+        await pipe.execute()
+
+    async def get_recent_ticks(
+        self,
+        market_id: str,
+        limit:     int = RECENT_TICKS_MAX,
+    ) -> list[dict]:
+        """
+        Retorna los N ticks más recientes del buffer, en orden
+        cronológico ascendente (más antiguo primero — orden natural
+        para computar returns).
+
+        Returns:
+            Lista de dicts `{mid, price, ts_ms}`. Lista vacía si no hay
+            buffer (mercado nuevo o TTL expirado).
+        """
+        key  = KEY_RECENT_TICKS.format(market_id=market_id)
+        raw  = await self._redis.lrange(key, 0, limit - 1)  # type: ignore[misc]
+        # LRANGE devuelve el más reciente primero (LPUSH en cabeza) →
+        # invertimos para orden cronológico ascendente.
+        return [orjson.loads(r) for r in reversed(raw)] if raw else []
+
+    async def clear_recent_ticks(self, market_id: str) -> None:
+        """Limpia el buffer de ticks recientes (usado en tests / recovery)."""
+        key = KEY_RECENT_TICKS.format(market_id=market_id)
+        await self._redis.delete(key)  # type: ignore[misc]
 
     # ──────────────────────────────────────────────────────────────────
     # Paper Trading Balance & Prices

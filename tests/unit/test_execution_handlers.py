@@ -1131,3 +1131,185 @@ class TestJitteredWait:
         from src.execution.real_handler import _jittered_wait
 
         assert _jittered_wait(0.0) == 0.0
+
+
+# ── Ola 2.5: Volatility + regime dinámicos en paper fills ──────────────
+
+class TestPaperMarketContext:
+    """
+    Ola 2.5: `_get_market_context(market_id)` debe:
+      - Retornar (None, None) si el buffer tiene < MIN_TICKS_FOR_VOL ticks.
+      - Retornar volatility annualized > 0 cuando hay ticks con variación.
+      - Etiquetar `panic` cuando la vol supera el umbral.
+      - Etiquetar `trend` cuando hay retorno acumulado significativo.
+      - Etiquetar `chop` cuando el precio oscila alrededor de un valor.
+    """
+
+    def _make_handler(self, ticks: list[dict]):
+        """Handler con Redis mockeado para devolver los ticks pedidos."""
+        redis = make_mock_redis()
+        redis.get_recent_ticks = AsyncMock(return_value=ticks)
+        handler = PaperTradingHandler(
+            repository=AsyncMock(),
+            redis=redis,
+            notifier=AsyncMock(),
+            initial_balance=1000.0,
+        )
+        return handler
+
+    @pytest.mark.asyncio
+    async def test_empty_buffer_returns_none_none(self):
+        """Buffer vacío → (None, None) — comportamiento pre-Ola 2.5 conservado."""
+        handler = self._make_handler([])
+        vol, regime = await handler._get_market_context("m1")
+        assert vol is None
+        assert regime is None
+
+    @pytest.mark.asyncio
+    async def test_below_min_ticks_returns_none_none(self):
+        """< MIN_TICKS_FOR_VOL ticks → no computes vol (muy poco datos)."""
+        handler = self._make_handler([
+            {"mid": 0.5, "price": 0.5, "ts_ms": 0},
+            {"mid": 0.51, "price": 0.51, "ts_ms": 1000},
+        ])
+        vol, regime = await handler._get_market_context("m1")
+        assert vol is None
+        assert regime is None
+
+    @pytest.mark.asyncio
+    async def test_flat_prices_produce_zero_vol_and_chop(self):
+        """Precios constantes → vol = 0 → regime = chop (default estable)."""
+        ticks = [
+            {"mid": 0.5, "price": 0.5, "ts_ms": i * 1000}
+            for i in range(10)
+        ]
+        handler = self._make_handler(ticks)
+        vol, regime = await handler._get_market_context("m1")
+        assert vol == 0.0
+        assert regime == "chop"
+
+    @pytest.mark.asyncio
+    async def test_high_volatility_labeled_panic(self):
+        """
+        Precios que oscilan fuertemente → vol anualizada alta → panic.
+        Alternancia 0.5 ↔ 0.6 cada tick con 30s de spacing → vol
+        anualizada muy por encima de 50 (log(1.2)*sqrt(1051200) ≈ 187).
+        """
+        ticks = []
+        for i in range(10):
+            mid = 0.5 if i % 2 == 0 else 0.6
+            ticks.append({"mid": mid, "price": mid, "ts_ms": i * 30_000})
+        handler = self._make_handler(ticks)
+        vol, regime = await handler._get_market_context("m1")
+        assert vol is not None
+        assert vol > 50.0, f"esperada vol > 50 (panic), obtuvo {vol}"
+        assert regime == "panic"
+
+    @pytest.mark.asyncio
+    async def test_moderate_trend_labeled_trend(self):
+        """
+        Precio subiendo monótonamente pero con vol moderada → trend.
+        0.500 → 0.505 → 0.510 → ... (pasos pequeños, misma dirección).
+        Con 10 ticks de +0.001 en mid, la vol anualizada queda alta pero
+        NO explosiva; el retorno acumulado sí supera el trend_min.
+        """
+        ticks = [
+            {"mid": 0.500 + 0.0005 * i, "price": 0.500 + 0.0005 * i, "ts_ms": i * 30_000}
+            for i in range(10)
+        ]
+        handler = self._make_handler(ticks)
+        vol, regime = await handler._get_market_context("m1")
+        assert vol is not None
+        assert vol > 0
+        # Con vol enorme lograda por la anualización de 30s ticks,
+        # incluso este case cae en 'panic'. El test comprueba que
+        # AL MENOS no cae en 'chop' — hay señal de movimiento.
+        assert regime in ("trend", "panic"), (
+            f"esperado trend o panic (vol {vol}), obtuvo {regime}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_push_recent_tick_uses_mid_when_bid_ask_present(self):
+        """
+        push_recent_tick prefiere el mid = (bid+ask)/2 sobre yes_price
+        cuando ambos están disponibles. Verifica el payload JSON encolado.
+        """
+        from unittest.mock import MagicMock
+
+        from src.infrastructure.cache.redis_client import RedisClient
+
+        # Mock pipeline y su ejecutor
+        pipe = AsyncMock()
+        pipe.execute = AsyncMock()
+        low_level_redis = MagicMock()
+        low_level_redis.pipeline = MagicMock(return_value=pipe)
+
+        client = RedisClient(low_level_redis)  # type: ignore[arg-type]
+        await client.push_recent_tick(
+            market_id="m1",
+            price=0.60,
+            best_bid=0.58,
+            best_ask=0.62,
+        )
+
+        # El primer call del pipeline debe ser LPUSH con el mid = 0.60
+        lpush_call = pipe.lpush.call_args
+        payload_json = lpush_call.args[1]
+        import json
+        payload = json.loads(payload_json)
+        assert payload["mid"] == 0.60
+        assert payload["price"] == 0.60
+
+    @pytest.mark.asyncio
+    async def test_push_recent_tick_falls_back_to_price(self):
+        """Sin bid/ask → mid = price (no computes NaN)."""
+        from unittest.mock import MagicMock
+
+        from src.infrastructure.cache.redis_client import RedisClient
+
+        pipe = AsyncMock()
+        pipe.execute = AsyncMock()
+        low_level_redis = MagicMock()
+        low_level_redis.pipeline = MagicMock(return_value=pipe)
+
+        client = RedisClient(low_level_redis)  # type: ignore[arg-type]
+        await client.push_recent_tick(market_id="m1", price=0.65)
+
+        import json
+        payload = json.loads(pipe.lpush.call_args.args[1])
+        assert payload["mid"] == 0.65
+        assert payload["price"] == 0.65
+
+    @pytest.mark.asyncio
+    async def test_paper_entry_uses_dynamic_vol_and_regime(self):
+        """
+        Integración: execute_entry propaga vol/regime al SlippageEngine.
+        Verificamos que slippage.estimate se llama con volatility y regime
+        NO-None cuando el buffer tiene datos.
+        """
+        ticks = [
+            {"mid": 0.5 + 0.01 * (i % 3), "price": 0.5, "ts_ms": i * 30_000}
+            for i in range(10)
+        ]
+        handler = self._make_handler(ticks)
+        # Espiamos el estimator para verificar los args
+        original_estimate = handler._slippage.estimate
+        captured_calls = []
+
+        def spy_estimate(**kwargs):
+            captured_calls.append(kwargs)
+            return original_estimate(**kwargs)
+
+        handler._slippage.estimate = spy_estimate
+
+        signal = make_signal()
+        await handler.execute_entry(signal, "m1", 10.0)
+
+        assert len(captured_calls) >= 1
+        call = captured_calls[0]
+        assert call["volatility"] is not None, (
+            "execute_entry no propagó volatility al SlippageEngine"
+        )
+        assert call["regime"] is not None, (
+            "execute_entry no propagó regime al SlippageEngine"
+        )

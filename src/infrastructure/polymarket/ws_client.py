@@ -308,6 +308,20 @@ class PolymarketWSClient:
             # Guarda estado en Redis para visibilidad
             await self._redis.set_ws_state(market_id, state)
 
+            # Ola 2.5: empuja al buffer rolling para volatility / regime
+            # dinámicos en paper_handler. Fire-and-forget: si falla no
+            # bloqueamos el tick pipeline (el buffer se rellena solo con
+            # los siguientes ticks).
+            try:
+                await self._redis.push_recent_tick(
+                    market_id=market_id,
+                    price=tick.yes_price,
+                    best_bid=tick.best_bid,
+                    best_ask=tick.best_ask,
+                )
+            except Exception as e:
+                log.debug("recent_tick_push_failed", error=str(e))
+
             log.debug(
                 "tick_received",
                 yes_price=tick.yes_price,

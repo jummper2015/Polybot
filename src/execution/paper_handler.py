@@ -44,6 +44,18 @@ logger = structlog.get_logger(__name__)
 # Modo fijo de este handler
 TRADING_MODE = TradingMode.PAPER
 
+# ── Ola 2.5: parámetros para el estimador de vol/regime en paper ──────
+# 30s por tick × 60 × 24 × 365 = 1_051_200 ticks/año → anualización.
+# Emparejado con src/infrastructure/data/features.py::compute_realized_volatility
+TICKS_PER_YEAR = 1_051_200
+# Nº mínimo de ticks para computar volatility con sentido estadístico
+MIN_TICKS_FOR_VOL = 4
+# Umbrales de regime en paper (más simples que RegimeClassifier para no
+# arrastrar features dependientes de expiry/depth; PANIC/CHOP/TREND cubren
+# el 90% del comportamiento paper).
+PAPER_REGIME_PANIC_VOL_THRESHOLD = 50.0   # vol anualizada
+PAPER_REGIME_TREND_MOMENTUM_MIN  = 0.001   # |log return acumulado|
+
 
 class PaperTradingHandler(IExecutionHandler):
     """
@@ -114,16 +126,17 @@ class PaperTradingHandler(IExecutionHandler):
         target_price = await self._get_target_price(signal, market_id)
         tick_data = await self._build_tick_data(market_id)
 
+        # Ola 2.5: vol y regime dinámicos desde el buffer rolling en Redis
+        volatility, regime = await self._get_market_context(market_id)
+
         # ── Modelo de slippage (P9.2 SlippageEngine) ───────────────────
-        # TODO(P9.2): compute realized volatility from Redis tick history
-        # TODO(P9.2): query RegimeClassifier (P8.4) for current regime
         estimate = self._slippage.estimate(
             tick_data=tick_data,
             order_size=amount,
             asset=self._get_asset_for_market(market_id),
             side="entry",
-            volatility=None,
-            regime=None,
+            volatility=volatility,
+            regime=regime,
         )
 
         # ── P9.3: Resolve maker-vs-taker fill ──────────────────────────
@@ -134,6 +147,8 @@ class PaperTradingHandler(IExecutionHandler):
             order_size=amount,
             side="entry",
             taker_estimate=estimate,
+            volatility=volatility,
+            regime=regime,
         )
 
         # ── Verificación de balance ───────────────────────────────────
@@ -270,6 +285,9 @@ class PaperTradingHandler(IExecutionHandler):
         tick_data = await self._build_tick_data(position.market_id)
         position_value = position.shares * current_price
 
+        # Ola 2.5: vol y regime dinámicos desde el buffer rolling en Redis
+        volatility, regime = await self._get_market_context(position.market_id)
+
         # ── Modelo de slippage (P9.2 SlippageEngine) ───────────────────
         asset = position.asset if position.asset != "UNKNOWN" else "DEFAULT"
         estimate = self._slippage.estimate(
@@ -277,8 +295,8 @@ class PaperTradingHandler(IExecutionHandler):
             order_size=position_value,
             asset=asset,
             side="exit",
-            volatility=None,
-            regime=None,
+            volatility=volatility,
+            regime=regime,
         )
 
         # ── P9.3: Resolve maker-vs-taker fill ──────────────────────────
@@ -289,6 +307,8 @@ class PaperTradingHandler(IExecutionHandler):
             order_size=position_value,
             side="exit",
             taker_estimate=estimate,
+            volatility=volatility,
+            regime=regime,
         )
 
         # ── Cierra la posición y calcula PnL ─────────────────────────
@@ -410,14 +430,16 @@ class PaperTradingHandler(IExecutionHandler):
 
         # ── Slippage via SlippageEngine (P9.2) ─────────────────────────
         tick_data = await self._build_tick_data(position.market_id)
+        # Ola 2.5: vol y regime dinámicos también en hedge
+        volatility, regime = await self._get_market_context(position.market_id)
         asset = position.asset if position.asset != "UNKNOWN" else "DEFAULT"
         estimate = self._slippage.estimate(
             tick_data=tick_data,
             order_size=hedge_amount,
             asset=asset,
             side="entry",
-            volatility=None,
-            regime=None,
+            volatility=volatility,
+            regime=regime,
         )
         # Hedge buys NO, which is the complement of YES.
         # SlippageEngine gives us the YES-side fill price; NO fill = 1 - YES fill.
@@ -477,12 +499,64 @@ class PaperTradingHandler(IExecutionHandler):
     # HELPERS INTERNOS
     # ------------------------------------------------------------------
 
+    async def _get_market_context(
+        self, market_id: str
+    ) -> tuple[float | None, str | None]:
+        """
+        Ola 2.5: computa (volatility, regime) dinámicos desde el buffer
+        rolling de precios en Redis. Reemplaza los `None, None` hardcoded
+        que dejaban `paper_handler` operando con slippage plano.
+
+        Returns:
+            (volatility_annualized, regime_label) — cualquiera puede ser
+            None si no hay suficientes ticks (< MIN_TICKS_FOR_VOL). En ese
+            caso SlippageEngine.VolatilityAdjuster/RegimeScaling caen al
+            default 1.0 (comportamiento pre-Ola 2.5, sin regresión).
+        """
+        ticks = await self._redis.get_recent_ticks(market_id)
+        if len(ticks) < MIN_TICKS_FOR_VOL:
+            return None, None
+
+        # Preferir mid; fallback a price cuando el WS no incluye bid/ask
+        prices: list[float] = [
+            float(t.get("mid") or t.get("price") or 0.0) for t in ticks
+        ]
+        prices = [p for p in prices if p > 0]
+        if len(prices) < MIN_TICKS_FOR_VOL:
+            return None, None
+
+        # ── Realized volatility (annualized log-return std) ─────────────
+        returns: list[float] = []
+        for i in range(1, len(prices)):
+            if prices[i - 1] > 0 and prices[i] > 0:
+                returns.append(math.log(prices[i] / prices[i - 1]))
+        if len(returns) < 2:
+            return None, None
+
+        mean     = sum(returns) / len(returns)
+        variance = sum((r - mean) ** 2 for r in returns) / len(returns)
+        vol_ann  = math.sqrt(variance) * math.sqrt(TICKS_PER_YEAR)
+        vol_ann  = round(vol_ann, 6)
+
+        # ── Regime label (simplificado para paper: PANIC/TREND/CHOP) ────
+        cum_log_return = sum(returns)  # log(P_last / P_first)
+        if vol_ann > PAPER_REGIME_PANIC_VOL_THRESHOLD:
+            regime = "panic"
+        elif abs(cum_log_return) > PAPER_REGIME_TREND_MOMENTUM_MIN:
+            regime = "trend"
+        else:
+            regime = "chop"
+
+        return vol_ann, regime
+
     def _resolve_fill(
         self,
         tick_data: dict,
         order_size: float,
         side: str,
         taker_estimate,
+        volatility: float | None = None,
+        regime: str | None = None,
     ) -> tuple[float, float, str, object | None, object | None]:
         """Resolve fill price and slippage based on execution_mode.
 
@@ -521,8 +595,8 @@ class PaperTradingHandler(IExecutionHandler):
                 tick_data=tick_data,
                 order_size=order_size,
                 side=side,
-                volatility=None,
-                regime=None,
+                volatility=volatility,
+                regime=regime,
             )
             # For now, use first chunk's mode and fill
             # (split handling in paper trading is simplified)
@@ -553,12 +627,14 @@ class PaperTradingHandler(IExecutionHandler):
                 )
 
         # ── P9.3: Maker mode ───────────────────────────────────────
+        # Ola 2.5: vol/regime propagados desde el caller (execute_entry/
+        # execute_exit) para consistencia con el estimador taker.
         maker = self._slippage.estimate_maker(
             tick_data=tick_data,
             order_size=order_size,
             side=side,
-            volatility=None,
-            regime=None,
+            volatility=volatility,
+            regime=regime,
         )
         taker_cost = abs(taker_estimate.adjusted_slippage)
         decision = self._slippage.compare_maker_vs_taker(
