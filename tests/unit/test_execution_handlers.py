@@ -1060,3 +1060,74 @@ class TestRealHandlerRedeem:
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await handler.redeem_resolved_position(position, "yes_tok")
         assert result.success is False
+
+
+# ── Ola 2.4: Jitter en RETRY_BACKOFF (anti-thundering-herd) ────────────
+
+class TestJitteredWait:
+    """
+    Ola 2.4: el jitter debe estar acotado en [base, base*(1+JITTER_FACTOR))
+    y ser no-determinista (dos llamadas seguidas no deben dar el mismo valor
+    con altísima probabilidad).
+    """
+
+    def test_jitter_bounds(self):
+        """
+        GIVEN: base_wait > 0
+        WHEN:  _jittered_wait(base) se llama N veces
+        THEN:  todos los valores están en [base, base * (1 + JITTER_FACTOR)]
+        """
+        from src.execution.real_handler import JITTER_FACTOR, _jittered_wait
+
+        base = 1.0
+        upper = base * (1 + JITTER_FACTOR)
+        samples = [_jittered_wait(base) for _ in range(1000)]
+
+        assert all(base <= s < upper + 1e-9 for s in samples), (
+            f"Jitter fuera de [{base}, {upper}): "
+            f"min={min(samples)}, max={max(samples)}"
+        )
+
+    def test_jitter_non_deterministic(self):
+        """
+        GIVEN: base_wait > 0
+        WHEN:  _jittered_wait(base) se llama 100 veces
+        THEN:  hay al menos 90 valores distintos (probabilidad de colisión
+               con random.uniform sobre float es prácticamente nula)
+        """
+        from src.execution.real_handler import _jittered_wait
+
+        samples = [_jittered_wait(2.0) for _ in range(100)]
+        unique = set(samples)
+        assert len(unique) >= 90, (
+            f"Jitter parece determinista: solo {len(unique)}/100 valores únicos"
+        )
+
+    def test_jitter_mean_matches_expected(self):
+        """
+        GIVEN: base_wait = 4.0 y JITTER_FACTOR = 0.5
+        WHEN:  se toman 10_000 muestras
+        THEN:  la media empírica está en base + JITTER_FACTOR*base/2 ± 3%
+               (esperado: 4.0 + 1.0 = 5.0)
+        """
+        from src.execution.real_handler import JITTER_FACTOR, _jittered_wait
+
+        base = 4.0
+        n = 10_000
+        samples = [_jittered_wait(base) for _ in range(n)]
+        empirical_mean = sum(samples) / n
+        expected_mean = base + (JITTER_FACTOR * base) / 2
+
+        assert abs(empirical_mean - expected_mean) / expected_mean < 0.03, (
+            f"Media empírica {empirical_mean:.3f} lejos de "
+            f"esperada {expected_mean:.3f}"
+        )
+
+    def test_jitter_zero_base(self):
+        """
+        Edge case: base_wait = 0 → jitter también debe ser 0 (no negativo).
+        Protege contra un uso ingenuo desde código que compute wait=0.
+        """
+        from src.execution.real_handler import _jittered_wait
+
+        assert _jittered_wait(0.0) == 0.0

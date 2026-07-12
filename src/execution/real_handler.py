@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import random
 import uuid
 from datetime import datetime, timezone
 
@@ -46,7 +47,23 @@ DEFAULT_TICK_SIZE     = "0.01"   # Tick size default (se pisa con market_info)
 
 # ── Configuración de retry ────────────────────────────────────────────
 MAX_RETRIES       = 3
-RETRY_BACKOFF     = [1.0, 2.0, 4.0]  # Segundos entre intentos
+RETRY_BACKOFF     = [1.0, 2.0, 4.0]  # Segundos entre intentos (base, sin jitter)
+JITTER_FACTOR     = 0.5              # Ola 2.4: jitter ∈ [0, 0.5*base]
+
+
+def _jittered_wait(base_wait: float) -> float:
+    """
+    Ola 2.4: añade jitter aleatorio al backoff para evitar thundering herd.
+
+    Cuando N réplicas del bot chocan contra el mismo error 429/5xx en el
+    mismo instante y todas reintentan con backoff determinista, atacan el
+    endpoint al mismo tiempo y se re-rechazan en cascada. El jitter rompe
+    esa sincronización.
+
+    Formula: base + random.uniform(0, JITTER_FACTOR * base)
+    Ejemplo con base=1.0: retorna un valor ∈ [1.0, 1.5) segundos.
+    """
+    return base_wait + random.uniform(0, JITTER_FACTOR * base_wait)
 
 # Errores HTTP que son retryables:
 # - 408 Request Timeout, 425 Too Early (matching engine restart),
@@ -762,7 +779,7 @@ class RealTradingHandler(IExecutionHandler):
                             market_id="unknown", operation=operation
                         ).inc()
                         if attempt < MAX_RETRIES - 1:
-                            await asyncio.sleep(wait)
+                            await asyncio.sleep(_jittered_wait(wait))
                         continue
 
                 # 4xx: error de lógica, no reintentamos
@@ -792,20 +809,23 @@ class RealTradingHandler(IExecutionHandler):
                 ).inc()
 
             if attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF[attempt]
+                base_wait = RETRY_BACKOFF[attempt]
+                wait      = _jittered_wait(base_wait)  # Ola 2.4: anti-thundering-herd
                 log.warning(
                     "retrying",
                     operation=operation,
                     attempt=attempt + 1,
-                    wait_seconds=wait,
+                    wait_seconds=round(wait, 3),
+                    base_wait=base_wait,
                     error=last_error,
                 )
                 await self._audit.log(
                     action=AuditAction.REAL_ORDER_RETRY,
                     details={
-                        "attempt": attempt + 1,
-                        "error":   last_error,
-                        "wait":    wait,
+                        "attempt":   attempt + 1,
+                        "error":     last_error,
+                        "wait":      round(wait, 3),
+                        "base_wait": base_wait,
                     },
                     order_id=order_id,
                 )
