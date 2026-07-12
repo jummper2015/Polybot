@@ -529,29 +529,93 @@ class TestRealTradingHandler:
         assert result.success is False
         assert call_count[0] == 3  # 3 reintentos
 
+    # ── R2.2.1 (Ola 1.4): guards contra respuesta vacía del SDK ───────
+
+    @pytest.mark.asyncio
+    async def test_entry_empty_response_marks_failed(self):
+        """Si el SDK devuelve None sin marcar error (violación de contrato),
+        el handler DEBE convertirlo en fallo explícito y no crashear
+        con `float(None.get(...))`.
+        """
+        handler, clob, repo, audit = self.make_handler()
+        # SDK devuelve None sin excepción — caso de borde detectado en R2.2.1
+        clob.create_order = AsyncMock(return_value=None)
+        signal = make_signal()
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await handler.execute_entry(
+                signal=signal,
+                market_id="market_001",
+                amount=10.0,
+            )
+
+        # No debe crashear con AttributeError sobre NoneType
+        assert result.success is False
+        assert result.error is not None
+
     # ── Idempotency Key ────────────────────────────────────────────────
 
     def test_idempotency_key_deterministic(self):
-        """Misma estrategia + market_id en mismo minuto = misma key."""
+        """Misma estrategia + market_id + side + operation en mismo minuto = misma key."""
         key1 = RealTradingHandler._generate_idempotency_key(
             strategy_name="TestStrat",
             market_id="market_001",
+            side="YES",
+            operation="entry",
         )
         key2 = RealTradingHandler._generate_idempotency_key(
             strategy_name="TestStrat",
             market_id="market_001",
+            side="YES",
+            operation="entry",
         )
         assert key1 == key2
+
+    def test_idempotency_key_different_if_side_differs(self):
+        """R2.5.1: Diferente side (YES/NO) → diferente key (evita colisión entry/hedge)."""
+        key1 = RealTradingHandler._generate_idempotency_key(
+            strategy_name="TestStrat",
+            market_id="market_001",
+            side="YES",
+            operation="entry",
+        )
+        key2 = RealTradingHandler._generate_idempotency_key(
+            strategy_name="TestStrat",
+            market_id="market_001",
+            side="NO",
+            operation="entry",
+        )
+        assert key1 != key2
+
+    def test_idempotency_key_different_if_operation_differs(self):
+        """R2.5.1: Diferente operation (entry/exit/hedge/redeem) → diferente key."""
+        key1 = RealTradingHandler._generate_idempotency_key(
+            strategy_name="TestStrat",
+            market_id="market_001",
+            side="YES",
+            operation="entry",
+        )
+        key2 = RealTradingHandler._generate_idempotency_key(
+            strategy_name="TestStrat",
+            market_id="market_001",
+            side="YES",
+            operation="exit",
+        )
+        assert key1 != key2
 
     def test_idempotency_key_different_if_strategy_differs(self):
         """Diferente estrategia → diferente key."""
         key1 = RealTradingHandler._generate_idempotency_key(
             strategy_name="StratA",
             market_id="market_001",
+            side="YES",
+            operation="entry",
         )
         key2 = RealTradingHandler._generate_idempotency_key(
             strategy_name="StratB",
             market_id="market_001",
+            side="YES",
+            operation="entry",
         )
         assert key1 != key2
 
@@ -560,10 +624,14 @@ class TestRealTradingHandler:
         key1 = RealTradingHandler._generate_idempotency_key(
             strategy_name="Test",
             market_id="market_001",
+            side="YES",
+            operation="entry",
         )
         key2 = RealTradingHandler._generate_idempotency_key(
             strategy_name="Test",
             market_id="market_002",
+            side="YES",
+            operation="entry",
         )
         assert key1 != key2
 
@@ -682,14 +750,38 @@ class TestRealHandlerTokenAndPrice:
         # 1.0 - 0.65 = 0.35
         assert price == 0.35
 
+    # R2.2.1 (Ola 1.5): el fallback silencioso a 0.5 (mid) era un bug —
+    # generaba órdenes reales con "precio presunto" cuando el WS no había
+    # emitido tick. Ahora falla explícita para que el audit registre la
+    # causa y el flujo caller responda con REAL_ORDER_FAILED.
+
     @pytest.mark.asyncio
-    async def test_no_ws_state_uses_default_05(self):
+    async def test_no_ws_state_raises_valueerror(self):
+        """WS buffer inexistente → ValueError explícito (no fallback 0.5)."""
         handler, redis = self._handler()
         redis.get_ws_state = AsyncMock(return_value=None)
-        _, price = await handler._get_token_and_price(
-            "market_001", SignalType.BUY_YES,
-        )
-        assert price == 0.5
+        with pytest.raises(ValueError, match="WS buffer vacío"):
+            await handler._get_token_and_price(
+                "market_001", SignalType.BUY_YES,
+            )
+
+    @pytest.mark.asyncio
+    async def test_ws_state_missing_last_yes_price_raises(self):
+        """WS buffer presente pero sin `last_yes_price` → ValueError."""
+        handler, redis = self._handler()
+        redis.get_ws_state = AsyncMock(return_value={"some_other_key": 1.0})
+        with pytest.raises(ValueError, match="sin last_yes_price"):
+            await handler._get_token_and_price(
+                "market_001", SignalType.BUY_YES,
+            )
+
+    @pytest.mark.asyncio
+    async def test_get_current_price_no_ws_state_raises(self):
+        """_get_current_price (exit path) tampoco cae a 0.5 en silencio."""
+        handler, redis = self._handler()
+        redis.get_ws_state = AsyncMock(return_value=None)
+        with pytest.raises(ValueError, match="exit path"):
+            await handler._get_current_price("market_001")
 
     @pytest.mark.asyncio
     async def test_market_missing_raises(self):

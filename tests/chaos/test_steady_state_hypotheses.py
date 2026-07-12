@@ -48,17 +48,21 @@ class TestIdempotencyKeyDeterminism:
 
     def test_same_strategy_market_minute_produces_same_key(self):
         """
-        GIVEN: same strategy_name, market_id, and within the same UTC minute
+        GIVEN: same strategy_name, market_id, side, operation, and within the same UTC minute
         WHEN:  _generate_idempotency_key is called twice
         THEN:  both keys are identical
         """
         key1 = RealTradingHandler._generate_idempotency_key(
             strategy_name="BuyAboveThreshold",
             market_id="0xabc123def456",
+            side="YES",
+            operation="entry",
         )
         key2 = RealTradingHandler._generate_idempotency_key(
             strategy_name="BuyAboveThreshold",
             market_id="0xabc123def456",
+            side="YES",
+            operation="entry",
         )
 
         assert key1 == key2, (
@@ -70,17 +74,21 @@ class TestIdempotencyKeyDeterminism:
 
     def test_different_strategy_produces_different_key(self):
         """
-        GIVEN: different strategy names with same market_id and minute
+        GIVEN: different strategy names with same market_id, side, operation and minute
         WHEN:  _generate_idempotency_key is called
         THEN:  keys are different
         """
         key1 = RealTradingHandler._generate_idempotency_key(
             strategy_name="BuyAboveThreshold",
             market_id="0xabc123def456",
+            side="YES",
+            operation="entry",
         )
         key2 = RealTradingHandler._generate_idempotency_key(
             strategy_name="MeanReversion",
             market_id="0xabc123def456",
+            side="YES",
+            operation="entry",
         )
 
         assert key1 != key2, (
@@ -89,17 +97,21 @@ class TestIdempotencyKeyDeterminism:
 
     def test_different_market_produces_different_key(self):
         """
-        GIVEN: different market_ids with same strategy and minute
+        GIVEN: different market_ids with same strategy, side, operation and minute
         WHEN:  _generate_idempotency_key is called
         THEN:  keys are different
         """
         key1 = RealTradingHandler._generate_idempotency_key(
             strategy_name="BuyAboveThreshold",
             market_id="0xabc123def456",
+            side="YES",
+            operation="entry",
         )
         key2 = RealTradingHandler._generate_idempotency_key(
             strategy_name="BuyAboveThreshold",
             market_id="0x789ghi012jkl",
+            side="YES",
+            operation="entry",
         )
 
         assert key1 != key2, (
@@ -112,14 +124,18 @@ class TestIdempotencyKeyDeterminism:
         """
         strategy_name = "TestStrategy"
         market_id = "0xmarket"
+        side = "YES"
+        operation = "entry"
         now = datetime.now(timezone.utc)
         minute_bucket = now.strftime("%Y%m%d%H%M")
-        raw = f"{strategy_name}{market_id}{minute_bucket}"
+        raw = f"{strategy_name}{market_id}{side}{operation}{minute_bucket}"
         expected_prefix = hashlib.sha256(raw.encode()).hexdigest()[:16]
 
         key = RealTradingHandler._generate_idempotency_key(
             strategy_name=strategy_name,
             market_id=market_id,
+            side=side,
+            operation=operation,
         )
 
         assert key == expected_prefix, (
@@ -146,6 +162,8 @@ class TestIdempotencyKeyDeterminism:
             key1 = RealTradingHandler._generate_idempotency_key(
                 strategy_name="Test",
                 market_id="0xmarket",
+                side="YES",
+                operation="entry",
             )
 
         class FakeDatetime2:
@@ -159,6 +177,8 @@ class TestIdempotencyKeyDeterminism:
             key2 = RealTradingHandler._generate_idempotency_key(
                 strategy_name="Test",
                 market_id="0xmarket",
+                side="YES",
+                operation="entry",
             )
 
         assert key1 != key2, (

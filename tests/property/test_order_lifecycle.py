@@ -8,9 +8,11 @@ Invariants under test:
   - Shares calculation: shares = amount / fill_price when filled
   - Shares is None when not filled
   - mark_failed → status=FAILED
+  - R2.5.1: Idempotency key determinism, side/operation collision prevention
 """
 
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone
 
 import structlog
 from hypothesis import given, settings
@@ -20,6 +22,7 @@ from src.domain.entities.order import Order
 from src.domain.enums.order_side import OrderSide
 from src.domain.enums.order_status import OrderStatus
 from src.domain.enums.trading_mode import TradingMode
+from src.execution.real_handler import RealTradingHandler
 
 structlog.configure(processors=[structlog.processors.KeyValueRenderer()])
 
@@ -308,29 +311,146 @@ class TestOrderImmutabilityAfterTransition:
         )
 
 
-class TestOrderIdempotencyKey:
-    """Invariante: idempotency_key is optional and immutable via constructor only."""
+class TestIdempotencyKeyPropertyInvariants:
+    """R2.5.1: Property-based invariants for RealTradingHandler._generate_idempotency_key.
 
-    @given(order_id=order_id_st, market_id=market_id_st, key=st.one_of(st.none(), st.text(min_size=16, max_size=16, alphabet="abcdef0123456789")))
-    @settings(max_examples=200)
-    def test_idempotency_key_preserved(self, order_id, market_id, key):
-        """∀ valid params: idempotency_key set at construction is preserved."""
-        order = Order(
-            id=order_id,
+    Invariants under test:
+      - Same inputs = same key (determinism, essential for idempotency)
+      - Different side (YES vs NO) = different key (no collision entry/hedge)
+      - Different operation (entry/exit/hedge/redeem) = different key
+      - Same side+operation but different strategy = different key
+    """
+
+    side_st = st.sampled_from(["YES", "NO", "BUY_YES", "BUY_NO"])
+    operation_st = st.sampled_from(["entry", "exit", "hedge", "redeem"])
+
+    @given(
+        strategy=st.sampled_from(
+            ["BuyAboveThreshold", "MeanReversion", "CustomStrategy"]
+        ),
+        market_id=market_id_st,
+        side=side_st,
+        operation=operation_st,
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_same_inputs_produce_same_key(
+        self, strategy, market_id, side, operation
+    ):
+        """∀ (strategy, market, side, operation): same inputs → same key."""
+        key1 = RealTradingHandler._generate_idempotency_key(
+            strategy_name=strategy,
             market_id=market_id,
-            side=OrderSide.YES,
-            amount=10.0,
-            target_price=0.60,
-            fill_price=None,
-            slippage=None,
-            status=OrderStatus.PENDING,
-            mode=TradingMode.PAPER,
-            strategy="Test",
-            reason="test",
-            created_at=datetime.utcnow(),
-            idempotency_key=key,
+            side=side,
+            operation=operation,
+        )
+        key2 = RealTradingHandler._generate_idempotency_key(
+            strategy_name=strategy,
+            market_id=market_id,
+            side=side,
+            operation=operation,
         )
 
-        assert order.idempotency_key == key, (
-            f"idempotency_key mismatch: {order.idempotency_key} != {key}"
+        assert key1 == key2, (
+            f"R2.5.1: Same inputs produce different keys: "
+            f"{key1} != {key2} "
+            f"(s={strategy}, m={market_id}, side={side}, op={operation})"
+        )
+        assert len(key1) == 16, f"Key must be 16 hex chars, got {len(key1)}"
+        assert all(c in "0123456789abcdef" for c in key1), (
+            f"Key must be hex: {key1}"
+        )
+
+    @given(
+        strategy=st.sampled_from(["BuyAboveThreshold", "MeanReversion"]),
+        market_id=market_id_st,
+        operation=st.sampled_from(["entry", "hedge"]),
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_different_side_produces_different_key(
+        self, strategy, market_id, operation
+    ):
+        """∀ (strategy, market, operation): YES vs NO → different keys.
+
+        Core R2.5.1 fix: execute_entry(YES) and execute_hedge(NO)
+        must never collide for the same strategy+market+minute.
+        """
+        key_yes = RealTradingHandler._generate_idempotency_key(
+            strategy_name=strategy,
+            market_id=market_id,
+            side="YES",
+            operation=operation,
+        )
+        key_no = RealTradingHandler._generate_idempotency_key(
+            strategy_name=strategy,
+            market_id=market_id,
+            side="NO",
+            operation=operation,
+        )
+
+        assert key_yes != key_no, (
+            f"R2.5.1: YES/NO collision: {key_yes} == {key_no} "
+            f"(s={strategy}, m={market_id}, op={operation})"
+        )
+
+    @given(
+        strategy=st.sampled_from(["BuyAboveThreshold", "MeanReversion"]),
+        market_id=market_id_st,
+        side=st.sampled_from(["YES", "NO"]),
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_different_operation_produces_different_key(
+        self, strategy, market_id, side
+    ):
+        """∀ (strategy, market, side): all 4 operations → unique keys.
+
+        execute_entry(), execute_exit(), execute_hedge(),
+        redeem_resolved_position() must never collide.
+        """
+        keys = {}
+        for operation in ["entry", "exit", "hedge", "redeem"]:
+            keys[operation] = RealTradingHandler._generate_idempotency_key(
+                strategy_name=strategy,
+                market_id=market_id,
+                side=side,
+                operation=operation,
+            )
+
+        unique_keys = set(keys.values())
+        assert len(unique_keys) == 4, (
+            f"R2.5.1: Operations collision: {keys} "
+            f"(s={strategy}, m={market_id}, side={side})"
+        )
+
+    @given(
+        strategy=st.sampled_from(["BuyAboveThreshold", "MeanReversion"]),
+        market_id=market_id_st,
+        side=side_st,
+        operation=operation_st,
+    )
+    @settings(max_examples=200, deadline=None)
+    def test_key_hex_format_and_formula(
+        self, strategy, market_id, side, operation
+    ):
+        """∀ inputs: key is 16-char SHA256 hex matching documented formula."""
+        key = RealTradingHandler._generate_idempotency_key(
+            strategy_name=strategy,
+            market_id=market_id,
+            side=side,
+            operation=operation,
+        )
+
+        # Verify key format
+        assert len(key) == 16, f"Key must be 16 chars, got {len(key)}: '{key}'"
+        assert all(c in "0123456789abcdef" for c in key), (
+            f"Non-hex chars in key: '{key}'"
+        )
+
+        # Verify formula: SHA256(strategy + market + side + operation + minute)[:16]
+        now = datetime.now(timezone.utc)
+        minute_bucket = now.strftime("%Y%m%d%H%M")
+        raw = f"{strategy}{market_id}{side}{operation}{minute_bucket}"
+        expected = hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+        assert key == expected, (
+            f"R2.5.1: Formula mismatch: {key} != {expected} (raw='{raw}')"
         )

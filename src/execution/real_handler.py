@@ -177,9 +177,16 @@ class RealTradingHandler(IExecutionHandler):
         # Idempotencia SHA256: mismo signal en el mismo minuto = misma key
         # Si el request falla a mitad, el reintento enviará la misma key
         # y Polymarket no duplicará la orden
+        # R2.5.1: side + operation incluidos en la key para evitar colisiones
+        # Normalizamos side a "YES"/"NO" (sin prefijo BUY_) para consistencia
+        # con execute_exit() y redeem que usan position.side ("YES"/"NO").
+        operation = "entry"
+        normalized_side = signal.type.value.replace("BUY_", "")
         order_id = self._generate_idempotency_key(
             strategy_name=signal.source_strategy,
             market_id=market_id,
+            side=normalized_side,
+            operation=operation,
         )
 
         # ── Audit: intento de orden ───────────────────────────────────
@@ -257,6 +264,13 @@ class RealTradingHandler(IExecutionHandler):
             log=log,
         )
 
+        # R2.2.1 (Ola 1.4): guard contra (None, None) — el contrato de
+        # _call_with_retry es tuple[dict|None, str|None]; si la SDK devuelve
+        # None sin marcar error, tratarlo como fallo explícito antes de
+        # entrar a `float(api_response.get(...))` que crashearía silente.
+        if error is None and api_response is None:
+            error = "empty_response_from_clob_sdk"
+
         if error:
             # Fallo definitivo después de todos los reintentos
             order.mark_failed(error)
@@ -277,6 +291,8 @@ class RealTradingHandler(IExecutionHandler):
             )
 
         # ── Procesa respuesta exitosa ─────────────────────────────────
+        # Post-guard: api_response garantizado no-None por el check anterior.
+        assert api_response is not None
         fill_price = float(api_response.get("price", target_price))
         slippage   = round(fill_price - target_price, 4)
 
@@ -312,7 +328,7 @@ class RealTradingHandler(IExecutionHandler):
             order_id=order_id,
             fill_price=fill_price,
             slippage=slippage,
-            shares=round(order.shares, 4),
+            shares=round(order.shares or 0.0, 4),
         )
 
         # ── Notifica al usuario ───────────────────────────────────────
@@ -368,6 +384,8 @@ class RealTradingHandler(IExecutionHandler):
         order_id      = self._generate_idempotency_key(
             strategy_name=position.strategy,
             market_id=position.market_id,
+            side=position.side,
+            operation="exit",
         )
 
         await self._audit.log(
@@ -410,6 +428,10 @@ class RealTradingHandler(IExecutionHandler):
             log=log,
         )
 
+        # R2.2.1 (Ola 1.4): guard (None, None) también en exit path.
+        if error is None and api_response is None:
+            error = "empty_response_from_clob_sdk_on_exit"
+
         if error:
             await self._audit.log(
                 action=AuditAction.REAL_ORDER_FAILED,
@@ -423,6 +445,7 @@ class RealTradingHandler(IExecutionHandler):
                 current_price, error
             )
 
+        assert api_response is not None
         exit_price = float(api_response.get("price", current_price))
         slippage   = round(exit_price - current_price, 4)
 
@@ -453,7 +476,7 @@ class RealTradingHandler(IExecutionHandler):
         log.info(
             "real_exit_success",
             exit_price=exit_price,
-            pnl=round(position.pnl, 4),
+            pnl=round(position.pnl, 4),  # type: ignore[arg-type]
             pnl_pct=f"{position.pnl_pct:.2%}",
         )
 
@@ -461,8 +484,8 @@ class RealTradingHandler(IExecutionHandler):
             await self._notifier.send_exit_alert(
                 market_id=position.market_id,
                 reason=reason,
-                pnl=position.pnl,
-                pnl_pct=position.pnl_pct,
+                pnl=position.pnl,  # type: ignore[arg-type]  # None → float — guarded above
+                pnl_pct=position.pnl_pct,  # type: ignore[arg-type]
             )
 
         return TradeResult(
@@ -535,6 +558,8 @@ class RealTradingHandler(IExecutionHandler):
         redeem_order_id = self._generate_idempotency_key(
             strategy_name="redeem",
             market_id=position.market_id,
+            side=position.side,
+            operation="redeem",
         )
 
         try:
@@ -573,6 +598,11 @@ class RealTradingHandler(IExecutionHandler):
                 position.amount, 0.0, error
             )
 
+        # R2.2.1 (Ola 1.4): guard (None, None) también en redeem path.
+        # (En la práctica, R2.0-redeem-impl bloquea este código path con
+        # CLOBRedeemNotSupportedError antes de llegar aquí, pero el guard
+        # se mantiene por defensa en profundidad.)
+        assert api_response is not None, "api_response garantizado no-None post `if error:`"
         # Valor redimido: shares * 1.0 si ganamos (cada token ganador = 1 pUSD)
         redeemed_pusd = float(api_response.get("redeemed_amount", 0.0))
 
@@ -617,19 +647,27 @@ class RealTradingHandler(IExecutionHandler):
     def _generate_idempotency_key(
         strategy_name: str,
         market_id:     str,
+        side:          str,
+        operation:     str,
     ) -> str:
         """
         Genera una idempotency key determinista basada en SHA256.
 
-        Fórmula (según PLAN_MEJORAS.txt P1.4):
-          key = SHA256(strategy_name + market_id + timestamp_truncado_a_minuto)[:16]
+        R2.5.1 Fix: Incluye side (YES/NO, normalizado sin prefijo BUY_)
+        + operation (entry/exit/hedge/redeem) para evitar colisiones entre
+        operaciones distintas en el mismo minuto.
+        Antes: SHA256(strategy + market + minute) → entry YES y hedge NO colisionaban.
+        Ahora: SHA256(strategy + market + side + operation + minute).
+
+        Fórmula:
+          key = SHA256(strategy + market + side + operation + minute_bucket)[:16]
 
         Mismo signal en el mismo minuto = misma key.
         Polymarket desduplica automáticamente basado en order_id.
         """
         now = datetime.now(timezone.utc)
         minute_bucket = now.strftime("%Y%m%d%H%M")  # Truncado al minuto
-        raw = f"{strategy_name}{market_id}{minute_bucket}"
+        raw = f"{strategy_name}{market_id}{side}{operation}{minute_bucket}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     async def _call_with_retry(
@@ -886,28 +924,47 @@ class RealTradingHandler(IExecutionHandler):
         """
         Obtiene el token_id y precio actual del lado correcto (YES/NO).
         Primero intenta Redis, luego DB.
+
+        R2.2.1 (Ola 1.5): NUNCA caer a 0.5 (mid) silenciosamente si el WS
+        no ha emitido tick. En real, un fill a "50% presunto" es una orden
+        con slippage no estimable — fallo silencioso disfrazado. Se propaga
+        ValueError; el caller lo convierte en REAL_ORDER_FAILED con audit.
         """
         market = await self._redis.get_market(market_id)
         if not market:
             raise ValueError(f"Market {market_id} no encontrado en Redis/DB")
 
         ws_state = await self._redis.get_ws_state(market_id)
+        if not ws_state or "last_yes_price" not in ws_state:
+            raise ValueError(
+                f"WS buffer vacío o sin last_yes_price para market {market_id}"
+                f" — no se puede estimar precio para orden real"
+            )
 
+        last_yes = float(ws_state["last_yes_price"])
         if signal_type == SignalType.BUY_YES:
             token_id = market.yes_token_id
-            price    = float(ws_state.get("last_yes_price", 0.5)) if ws_state else 0.5
+            price    = last_yes
         else:
             token_id = market.no_token_id
-            price    = 1.0 - (
-                float(ws_state.get("last_yes_price", 0.5)) if ws_state else 0.5
-            )
+            price    = 1.0 - last_yes
 
         return token_id, round(price, 4)
 
     async def _get_current_price(self, market_id: str) -> float:
-        """Precio YES actual desde Redis."""
+        """Precio YES actual desde Redis.
+
+        R2.2.1 (Ola 1.5): mismo criterio que _get_token_and_price — no
+        aceptar fallback 0.5 en exit path (calcularíamos PnL con precio
+        fantasma). Falla explícita si el WS no ha emitido tick.
+        """
         ws_state = await self._redis.get_ws_state(market_id)
-        return float(ws_state.get("last_yes_price", 0.5)) if ws_state else 0.5
+        if not ws_state or "last_yes_price" not in ws_state:
+            raise ValueError(
+                f"WS buffer vacío o sin last_yes_price para market {market_id}"
+                f" — no se puede estimar precio actual (exit path)"
+            )
+        return float(ws_state["last_yes_price"])
 
     async def _create_real_position(
         self,
@@ -923,8 +980,8 @@ class RealTradingHandler(IExecutionHandler):
             window      = market.window.value if market else "UNKNOWN",
             side        = order.side.value,
             amount      = order.amount,
-            shares      = order.shares,
-            entry_price = order.fill_price,
+            shares      = order.shares,  # type: ignore[arg-type]  # set by mark_filled
+            entry_price = order.fill_price,  # type: ignore[arg-type]
             exit_price  = None,
             pnl         = None,
             pnl_pct     = None,
