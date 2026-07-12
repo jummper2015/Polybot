@@ -641,12 +641,198 @@ class TestStartHandler:
         callback.message.answer.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_cb_real_confirm_step1_shows_final_button(self, callback):
-        await cb_real_confirm_step1(callback)
-        kwargs = callback.message.answer.call_args.kwargs
-        kb = kwargs["reply_markup"]
-        labels = [btn.text for row in kb.inline_keyboard for btn in row]
-        assert any("CONFIRMO" in lbl for lbl in labels)
+    async def test_cb_real_confirm_step1_asks_for_pin(
+        self, callback, fsm_state, monkeypatch,
+    ):
+        """
+        Ola 2.2: step1 ya NO muestra un botón "CONFIRMO"; en su lugar
+        pide el PIN de 6 dígitos y establece el estado FSM waiting_pin.
+        """
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        # Gate configurado (con hash arbitrario) — no interesa el valor
+        # exacto, solo que is_configured() == True.
+        gate = PinGate(_expected_hash="a" * 64)
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        callback.message.chat = MagicMock(id=555)
+        await cb_real_confirm_step1(callback, fsm_state)
+
+        fsm_state.set_state.assert_awaited_once_with(
+            start_mod.RealModeStates.waiting_pin
+        )
+        text = callback.message.answer.call_args.args[0]
+        assert "PIN" in text
+        assert "6 dígitos" in text
+
+    @pytest.mark.asyncio
+    async def test_cb_real_confirm_step1_rejects_when_pin_not_configured(
+        self, callback, fsm_state, monkeypatch,
+    ):
+        """Sin PIN configurado, step1 rechaza sin pedir input."""
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(_expected_hash="")
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        callback.message.chat = MagicMock(id=555)
+        await cb_real_confirm_step1(callback, fsm_state)
+
+        fsm_state.set_state.assert_not_awaited()
+        text = callback.message.answer.call_args.args[0]
+        assert "no configurado" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_cb_real_confirm_step1_rejects_when_locked(
+        self, callback, fsm_state, monkeypatch,
+    ):
+        """Si el chat_id está bloqueado por rate limit, step1 no pide PIN."""
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(_expected_hash="a" * 64)
+        # Fuerza el estado bloqueado directamente
+        from src.interfaces.telegram.pin_gate import _AttemptState
+        gate._attempts[555] = _AttemptState(
+            failed_count=3, locked_until=9999999999.0
+        )
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        callback.message.chat = MagicMock(id=555)
+        await cb_real_confirm_step1(callback, fsm_state)
+
+        fsm_state.set_state.assert_not_awaited()
+        text = callback.message.answer.call_args.args[0]
+        assert "Bloqueado" in text or "rate limit" in text
+
+    @pytest.mark.asyncio
+    async def test_on_pin_message_ok_activates_real(
+        self, message, fsm_state, container, monkeypatch,
+    ):
+        """PIN correcto → clear state + container.enable_real_mode()."""
+        import hashlib
+
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.handlers.start import on_pin_message
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(
+            _expected_hash=hashlib.sha256(b"246810").hexdigest()
+        )
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        message.chat = MagicMock(id=42)
+        message.text = "246810"
+        await on_pin_message(message, fsm_state, container=container)
+
+        fsm_state.clear.assert_awaited_once()
+        container.enable_real_mode.assert_awaited_once()
+        text = message.answer.call_args.args[0]
+        assert "ACTIVADO" in text
+
+    @pytest.mark.asyncio
+    async def test_on_pin_message_wrong_prompts_retry(
+        self, message, fsm_state, container, monkeypatch,
+    ):
+        """PIN incorrecto → mensaje de retry, NO limpia state."""
+        import hashlib
+
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.handlers.start import on_pin_message
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(
+            _expected_hash=hashlib.sha256(b"246810").hexdigest()
+        )
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        message.chat = MagicMock(id=42)
+        message.text = "000000"
+        await on_pin_message(message, fsm_state, container=container)
+
+        container.enable_real_mode.assert_not_awaited()
+        fsm_state.clear.assert_not_awaited()
+        text = message.answer.call_args.args[0]
+        assert "incorrecto" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_on_pin_message_third_wrong_triggers_lockout(
+        self, message, fsm_state, container, monkeypatch,
+    ):
+        """3er PIN incorrecto → mensaje de lockout Y clear del state."""
+        import hashlib
+
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.handlers.start import on_pin_message
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(
+            _expected_hash=hashlib.sha256(b"246810").hexdigest(),
+            _lockout_seconds=600,
+        )
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        message.chat = MagicMock(id=42)
+        message.text = "000000"
+
+        # Los 2 primeros fallos NO limpian state.
+        await on_pin_message(message, fsm_state, container=container)
+        await on_pin_message(message, fsm_state, container=container)
+        assert fsm_state.clear.await_count == 0
+
+        # El 3ero triggerea lockout Y clear.
+        await on_pin_message(message, fsm_state, container=container)
+        fsm_state.clear.assert_awaited()
+        text = message.answer.call_args.args[0]
+        assert "Bloqueado" in text or "intentos fallidos" in text
+
+    @pytest.mark.asyncio
+    async def test_on_pin_message_cancel_clears_state(
+        self, message, fsm_state, container, monkeypatch,
+    ):
+        """Comando /cancel dentro del flujo aborta y limpia state."""
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.handlers.start import on_pin_message
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(_expected_hash="a" * 64)
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        message.chat = MagicMock(id=42)
+        message.text = "/cancel"
+        await on_pin_message(message, fsm_state, container=container)
+
+        fsm_state.clear.assert_awaited_once()
+        container.enable_real_mode.assert_not_awaited()
+        text = message.answer.call_args.args[0]
+        assert "cancelada" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_on_pin_message_invalid_format_stays_in_state(
+        self, message, fsm_state, container, monkeypatch,
+    ):
+        """PIN mal formateado → mensaje, NO limpia state, NO cuenta como intento."""
+        import hashlib
+
+        from src.interfaces.telegram.handlers import start as start_mod
+        from src.interfaces.telegram.handlers.start import on_pin_message
+        from src.interfaces.telegram.pin_gate import PinGate
+
+        gate = PinGate(
+            _expected_hash=hashlib.sha256(b"246810").hexdigest()
+        )
+        monkeypatch.setattr(start_mod, "_pin_gate", gate)
+
+        message.chat = MagicMock(id=42)
+        message.text = "abc"
+        await on_pin_message(message, fsm_state, container=container)
+
+        fsm_state.clear.assert_not_awaited()
+        container.enable_real_mode.assert_not_awaited()
+        text = message.answer.call_args.args[0]
+        assert "inválido" in text.lower() or "6 dígitos" in text
 
     @pytest.mark.asyncio
     async def test_cb_real_confirm_final_activates_when_container(self, callback, container):

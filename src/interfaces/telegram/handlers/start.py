@@ -4,10 +4,25 @@
 import structlog
 from aiogram import Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+
+from src.interfaces.telegram.pin_gate import PinGate, PinResult
 
 router = Router()
 logger = structlog.get_logger(__name__)
+
+
+# Ola 2.2: PinGate global — Capa 2 de las 3 capas de confirmación real.
+# Inicializado al import; el módulo lee REAL_MODE_PIN_HASH del entorno.
+# En tests se sustituye con monkeypatch de `_pin_gate`.
+_pin_gate: PinGate = PinGate.from_env()
+
+
+class RealModeStates(StatesGroup):
+    """Ola 2.2: FSM para el flujo de confirmación con PIN."""
+    waiting_pin = State()
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -132,30 +147,119 @@ async def cb_enable_real(callback: CallbackQuery, container=None) -> None:
 
 
 @router.callback_query(lambda c: c.data == "real:confirm_step1")
-async def cb_real_confirm_step1(callback: CallbackQuery) -> None:
-    """Segundo paso de confirmación — aún más explícito."""
+async def cb_real_confirm_step1(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Ola 2.2: paso PIN (Capa 2 de las 3 capas). En vez de saltar
+    directamente a la confirmación final, pide el PIN de 6 dígitos
+    y establece el estado FSM `waiting_pin`. El siguiente Message
+    del chat_id se interpreta como el PIN.
+    """
     await callback.answer()
-    final_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="✅ CONFIRMO — Activar Real Trading",
-                callback_data="real:confirm_final"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="❌ Cancelar",
-                callback_data="real:cancel"
-            ),
-        ],
-    ])
+
+    if not _pin_gate.is_configured():
+        # Sin PIN configurado, el paper-vs-real-execution skill dice
+        # rechazar. No permitimos "solo dos botones" como en pre-Ola 2.2.
+        await callback.message.answer(
+            "❌ *Real trading no configurado*\\.\n\n"
+            "Falta la variable `REAL_MODE_PIN_HASH` \\(o `REAL_MODE_PIN`\\) "
+            "en el entorno\\. Configúrala y reinicia el bot antes de "
+            "activar real trading\\."
+        )
+        return
+
+    chat_id = callback.message.chat.id
+    if _pin_gate.is_locked(chat_id):
+        wait = _pin_gate.seconds_until_unlock(chat_id)
+        await callback.message.answer(
+            f"🔒 *Bloqueado por rate limit*\\.\n\n"
+            f"Demasiados intentos fallidos\\. Vuelve a intentar en "
+            f"{wait // 60}min {wait % 60}s\\."
+        )
+        return
+
+    await state.set_state(RealModeStates.waiting_pin)
     await callback.message.answer(
-        "🔴 *CONFIRMACIÓN FINAL*\n\n"
-        "Esta es tu última oportunidad de cancelar\\.\n"
-        "Al confirmar, el bot empezará a usar *dinero real*\\.\n\n"
-        "Presiona el botón para confirmar:",
-        reply_markup=final_keyboard,
+        "🔐 *Introduce el PIN de 6 dígitos*\n\n"
+        "Envía el PIN como un mensaje normal\\.\n"
+        "Tienes 3 intentos antes del bloqueo de 10 min\\.\n\n"
+        "Escribe `/cancel` para abortar\\."
     )
+
+
+@router.message(RealModeStates.waiting_pin)
+async def on_pin_message(message: Message, state: FSMContext, container=None) -> None:
+    """
+    Ola 2.2: recibe el PIN tipeado por el usuario y lo valida
+    contra `_pin_gate`. Éxito → activa real trading. Fallo → mensaje
+    y sigue en `waiting_pin` hasta agotar intentos o `/cancel`.
+    """
+    pin = (message.text or "").strip()
+    chat_id = message.chat.id
+
+    # Escape hatch — el usuario puede cancelar en cualquier momento.
+    if pin.lower() in ("/cancel", "cancel"):
+        await state.clear()
+        await message.answer("❌ Activación de Real Trading *cancelada*\\.")
+        return
+
+    result = _pin_gate.verify(chat_id=chat_id, pin=pin)
+
+    if result == PinResult.OK:
+        await state.clear()
+        if container is not None:
+            success, msg = await container.enable_real_mode()
+            if success:
+                await message.answer(
+                    "🔴 *Real Trading ACTIVADO*\n\n"
+                    "PIN verificado\\. El bot ahora opera con fondos reales\\.\n"
+                    f"_{msg}_"
+                )
+            else:
+                await message.answer(
+                    f"❌ *Error al activar Real Trading*\n\n{msg}"
+                )
+        else:
+            await message.answer(
+                "🔴 *Real Trading ACTIVADO*\n\n"
+                "PIN verificado\\."
+            )
+        return
+
+    if result == PinResult.INVALID_FORMAT:
+        await message.answer(
+            "⚠️ Formato inválido\\. El PIN debe ser exactamente 6 dígitos\\.\n"
+            "Vuelve a intentarlo o escribe `/cancel`\\."
+        )
+        return
+
+    if result == PinResult.LOCKED_OUT:
+        wait = _pin_gate.seconds_until_unlock(chat_id)
+        await state.clear()
+        await message.answer(
+            f"🔒 *Bloqueado por rate limit*\\.\n\n"
+            f"Vuelve a intentar en {wait // 60}min {wait % 60}s\\."
+        )
+        return
+
+    if result == PinResult.WRONG:
+        # Chequea si este WRONG desencadenó lockout (contador ≥ max).
+        wait = _pin_gate.seconds_until_unlock(chat_id)
+        if wait > 0:
+            await state.clear()
+            await message.answer(
+                f"🔒 *3 intentos fallidos*\\.\n\n"
+                f"Bloqueado por {wait // 60}min {wait % 60}s\\."
+            )
+        else:
+            await message.answer(
+                "❌ PIN incorrecto\\. Intenta de nuevo o escribe `/cancel`\\."
+            )
+        return
+
+    # NOT_CONFIGURED — no debería llegar aquí porque step1 ya lo verificó,
+    # pero defensa en profundidad.
+    await state.clear()
+    await message.answer("❌ Real trading no configurado\\.")
 
 
 @router.callback_query(lambda c: c.data == "real:confirm_final")
