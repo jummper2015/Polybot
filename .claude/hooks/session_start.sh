@@ -27,9 +27,14 @@ Antes de cualquier cambio:
   5. Cambios en infrastructure/polymarket/ → skill polymarket-clob-audit.
   6. Cambios en execution/ → skill paper-vs-real-execution.
   7. Activar real trading → skill pre-real-trading-checklist.
+  8. Cambios en alembic/ o db/ → skill db-integrity-guard.
+  9. Cambios en requirements.txt/pyproject.toml → skill dependency-hygiene.
+ 10. Cambios en redeem/CTF → skill ctf-onchain-redeem.
+
+Fuente de verdad para dependencias: pyproject.toml (requirements.txt generado).
 
 No-go zones (RFC obligatorio):
   alembic/versions/  src/domain/  monitoring/alerts.yml  k8s/production/  .env
 
-Skills disponibles: invoca con la herramienta Skill.
+Skills disponibles (8): invoca con la herramienta Skill.
 EOF

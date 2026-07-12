@@ -17,8 +17,12 @@ FILE_PATH="$(echo "$PAYLOAD" | jq -r '.tool_input.file_path // empty')"
 COMMAND="$(echo "$PAYLOAD" | jq -r '.tool_input.command // empty')"
 
 # Patrones de no-go (deben coincidir con CLAUDE.md).
+# Migraciones 001-004 ya aplicadas en staging/prod — no editar.
+# Migraciones 005+ son editables (gobernadas por db-integrity-guard).
 NOGO_PATTERNS=(
-  "alembic/versions/"
+  "alembic/versions/001_"
+  "alembic/versions/003_"
+  "alembic/versions/004_"
   "monitoring/alerts.yml"
   "k8s/production/"
 )

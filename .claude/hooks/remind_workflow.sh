@@ -47,4 +47,22 @@ case "$PROMPT" in
     ;;
 esac
 
+case "$PROMPT" in
+  *alembic*|*migration*|*db*integrity*|*constraint*|*index*|*repository*|*model*)
+    remind "Cambios de DB → skill db-integrity-guard. Constraints, migraciones reversibles, IntegrityError handler."
+    ;;
+esac
+
+case "$PROMPT" in
+  *requirement*|*pyproject*|*dependenc*|*pip*install*|*pip-audit*|*pin*|*uvloop*|*httpx*)
+    remind "Cambios de dependencias → skill dependency-hygiene. pyproject.toml es fuente única de verdad."
+    ;;
+esac
+
+case "$PROMPT" in
+  *redeem*|*ctf*|*web3*|*indexset*|*gas*estimate*|*onchain*)
+    remind "Redeem CTF → skill ctf-onchain-redeem. web3.py, indexSets, gas estimation, tx receipt."
+    ;;
+esac
+
 exit 0

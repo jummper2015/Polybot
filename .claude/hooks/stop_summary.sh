@@ -22,6 +22,10 @@ echo "$CHANGED" | grep -q '^src/risk/'                   && NEEDS+=("property te
 echo "$CHANGED" | grep -q '^src/infrastructure/polymarket/' && NEEDS+=("auditoría CLOB V2 (skill: polymarket-clob-audit)")
 echo "$CHANGED" | grep -q '^src/execution/'              && NEEDS+=("verificar 3 capas para real (skill: paper-vs-real-execution)")
 echo "$CHANGED" | grep -q '^\.env\.example'              && NEEDS+=("validar con scripts/check_env.py")
+echo "$CHANGED" | grep -q '^alembic/versions/'             && NEEDS+=("constraints + migración reversible (skill: db-integrity-guard)")
+echo "$CHANGED" | grep -q '^src/infrastructure/db/'         && NEEDS+=("IntegrityError handlers + constraints (skill: db-integrity-guard)")
+echo "$CHANGED" | grep -q '^requirements\.txt\|^pyproject\.toml' && NEEDS+=("alinear ambos manifests (skill: dependency-hygiene)")
+echo "$CHANGED" | grep -q 'redeem\|ctf'                     && NEEDS+=("verificar flujo CTF on-chain (skill: ctf-onchain-redeem)")
 
 if (( ${#NEEDS[@]} )); then
   echo "" >&2
