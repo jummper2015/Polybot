@@ -1,7 +1,92 @@
 # AUDIT_REPORT.md — PolyBot Security Audit
 
-**Última auditoría:** 2026-06-16 (R2.0-redeem — Auditoría redeem CLOB V2)
-**Auditoría anterior:** 2026-06-15 (R2.1-smoke — End-to-End Pipeline Verification)
+**Última auditoría:** 2026-07-12 (R2.2 — Auditoría de correctitud full-stack + cierre Olas 1-2)
+**Auditoría anterior:** 2026-06-16 (R2.0-redeem — Auditoría redeem CLOB V2)
+
+---
+
+## 🟡 R2.2 — Auditoría de correctitud full-stack (Julio 2026)
+
+**Fecha:** 2026-07-12
+**Alcance:** revisión exhaustiva de mappers Entity↔Model, propagación de datos entre capas, guards contra fallos silenciosos, integridad DB, y flujos de real trading. Detonante: la lectura crítica del código realizada tras completar R1.3 (dashboard) reveló bugs latentes que el runtime paper no exponía. R2.2.1–R2.2.10 son las 10 sub-auditorías; su plan de cierre (Olas 1-6) está en RUTA_IMPLEMENTACION.md § R2.2.10.
+
+### Resumen de hallazgos y cierre (Olas 1 y 2)
+
+| # | Hallazgo | Severidad | Estado | Commit(s) |
+|---|---|---|---|---|
+| **R2.2.1** | `amount = risk_decision.suggested_amount or requested_amount` — `or` colapsa `0.0` legítimo en `requested_amount`, saltándose el sizing del RiskEngine. | 🟠 Alta (sizing) | ✅ Cerrado Ola 1.3 | `720bd85` |
+| **R2.2.2** | `_order_to_model` / `_model_to_order` NO persistían `idempotency_key`. Un reintento post-timeout creaba orden duplicada porque la columna existía pero nunca se guardaba. | 🔴 Crítica (dup real) | ✅ Cerrado Ola 1.1+1.2 | `a8a4f46` |
+| **R2.2.3** | `RealTradingHandler._call_with_retry` puede retornar `(None, None)` sin marcar error; `float(api_response.get(...))` crashea silente. 3 sitios (entry:287, exit:435, redeem:588). | 🟠 Alta (crash silencioso) | ✅ Cerrado Ola 1.4 | `49318a6` |
+| **R2.2.4** | `_get_token_and_price` y `_get_current_price` caían a 0.5 (mid) cuando WS aún no había emitido tick — fill a "50% presunto" con slippage no estimable. | 🔴 Crítica (real trading fantasma) | ✅ Cerrado Ola 1.5 | `49318a6` |
+| **R2.2.5** | Archivos basura `=0.28`, `=6.100.0` en root — artefactos de `pip install ...>=X.Y` con redirección bash. Riesgo: se pushean, contaminan builds. | 🟡 Media (housekeeping) | ✅ Cerrado Ola 1.6 + `.gitignore =*` | `0ef61ce` |
+| **R2.2.6** | WS emitía `event_type=market_resolved` a nivel DEBUG y se descartaba. Posiciones abiertas en mercados resueltos quedaban colgadas hasta exit manual. | 🟠 Alta (redeem workflow bloqueado) | ✅ Cerrado Ola 2.1 | `f34c8f0` |
+| **R2.2.7** | Activar real trading solo requería 2 clicks; NO cumplía la regla dura #3 de CLAUDE.md (3 capas de confirmación incluyendo PIN). | 🔴 Crítica (real trading unsafe) | ✅ Cerrado Ola 2.2 | `6ba4ac0` |
+| **R2.2.8** | `_market_cycle_loop` polleaba `get_active_markets` a 30s constantes; durante rollovers largos (M5/M15 gap) hammereaba la API. | 🟡 Media (rate limit) | ✅ Cerrado Ola 2.3 (backoff 30s→5min) | `cceac67` |
+| **R2.2.9** | `RETRY_BACKOFF` era determinista `[1s, 2s, 4s]` — N réplicas atacaban en sincronía, thundering herd al recuperarse un 429/5xx. | 🟡 Media (thundering herd) | ✅ Cerrado Ola 2.4 (jitter ≤50%) | `36ffbb1` |
+| **R2.2.10** | Paper handler pasaba `volatility=None, regime=None` hardcoded al SlippageEngine (TODO(P9.2) sin cerrar). Slippage paper irrealmente plano. | 🟠 Alta (edge falso en paper) | ✅ Cerrado Ola 2.5 | `7bbe0df` |
+
+**Bonus:** durante Ola 1 también se cerraron **R2.5.1** (idempotency key ahora incluye `side + operation` — antes entry YES + hedge NO en el mismo minuto colisionaban), **R2.5.3** (unique partial index `positions (market_id, mode) WHERE closed_at IS NULL`), y **R2.5.4** (unique index `markets (asset, window, expiry)`), materializados en la migración 005 y sus IntegrityError handlers.
+
+### Métricas post-cierre
+
+| Métrica | Pre-R2.2 | Post-Ola 1+2 |
+|---|---|---|
+| Tests pasando | 1125 | **1446** (+321) |
+| Migraciones aplicables | 004 | **006** (+005 integrity, +006 resolved_at) |
+| Reglas duras CLAUDE.md | 8 | **10** (+or fallacy, +mappers simétricos) |
+| Skills disponibles | 5 | **8** (+db-integrity-guard, +dependency-hygiene, +ctf-onchain-redeem) |
+| Hooks harness | 4 | **6** (+check_dep_drift, +protect_trash) |
+
+### Infraestructura persistente introducida
+
+- `Position.resolved_at: datetime | None` + `is_resolved` property (extensión aditiva en no-go zone, RFC autorizado 2026-07-12).
+- `PositionModel.resolved_at` + `ix_positions_resolved_at` (migración 006).
+- `IRepositoryPort.mark_positions_resolved(market_id, ts) → int` con idempotencia (`WHERE resolved_at IS NULL`).
+- `IMarketDataPort.set_resolution_callback` + `ResolutionCallback` en `PolymarketWSClient` (patrón callback global idempotente).
+- `AuditAction.MARKET_RESOLVED` en el enum del audit log.
+- `src/interfaces/telegram/pin_gate.py` — `PinGate` reutilizable con SHA256, `hmac.compare_digest` constant-time, rate limit 3 intentos, lockout 10 min por chat_id.
+- `RealModeStates.waiting_pin` (FSM aiogram) + `on_pin_message` handler con estados WRONG/LOCKED_OUT/INVALID_FORMAT/OK/NOT_CONFIGURED.
+- `RedisClient.push_recent_tick` / `get_recent_ticks` / `clear_recent_ticks` (LPUSH+LTRIM+EXPIRE atómico) — rolling buffer reutilizable para futuras features de streaming analytics.
+- `_get_market_context(market_id)` en `PaperTradingHandler` que computa realized volatility annualized + label {panic/trend/chop}.
+- Helper puro `compute_empty_backoff_wait(consecutive_empty) → int` en `trading_service` (facilita property tests).
+- Helper `_jittered_wait(base) → float` en `real_handler` con `JITTER_FACTOR=0.5`.
+
+### Reglas duras añadidas a CLAUDE.md
+
+- **#9** — Nunca usar truthiness (`or`) sobre valores numéricos donde 0.0 sea válido; usar `is not None`. Justificación: R2.2.1.
+- **#10** — Mappers Entity ↔ Model deben ser exhaustivos y simétricos; cualquier campo nuevo en `domain.Order` / `domain.Position` / `domain.Market` DEBE aparecer en `_X_to_model` y `_model_to_X` en el mismo PR. Justificación: R2.2.2 (idempotency_key fantasma).
+
+### Verificación pip-audit post-Olas 1+2 (2026-07-12)
+
+91 findings totales de pip-audit. Distribución por paquete:
+
+| Paquete runtime | Versión actual | Findings | Fix mínimo |
+|---|---|---|---|
+| aiohttp | 3.9.5 | 31 | ≥3.14.1 |
+| starlette | 0.37.2 | 8 | (RUTA 3.1 dice ≥1.1.0) |
+| bleach | 6.3.0 | 3 | ≥6.4.0 |
+| python-multipart | 0.0.28 | 3 | ≥0.0.31 |
+| protobuf | 4.25.9 | 1 | ≥5.29.6 |
+| ujson | 5.12.1 | 1 | ≥5.13.0 |
+
+Los 6 paquetes que la RUTA § R2.2.10 Ola 3 identifica dominan la lista. Findings adicionales fuera del RFC de Ola 3: gitpython (4), urllib3 (3), idna (2), requests (1), pytest (1), pip (2), msgpack (1), pygments (1), soupsieve (2). Además, dev tooling (Jupyter stack) suma 26 findings — evaluar si mantener Jupyter en dev deps o mover a un extras separado durante Ola 3.
+
+pip-audit no devuelve severity numérica (`?` en el output); habría que cruzar CVE-por-CVE con NVD para clasificar HIGH/MEDIUM/LOW. Ola 3 debería empezar con esa clasificación antes de tocar pyproject.
+
+### Lo que Ola 1+2 NO cubre (pendiente para Olas 3-6)
+
+- **CVEs deps** — todos los 91 findings de pip-audit siguen sin resolver (Ola 3).
+- **Timeouts CLOB/HTTP/WS via env** — sin implementar (Ola 3.2).
+- **Dashboard auth JWT + CORS** — endpoints siguen abiertos por trust del reverse proxy (Ola 4).
+- **10+ endpoints de métricas MUST/SHOULD** — Ola 4.
+- **R2.0-redeem-impl** — el skill `ctf-onchain-redeem` existe pero `web3.py`+CTF contract call sigue no implementado; posiciones resueltas se **detectan** (Ola 2.1) pero NO se **redimen** (Ola 5.1).
+- **ParquetDataLoader window filter** — sigue siendo label, no filtro real (Ola 5.2). Métricas M5 y M15 son el mismo dataset.
+- **Walk-forward / Monte Carlo / OOS** — sin ejecutar sobre parquets extendidos (Ola 5.3-5.5).
+- **Paper marathon end-to-end sobre el stack completo** — pendiente Ola 6.
+
+### Racional del orden de cierre
+
+Ola 1 y 2 se priorizaron por riesgo asc (RUTA § R2.2.10 Ola 6 vs Ola 1) para (a) construir momentum con cambios low-risk mecánicos, (b) reducir la superficie de fallos silenciosos ANTES de tocar deps/dashboard/redeem, (c) dejar la infraestructura (migración 006, PinGate, ResolutionCallback, Redis buffer) lista para que las olas más pesadas puedan asumirla sin miedo a regresiones.
 
 ---
 

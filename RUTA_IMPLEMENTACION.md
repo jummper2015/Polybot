@@ -646,26 +646,32 @@ python scripts/smoke_test_pipeline.py --n-cycles 5 --warmup-ticks 10
 
 ### R2.2.10 — Plan y ruta a implementar (priorizado)
 
-**Ola 1 — Correcciones sin código nuevo (1-2 días, PRs pequeños):**
+**Ola 1 — Correcciones sin código nuevo (1-2 días, PRs pequeños):** ✅ **COMPLETADA 2026-07-12**
 
-| # | Tarea | Bloquea | Skill a invocar | Tests requeridos |
-|---|---|---|---|---|
-| 1.1 | Fix `_order_to_model` + `_model_to_order` en `repository.py` (añadir `idempotency_key`) | Duplicados en real | `db-integrity-guard` | +2 unit (round-trip) |
-| 1.2 | Añadir catch `IntegrityError` en `save_order` con re-fetch por key | Crash post-fix 1.1 | `db-integrity-guard` | +1 unit (race simulada) |
-| 1.3 | Fix `or` fallacy en `trading_service.py:395-398` — usar `is not None` | Kelly sizing correcto | `risk-engine-guard` | +1 unit (suggested=0.0) |
-| 1.4 | Guard explícito `if api_response is None: return failed` en `real_handler.py:287,435,588` | Crash silencioso | `paper-vs-real-execution` | +1 unit por punto |
-| 1.5 | Guard `if not ws_state or "last_yes_price" not in ws_state: reject` en `real_handler.py:917+` | Fill a 50% silencioso | `paper-vs-real-execution` | +1 unit |
-| 1.6 | `git rm =0.28 =6.100.0` + `git clean -fd` | Basura filesystem | `dependency-hygiene` | — |
+| # | Tarea | Bloquea | Skill a invocar | Tests | Commit |
+|---|---|---|---|---|---|
+| 1.1 | Fix `_order_to_model` + `_model_to_order` en `repository.py` (añadir `idempotency_key`) | Duplicados en real | `db-integrity-guard` | ✅ +2 round-trip | `a8a4f46` |
+| 1.2 | Añadir catch `IntegrityError` en `save_order` con re-fetch por key | Crash post-fix 1.1 | `db-integrity-guard` | ✅ +1 race sim | `a8a4f46` |
+| 1.3 | Fix `or` fallacy en `trading_service.py:395-398` — usar `is not None` | Kelly sizing correcto | `risk-engine-guard` | ✅ +1 suggested=0.0 | `720bd85` |
+| 1.4 | Guard explícito `if api_response is None: return failed` en `real_handler.py:287,435,588` | Crash silencioso | `paper-vs-real-execution` | ✅ +3 unit | `49318a6` |
+| 1.5 | Guard `if not ws_state or "last_yes_price" not in ws_state: reject` en `real_handler.py:917+` | Fill a 50% silencioso | `paper-vs-real-execution` | ✅ +1 unit | `49318a6` |
+| 1.6 | `git rm =0.28 =6.100.0` + `.gitignore =*` | Basura filesystem | `dependency-hygiene` | — | `0ef61ce` |
 
-**Ola 2 — Gaps funcionales (2-4 días):**
+Además en el mismo lote (empaquetado por grupos lógicos): R2.5.1 (idempotency key incluye side+op), R2.5.3+4 (integrity constraints + migración 005), harness (2 hooks + 3 skills), deps hygiene, mypy baseline expansion, docs sync. Suite: 1390 passed.
 
-| # | Tarea | Bloquea | Skill | Notas |
-|---|---|---|---|---|
-| 2.1 | WS handler `on_market_resolved` en `TradingService` + persiste `Position.resolved_at` | Redeem workflow | `polymarket-clob-audit` | Sin CTF impl aún, solo marca detección |
-| 2.2 | PIN 6 dígitos en `telegram/handlers/start.py` + rate limit 3 intentos | Real trading según CLAUDE.md | `paper-vs-real-execution` | Añadir tests handler |
-| 2.3 | Reintento agresivo en `_market_cycle_loop` si `get_active_markets` vacío (backoff 30s→5min) | Rollover robusto | `polymarket-clob-audit` | Property test tiempo entre reintentos |
-| 2.4 | Jitter en `RETRY_BACKOFF` (`random.uniform(0, 0.5*wait)`) | Thundering herd | `paper-vs-real-execution` | Test estadístico |
-| 2.5 | Volatility + regime dinámicos en paper fills (`paper_handler.py:118-127`) | Realismo paper | `strategy-validation-protocol` | Comparar slippage estimado vs real en run |
+**Ola 2 — Gaps funcionales (2-4 días):** ✅ **COMPLETADA 2026-07-12**
+
+| # | Tarea | Bloquea | Skill | Tests | Commit |
+|---|---|---|---|---|---|
+| 2.1 | WS handler `on_market_resolved` en `TradingService` + persiste `Position.resolved_at` | Redeem workflow | `polymarket-clob-audit`, `db-integrity-guard` | ✅ +13 (repo mappers + WS callback + service handler) | `f34c8f0` |
+| 2.2 | PIN 6 dígitos en `telegram/handlers/start.py` + rate limit 3 intentos | Real trading según CLAUDE.md | `paper-vs-real-execution` | ✅ +27 (PinGate 20 + FSM handler 7) | `6ba4ac0` |
+| 2.3 | Reintento agresivo en `_market_cycle_loop` si `get_active_markets` vacío (backoff 30s→5min) | Rollover robusto | `polymarket-clob-audit` | ✅ +5 (property + progression + cap) | `cceac67` |
+| 2.4 | Jitter en `RETRY_BACKOFF` (`random.uniform(0, 0.5*wait)`) | Thundering herd | `paper-vs-real-execution` | ✅ +4 (bounds + non-determinism + mean + edge) | `36ffbb1` |
+| 2.5 | Volatility + regime dinámicos en paper fills (`paper_handler.py:118-127`) | Realismo paper | `strategy-validation-protocol` | ✅ +8 (Redis buffer + market_context + integration) | `7bbe0df` |
+
+Infraestructura nueva persistente: `Position.resolved_at` + migración 006, `IRepositoryPort.mark_positions_resolved`, `ResolutionCallback` en WS, `PinGate` reutilizable, Redis rolling tick buffer (`push_recent_tick`/`get_recent_ticks`). Suite: 1446 passed.
+
+**Post-Ola 2 — verificación pip-audit (2026-07-12):** 91 findings distribuidos en aiohttp (31), starlette (8), python-multipart (3), bleach (3), protobuf (1), ujson (1) más otros paquetes menores. Confirma que Ola 3 sigue siendo relevante (los 6 bumps de RUTA 3.1 mapean a los findings principales).
 
 **Ola 3 — Seguridad y dependencias (2-3 días, RFC required):**
 
@@ -724,9 +730,9 @@ Criterios de éxito:
 
 ### R2.2.11 — Documentación colateral
 
-- **RECORRIDO_ACTUAL.md** — se actualiza con snapshot 2026-07-11 (esta auditoría).
-- **CLAUDE.md** — micro-update (ver R2.2.9).
-- **AUDIT_REPORT.md** — pendiente: consolidar los hallazgos de R2.2.1–R2.2.10 en formato auditoría formal (se hará junto con Ola 1 al abrir PRs).
+- **RECORRIDO_ACTUAL.md** — actualizado con snapshot 2026-07-12 (post Olas 1 y 2).
+- **CLAUDE.md** — actualizado con reglas duras #9 (or fallacy) y #10 (mappers simétricos).
+- **AUDIT_REPORT.md** — ✅ **sección R2.2 añadida 2026-07-12**: consolida R2.2.1–R2.2.10 con cierre de cada hallazgo por commit. El archivo ya existía con R1.4, R1.7, R2.0-redeem, R2.1-smoke, R2.1-wallet — R2.2 se apila al inicio como bloque más reciente.
 - **GUIA_DESPLIEGUE_VPS.md** — sigue vigente para real trading; añadir nota sobre geoblock desde codespace (informativa, no bloqueante para paper).
 
 ---
